@@ -13,15 +13,8 @@
  * limitations under the License.
  */
 
-mod chunk;
-mod debug;
-mod value;
+pub type Value = f64;
 
-fn main() {
-    let mut chunk: chunk::Chunk = Default::default();
-    let constant = chunk.add_constant(1.2);
-    chunk.write(chunk::OpCode::CONSTANT as u8, 123);
-    chunk.write(constant as u8, 123);
-    chunk.write(chunk::OpCode::RETURN as u8, 123);
-    debug::disassemble_chunk(&chunk, "test chunk");
+pub fn print_value(value: Value) {
+    print!("{}", value);
 }
