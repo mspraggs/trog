@@ -17,15 +17,25 @@ use crate::value;
 
 #[repr(u8)]
 pub enum OpCode {
-    CONSTANT = 0,
-    RETURN = 1,
+    Constant,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Negate,
+    Return,
 }
 
 impl From<u8> for OpCode {
     fn from(value: u8) -> Self {
         match value {
-            0 => OpCode::CONSTANT,
-            1 => OpCode::RETURN,
+            value if value == OpCode::Constant as u8 => OpCode::Constant,
+            value if value == OpCode::Add as u8 => OpCode::Add,
+            value if value == OpCode::Subtract as u8 => OpCode::Subtract,
+            value if value == OpCode::Multiply as u8 => OpCode::Multiply,
+            value if value == OpCode::Divide as u8 => OpCode::Divide,
+            value if value == OpCode::Negate as u8 => OpCode::Negate,
+            value if value == OpCode::Return as u8 => OpCode::Return,
             _ => panic!("Unknown opcode {}", value),
         }
     }
@@ -39,6 +49,10 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     pub fn write(&mut self, byte: u8, line: i32) {
         self.code.push(byte);
         self.lines.push(line);
