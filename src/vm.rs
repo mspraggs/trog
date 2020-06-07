@@ -14,6 +14,7 @@
  */
 
 use crate::chunk;
+use crate::compiler;
 use crate::debug;
 use crate::value;
 
@@ -23,6 +24,11 @@ pub enum InterpretResult {
     Ok,
     CompileError,
     RuntimeError,
+}
+
+pub fn interpret(vm: &mut VM, source: String) -> InterpretResult {
+    compiler::compile(source);
+    InterpretResult::Ok
 }
 
 pub struct VM {

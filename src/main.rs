@@ -13,32 +13,65 @@
  * limitations under the License.
  */
 
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::process;
+
 mod chunk;
+mod compiler;
 mod debug;
+mod scanner;
 mod value;
 mod vm;
 
+fn repl(vm: &mut vm::VM) {
+    loop {
+        print!("> ");
+        io::stdout().flush().unwrap();
+        let mut buffer = String::new();
+
+        match io::stdin().read_line(&mut buffer) {
+            Ok(_) => {
+                vm::interpret(vm, buffer);
+            }
+            Err(_) => {
+                eprintln!("Failed to read from stdin.");
+                process::exit(74);
+            }
+        }
+    }
+}
+
+fn run_file(vm: &mut vm::VM, path: &String) {
+    let source = fs::read_to_string(path);
+    let result = match source {
+        Ok(contents) => vm::interpret(vm, contents),
+        Err(_) => panic!("Unable to read from file."),
+    };
+
+    match result {
+        vm::InterpretResult::CompileError => {
+            process::exit(65);
+        }
+        vm::InterpretResult::RuntimeError => {
+            process::exit(70);
+        }
+        _ => {}
+    };
+}
+
 fn main() {
+    let args: Vec<String> = env::args().collect();
+
     let mut vm = vm::VM::new();
-    let mut chunk = chunk::Chunk::new();
 
-    let constant0 = chunk.add_constant(1.2);
-    chunk.write(chunk::OpCode::Constant as u8, 123);
-    chunk.write(constant0 as u8, 123);
-
-    let constant1 = chunk.add_constant(3.4);
-    chunk.write(chunk::OpCode::Constant as u8, 123);
-    chunk.write(constant1 as u8, 123);
-
-    chunk.write(chunk::OpCode::Add as u8, 123);
-
-    let constant2 = chunk.add_constant(5.6);
-    chunk.write(chunk::OpCode::Constant as u8, 123);
-    chunk.write(constant2 as u8, 123);
-
-    chunk.write(chunk::OpCode::Divide as u8, 123);
-    chunk.write(chunk::OpCode::Negate as u8, 123);
-    chunk.write(chunk::OpCode::Return as u8, 123);
-    debug::disassemble_chunk(&chunk, "test chunk");
-    vm.interpret(chunk);
+    if args.len() == 1 {
+        repl(&mut vm);
+    } else if args.len() == 2 {
+        run_file(&mut vm, &args[1]);
+    } else {
+        eprintln!("Usage: ./pyrite [path]");
+        process::exit(64);
+    }
 }
