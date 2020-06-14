@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u32)]
 pub enum TokenKind {
     LeftParen,
@@ -58,10 +58,23 @@ pub enum TokenKind {
     Eof,
 }
 
-pub struct Token<'a> {
+impl Default for TokenKind {
+    fn default() -> Self {
+        TokenKind::Eof
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct Token {
     pub kind: TokenKind,
     pub line: usize,
-    pub source: &'a str,
+    pub source: String,
+}
+
+impl Token {
+    pub fn new() -> Self {
+        Default::default()
+    }
 }
 
 fn is_alpha(s: &str) -> bool {
@@ -82,7 +95,7 @@ pub struct Scanner {
 impl Scanner {
     pub fn from_source(source: String) -> Self {
         Scanner {
-            source: source.chars().collect(),
+            source: source,
             start: 0,
             current: 0,
             line: 1,
@@ -191,15 +204,15 @@ impl Scanner {
         Token {
             kind: kind,
             line: self.line,
-            source: &self.source[self.start..self.current],
+            source: String::from(&self.source[self.start..self.current]),
         }
     }
 
-    fn error_token<'a>(&self, message: &'a str) -> Token<'a> {
+    fn error_token(&self, message: &str) -> Token {
         Token {
             kind: TokenKind::Error,
             line: self.line,
-            source: message,
+            source: String::from(message),
         }
     }
 
@@ -228,6 +241,8 @@ impl Scanner {
                         while self.peek() != "\n" && !self.is_at_end() {
                             self.advance();
                         }
+                    } else {
+                        return;
                     }
                 }
                 _ => {

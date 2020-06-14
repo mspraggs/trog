@@ -27,8 +27,11 @@ pub enum InterpretResult {
 }
 
 pub fn interpret(vm: &mut VM, source: String) -> InterpretResult {
-    compiler::compile(source);
-    InterpretResult::Ok
+    let compile_result = compiler::compile(source);
+    match compile_result {
+        Some(chunk) => vm.interpret(chunk),
+        None => InterpretResult::CompileError,
+    }
 }
 
 pub struct VM {
