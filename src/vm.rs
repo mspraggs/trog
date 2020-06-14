@@ -63,11 +63,21 @@ impl VM {
 
     fn run(&mut self) -> InterpretResult {
         macro_rules! binary_op {
-            ($op:tt) => {
+            ($value_type:expr, $op:tt) => {
                 {
-                    let second = self.stack.pop().unwrap();
-                    let first = self.stack.pop().unwrap();
-                    self.stack.push(first $op second);
+                    let second_value = self.stack.pop().unwrap();
+                    let first_value = self.stack.pop().unwrap();
+                    let (first, second) = match (first_value, second_value) {
+                        (
+                            value::Value::Number(first),
+                            value::Value::Number(second)
+                        ) => (first, second),
+                        _ => {
+                            self.runtime_error("Operands must be numbers.");
+                            return InterpretResult::RuntimeError;
+                        }
+                    };
+                    self.stack.push($value_type(first $op second));
                 }
             };
         }
@@ -86,16 +96,45 @@ impl VM {
             match instruction {
                 chunk::OpCode::Constant => {
                     let constant = self.read_constant();
-                    self.stack.push(constant);
                     println!("{}", constant);
+                    self.stack.push(constant);
                 }
-                chunk::OpCode::Add => binary_op!(+),
-                chunk::OpCode::Subtract => binary_op!(-),
-                chunk::OpCode::Multiply => binary_op!(*),
-                chunk::OpCode::Divide => binary_op!(/),
+                chunk::OpCode::Nil => {
+                    self.stack.push(value::Value::None);
+                }
+                chunk::OpCode::True => {
+                    self.stack.push(value::Value::Boolean(true));
+                }
+                chunk::OpCode::False => {
+                    self.stack.push(value::Value::Boolean(false));
+                }
+                chunk::OpCode::Equal => {
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
+                    self.stack.push(value::Value::Boolean(a == b));
+                }
+                chunk::OpCode::Greater => binary_op!(value::Value::Boolean, >),
+                chunk::OpCode::Less => binary_op!(value::Value::Boolean, <),
+                chunk::OpCode::Add => binary_op!(value::Value::Number, +),
+                chunk::OpCode::Subtract => binary_op!(value::Value::Number, -),
+                chunk::OpCode::Multiply => binary_op!(value::Value::Number, *),
+                chunk::OpCode::Divide => binary_op!(value::Value::Number, /),
+                chunk::OpCode::Not => {
+                    let value = self.stack.pop().unwrap();
+                    self.stack
+                        .push(value::Value::Boolean(self.is_falsey(value)));
+                }
                 chunk::OpCode::Negate => {
                     let value = self.stack.pop().unwrap();
-                    self.stack.push(-value);
+                    match value {
+                        value::Value::Number(underlying) => {
+                            self.stack.push(value::Value::Number(-underlying));
+                        }
+                        _ => {
+                            self.runtime_error("Operand must be a number.");
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
                 }
                 chunk::OpCode::Return => {
                     println!("{}", self.stack.pop().unwrap());
@@ -118,5 +157,18 @@ impl VM {
     fn read_constant(&mut self) -> value::Value {
         let idx = self.read_byte();
         self.chunk.constants[idx as usize]
+    }
+
+    fn is_falsey(&self, value: value::Value) -> bool {
+        match value {
+            value::Value::None => true,
+            value::Value::Boolean(underlying) => !underlying,
+            _ => false,
+        }
+    }
+
+    fn runtime_error(&self, message: &str) {
+        eprintln!("{}", message);
+        eprintln!("[line {}] in script", self.chunk.lines[self.ip - 1]);
     }
 }

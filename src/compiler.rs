@@ -176,15 +176,15 @@ impl<'a> Compiler<'a> {
                 },
                 // Bang
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Compiler::unary),
                     infix: None,
                     precedence: Precedence::None,
                 },
                 // BangEqual
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Compiler::binary),
+                    precedence: Precedence::Equality,
                 },
                 // Equal
                 ParseRule {
@@ -195,32 +195,32 @@ impl<'a> Compiler<'a> {
                 // EqualEqual
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Compiler::binary),
+                    precedence: Precedence::Equality,
                 },
                 // Greater
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Compiler::binary),
+                    precedence: Precedence::Comparison,
                 },
                 // GreaterEqual
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Compiler::binary),
+                    precedence: Precedence::Comparison,
                 },
                 // Less
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Compiler::binary),
+                    precedence: Precedence::Comparison,
                 },
                 // LessEqual
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Compiler::binary),
+                    precedence: Precedence::Comparison,
                 },
                 // Identifier
                 ParseRule {
@@ -260,7 +260,7 @@ impl<'a> Compiler<'a> {
                 },
                 // False
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Compiler::literal),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -284,7 +284,7 @@ impl<'a> Compiler<'a> {
                 },
                 // Nil
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Compiler::literal),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -320,7 +320,7 @@ impl<'a> Compiler<'a> {
                 },
                 // True
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Compiler::literal),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -478,10 +478,29 @@ impl<'a> Compiler<'a> {
 
     fn binary(s: &mut Compiler) {
         let operator_kind = s.previous.kind;
-        let rule = s.get_rule(operator_kind);
-        s.parse_precedence(Precedence::from(rule.precedence as usize + 1));
+        let rule_precedence = s.get_rule(operator_kind).precedence;
+        s.parse_precedence(Precedence::from(rule_precedence as usize + 1));
 
         match operator_kind {
+            scanner::TokenKind::BangEqual => s.emit_bytes([
+                chunk::OpCode::Equal as u8,
+                chunk::OpCode::Not as u8,
+            ]),
+            scanner::TokenKind::EqualEqual => {
+                s.emit_byte(chunk::OpCode::Equal as u8)
+            }
+            scanner::TokenKind::Greater => {
+                s.emit_byte(chunk::OpCode::Greater as u8)
+            }
+            scanner::TokenKind::GreaterEqual => s.emit_bytes([
+                chunk::OpCode::Less as u8,
+                chunk::OpCode::Not as u8,
+            ]),
+            scanner::TokenKind::Less => s.emit_byte(chunk::OpCode::Less as u8),
+            scanner::TokenKind::LessEqual => s.emit_bytes([
+                chunk::OpCode::Greater as u8,
+                chunk::OpCode::Not as u8,
+            ]),
             scanner::TokenKind::Plus => s.emit_byte(chunk::OpCode::Add as u8),
             scanner::TokenKind::Minus => {
                 s.emit_byte(chunk::OpCode::Subtract as u8)
@@ -504,12 +523,28 @@ impl<'a> Compiler<'a> {
             scanner::TokenKind::Minus => {
                 s.emit_byte(chunk::OpCode::Negate as u8)
             }
+            scanner::TokenKind::Bang => s.emit_byte(chunk::OpCode::Not as u8),
             _ => {}
         }
     }
 
     fn number(s: &mut Compiler) {
         let value = s.previous.source.as_str().parse::<f64>().unwrap();
-        s.emit_constant(value);
+        s.emit_constant(value::Value::Number(value));
+    }
+
+    fn literal(s: &mut Compiler) {
+        match s.previous.kind {
+            scanner::TokenKind::False => {
+                s.emit_byte(chunk::OpCode::False as u8);
+            }
+            scanner::TokenKind::Nil => {
+                s.emit_byte(chunk::OpCode::Nil as u8);
+            }
+            scanner::TokenKind::True => {
+                s.emit_byte(chunk::OpCode::True as u8);
+            }
+            _ => {}
+        }
     }
 }

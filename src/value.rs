@@ -13,4 +13,33 @@
  * limitations under the License.
  */
 
-pub type Value = f64;
+use std::cmp;
+use std::fmt;
+
+#[derive(Copy, Clone)]
+pub enum Value {
+    Boolean(bool),
+    Number(f64),
+    None,
+}
+
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Number(underlying) => write!(f, "{}", underlying),
+            Value::Boolean(underlying) => write!(f, "{}", underlying),
+            Value::None => write!(f, "nil"),
+        }
+    }
+}
+
+impl cmp::PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Boolean(first), Value::Boolean(second)) => first == second,
+            (Value::Number(first), Value::Number(second)) => first == second,
+            (Value::None, Value::None) => true,
+            _ => false,
+        }
+    }
+}

@@ -38,10 +38,17 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::Constant => {
             constant_instruction("CONSTANT", chunk, offset)
         }
+        chunk::OpCode::Nil => simple_instruction("NIL", offset),
+        chunk::OpCode::True => simple_instruction("TRUE", offset),
+        chunk::OpCode::False => simple_instruction("FALSE", offset),
+        chunk::OpCode::Equal => simple_instruction("EQUAL", offset),
+        chunk::OpCode::Greater => simple_instruction("GREATER", offset),
+        chunk::OpCode::Less => simple_instruction("LESS", offset),
         chunk::OpCode::Add => simple_instruction("ADD", offset),
         chunk::OpCode::Subtract => simple_instruction("SUBTRACT", offset),
         chunk::OpCode::Multiply => simple_instruction("MULTIPLY", offset),
         chunk::OpCode::Divide => simple_instruction("DIVIDE", offset),
+        chunk::OpCode::Not => simple_instruction("NOT", offset),
         chunk::OpCode::Negate => simple_instruction("NEGATE", offset),
         chunk::OpCode::Return => simple_instruction("RETURN", offset),
     }
