@@ -99,31 +99,70 @@ impl VM {
                     println!("{}", constant);
                     self.stack.push(constant);
                 }
+
                 chunk::OpCode::Nil => {
                     self.stack.push(value::Value::None);
                 }
+
                 chunk::OpCode::True => {
                     self.stack.push(value::Value::Boolean(true));
                 }
+
                 chunk::OpCode::False => {
                     self.stack.push(value::Value::Boolean(false));
                 }
+
                 chunk::OpCode::Equal => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
-                    self.stack.push(value::Value::Boolean(a == b));
+                    self.stack
+                        .push(value::Value::Boolean(a.unwrap() == b.unwrap()));
                 }
+
                 chunk::OpCode::Greater => binary_op!(value::Value::Boolean, >),
+
                 chunk::OpCode::Less => binary_op!(value::Value::Boolean, <),
-                chunk::OpCode::Add => binary_op!(value::Value::Number, +),
+
+                chunk::OpCode::Add => {
+                    let b = self.stack.pop();
+                    let a = self.stack.pop();
+                    match (a.unwrap(), b.unwrap()) {
+                        (
+                            value::Value::ObjString(a),
+                            value::Value::ObjString(b),
+                        ) => self.stack.push(value::Value::from(format!(
+                            "{}{}",
+                            a.data, b.data
+                        ))),
+
+                        (
+                            value::Value::Number(a),
+                            value::Value::Number(second),
+                        ) => {
+                            self.stack.push(value::Value::Number(a + second));
+                        }
+
+                        _ => {
+                            self.runtime_error(
+                                "Operands must be two numbers or two strings.",
+                            );
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
+                }
+
                 chunk::OpCode::Subtract => binary_op!(value::Value::Number, -),
+
                 chunk::OpCode::Multiply => binary_op!(value::Value::Number, *),
+
                 chunk::OpCode::Divide => binary_op!(value::Value::Number, /),
+
                 chunk::OpCode::Not => {
                     let value = self.stack.pop().unwrap();
                     self.stack
                         .push(value::Value::Boolean(self.is_falsey(value)));
                 }
+
                 chunk::OpCode::Negate => {
                     let value = self.stack.pop().unwrap();
                     match value {
@@ -136,6 +175,7 @@ impl VM {
                         }
                     }
                 }
+
                 chunk::OpCode::Return => {
                     println!("{}", self.stack.pop().unwrap());
                     return InterpretResult::Ok;
@@ -156,7 +196,7 @@ impl VM {
 
     fn read_constant(&mut self) -> value::Value {
         let idx = self.read_byte();
-        self.chunk.constants[idx as usize]
+        self.chunk.constants[idx as usize].clone()
     }
 
     fn is_falsey(&self, value: value::Value) -> bool {

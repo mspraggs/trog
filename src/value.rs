@@ -15,12 +15,28 @@
 
 use std::cmp;
 use std::fmt;
+use std::rc;
 
-#[derive(Copy, Clone)]
+use crate::object;
+
+#[derive(Clone)]
 pub enum Value {
     Boolean(bool),
     Number(f64),
+    ObjString(rc::Rc<object::ObjString>),
     None,
+}
+
+impl From<String> for Value {
+    fn from(value: String) -> Self {
+        Value::ObjString(rc::Rc::new(object::ObjString::new(value)))
+    }
+}
+
+impl From<&str> for Value {
+    fn from(value: &str) -> Self {
+        Value::from(String::from(value))
+    }
 }
 
 impl fmt::Display for Value {
@@ -28,6 +44,7 @@ impl fmt::Display for Value {
         match self {
             Value::Number(underlying) => write!(f, "{}", underlying),
             Value::Boolean(underlying) => write!(f, "{}", underlying),
+            Value::ObjString(underlying) => write!(f, "{}", underlying.data),
             Value::None => write!(f, "nil"),
         }
     }
@@ -38,6 +55,9 @@ impl cmp::PartialEq for Value {
         match (self, other) {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
+            (Value::ObjString(first), Value::ObjString(second)) => {
+                first == second
+            }
             (Value::None, Value::None) => true,
             _ => false,
         }

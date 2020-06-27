@@ -101,8 +101,8 @@ impl<'a> Compiler<'a> {
         chunk: &'a mut chunk::Chunk,
     ) -> Compiler<'a> {
         Compiler {
-            current: Default::default(),
-            previous: Default::default(),
+            current: scanner::Token::new(),
+            previous: scanner::Token::new(),
             had_error: false,
             panic_mode: false,
             scanner: scanner,
@@ -230,7 +230,7 @@ impl<'a> Compiler<'a> {
                 },
                 // Str
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Compiler::string),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -546,5 +546,11 @@ impl<'a> Compiler<'a> {
             }
             _ => {}
         }
+    }
+
+    fn string(s: &mut Compiler) {
+        s.emit_constant(value::Value::from(
+            &s.previous.source[1..s.previous.source.len() - 1],
+        ));
     }
 }

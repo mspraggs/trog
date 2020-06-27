@@ -21,6 +21,7 @@ use std::process;
 mod chunk;
 mod compiler;
 mod debug;
+mod object;
 mod scanner;
 mod value;
 mod vm;
