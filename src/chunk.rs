@@ -21,6 +21,10 @@ pub enum OpCode {
     Nil,
     True,
     False,
+    Pop,
+    GetGlobal,
+    DefineGlobal,
+    SetGlobal,
     Equal,
     Greater,
     Less,
@@ -30,6 +34,7 @@ pub enum OpCode {
     Divide,
     Not,
     Negate,
+    Print,
     Return,
 }
 
@@ -40,6 +45,12 @@ impl From<u8> for OpCode {
             value if value == OpCode::Nil as u8 => OpCode::Nil,
             value if value == OpCode::True as u8 => OpCode::True,
             value if value == OpCode::False as u8 => OpCode::False,
+            value if value == OpCode::Pop as u8 => OpCode::Pop,
+            value if value == OpCode::GetGlobal as u8 => OpCode::GetGlobal,
+            value if value == OpCode::DefineGlobal as u8 => {
+                OpCode::DefineGlobal
+            }
+            value if value == OpCode::SetGlobal as u8 => OpCode::SetGlobal,
             value if value == OpCode::Equal as u8 => OpCode::Equal,
             value if value == OpCode::Greater as u8 => OpCode::Greater,
             value if value == OpCode::Less as u8 => OpCode::Less,
@@ -49,6 +60,7 @@ impl From<u8> for OpCode {
             value if value == OpCode::Divide as u8 => OpCode::Divide,
             value if value == OpCode::Not as u8 => OpCode::Not,
             value if value == OpCode::Negate as u8 => OpCode::Negate,
+            value if value == OpCode::Print as u8 => OpCode::Print,
             value if value == OpCode::Return as u8 => OpCode::Return,
             _ => panic!("Unknown opcode {}", value),
         }

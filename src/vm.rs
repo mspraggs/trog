@@ -13,9 +13,13 @@
  * limitations under the License.
  */
 
+use std::collections;
+use std::rc;
+
 use crate::chunk;
 use crate::compiler;
 use crate::debug;
+use crate::object;
 use crate::value;
 
 const STACK_MAX: usize = 256;
@@ -38,6 +42,7 @@ pub struct VM {
     ip: usize,
     chunk: chunk::Chunk,
     stack: Vec<value::Value>,
+    globals: collections::HashMap<String, value::Value>,
 }
 
 impl Default for VM {
@@ -46,6 +51,7 @@ impl Default for VM {
             ip: 0,
             chunk: Default::default(),
             stack: Vec::with_capacity(STACK_MAX),
+            globals: Default::default(),
         }
     }
 }
@@ -96,7 +102,6 @@ impl VM {
             match instruction {
                 chunk::OpCode::Constant => {
                     let constant = self.read_constant();
-                    println!("{}", constant);
                     self.stack.push(constant);
                 }
 
@@ -110,6 +115,52 @@ impl VM {
 
                 chunk::OpCode::False => {
                     self.stack.push(value::Value::Boolean(false));
+                }
+
+                chunk::OpCode::Pop => {
+                    self.stack.pop();
+                }
+
+                chunk::OpCode::GetGlobal => {
+                    let name = self.read_string();
+                    match self.globals.get(&name.data) {
+                        Some(value) => {
+                            self.stack.push(value.clone());
+                        }
+                        None => {
+                            let msg =
+                                format!("Undefined variable '{}'.", name.data);
+                            self.runtime_error(msg.as_str());
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
+                }
+
+                chunk::OpCode::DefineGlobal => {
+                    let name = self.read_string();
+                    self.globals.insert(
+                        name.data.clone(),
+                        self.stack.last().unwrap().clone(),
+                    );
+                    self.stack.pop();
+                }
+
+                chunk::OpCode::SetGlobal => {
+                    let name = self.read_string();
+                    let prev = self.globals.insert(
+                        name.data.clone(),
+                        self.stack.last().unwrap().clone(),
+                    );
+                    match prev {
+                        Some(_) => {}
+                        None => {
+                            self.globals.remove(&name.data);
+                            let msg =
+                                format!("Undefined variable '{}'.", name.data);
+                            self.runtime_error(msg.as_str());
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
                 }
 
                 chunk::OpCode::Equal => {
@@ -135,11 +186,8 @@ impl VM {
                             a.data, b.data
                         ))),
 
-                        (
-                            value::Value::Number(a),
-                            value::Value::Number(second),
-                        ) => {
-                            self.stack.push(value::Value::Number(a + second));
+                        (value::Value::Number(a), value::Value::Number(b)) => {
+                            self.stack.push(value::Value::Number(a + b));
                         }
 
                         _ => {
@@ -176,8 +224,11 @@ impl VM {
                     }
                 }
 
-                chunk::OpCode::Return => {
+                chunk::OpCode::Print => {
                     println!("{}", self.stack.pop().unwrap());
+                }
+
+                chunk::OpCode::Return => {
                     return InterpretResult::Ok;
                 }
             }
@@ -197,6 +248,13 @@ impl VM {
     fn read_constant(&mut self) -> value::Value {
         let idx = self.read_byte();
         self.chunk.constants[idx as usize].clone()
+    }
+
+    fn read_string(&mut self) -> rc::Rc<object::ObjString> {
+        match self.read_constant() {
+            value::Value::ObjString(s) => s,
+            _ => panic!("Expected variable name."),
+        }
     }
 
     fn is_falsey(&self, value: value::Value) -> bool {

@@ -60,7 +60,7 @@ impl From<usize> for Precedence {
     }
 }
 
-type ParseFn = fn(&mut Compiler) -> ();
+type ParseFn = fn(&mut Compiler, bool) -> ();
 
 #[derive(Copy, Clone)]
 struct ParseRule {
@@ -224,7 +224,7 @@ impl<'a> Compiler<'a> {
                 },
                 // Identifier
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Compiler::variable),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -354,8 +354,11 @@ impl<'a> Compiler<'a> {
 
     fn compile(&mut self) -> bool {
         self.advance();
-        self.expression();
-        self.consume(scanner::TokenKind::Eof, "Expected end of expression.");
+
+        while !self.match_token(scanner::TokenKind::Eof) {
+            self.declaration();
+        }
+
         self.emit_return();
         !self.had_error
     }
@@ -385,8 +388,98 @@ impl<'a> Compiler<'a> {
         self.error_at_current(message);
     }
 
+    fn check(&self, kind: scanner::TokenKind) -> bool {
+        self.current.kind == kind
+    }
+
+    fn match_token(&mut self, kind: scanner::TokenKind) -> bool {
+        if !self.check(kind) {
+            return false;
+        }
+        self.advance();
+        true
+    }
+
     fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment);
+    }
+
+    fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expected variable name.");
+
+        if self.match_token(scanner::TokenKind::Equal) {
+            self.expression();
+        } else {
+            self.emit_byte(chunk::OpCode::Nil as u8);
+        }
+        self.consume(
+            scanner::TokenKind::SemiColon,
+            "Expected ';' after variable declaration.",
+        );
+
+        self.define_variable(global);
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(
+            scanner::TokenKind::SemiColon,
+            "Expected ';' after expression.",
+        );
+        self.emit_byte(chunk::OpCode::Pop as u8);
+    }
+
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(
+            scanner::TokenKind::SemiColon,
+            "Expected ';' after value.",
+        );
+        self.emit_byte(chunk::OpCode::Print as u8);
+    }
+
+    fn synchronise(&mut self) {
+        self.panic_mode = false;
+
+        while self.current.kind != scanner::TokenKind::Eof {
+            if self.previous.kind == scanner::TokenKind::SemiColon {
+                return;
+            }
+
+            match self.current.kind {
+                scanner::TokenKind::Class => return,
+                scanner::TokenKind::Fun => return,
+                scanner::TokenKind::Var => return,
+                scanner::TokenKind::For => return,
+                scanner::TokenKind::If => return,
+                scanner::TokenKind::While => return,
+                scanner::TokenKind::Print => return,
+                scanner::TokenKind::Return => return,
+                _ => {}
+            }
+
+            self.advance();
+        }
+    }
+
+    fn statement(&mut self) {
+        if self.match_token(scanner::TokenKind::Print) {
+            self.print_statement();
+        } else {
+            self.expression_statement();
+        }
+    }
+
+    fn declaration(&mut self) {
+        if self.match_token(scanner::TokenKind::Var) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
+
+        if self.panic_mode {
+            self.synchronise();
+        }
     }
 
     fn emit_byte(&mut self, byte: u8) {
@@ -420,9 +513,10 @@ impl<'a> Compiler<'a> {
         self.advance();
         let kind = self.previous.kind;
         let prefix_rule = self.get_rule(kind).prefix;
+        let can_assign = precedence as usize <= Precedence::Assignment as usize;
 
         match prefix_rule {
-            Some(ref handler) => handler(self),
+            Some(ref handler) => handler(self, can_assign),
             None => {
                 self.error("Expected expression.");
                 return;
@@ -434,8 +528,26 @@ impl<'a> Compiler<'a> {
         {
             self.advance();
             let infix_rule = self.get_rule(self.previous.kind).infix;
-            infix_rule.unwrap()(self);
+            infix_rule.unwrap()(self, can_assign);
         }
+
+        if can_assign && self.match_token(scanner::TokenKind::Equal) {
+            self.error("Invalid assignment target.");
+        }
+    }
+
+    fn identifier_constant(&mut self, token: &scanner::Token) -> u8 {
+        self.make_constant(value::Value::from(token.source.clone()))
+    }
+
+    fn parse_variable(&mut self, error_message: &str) -> u8 {
+        self.consume(scanner::TokenKind::Identifier, error_message);
+        let name = self.previous.clone();
+        self.identifier_constant(&name)
+    }
+
+    fn define_variable(&mut self, global: u8) {
+        self.emit_bytes([chunk::OpCode::DefineGlobal as u8, global]);
     }
 
     fn get_rule(&self, kind: scanner::TokenKind) -> &ParseRule {
@@ -468,7 +580,17 @@ impl<'a> Compiler<'a> {
         self.had_error = true;
     }
 
-    fn grouping(s: &mut Compiler) {
+    fn named_variable(&mut self, name: scanner::Token, can_assign: bool) {
+        let arg = self.identifier_constant(&name);
+        if can_assign && self.match_token(scanner::TokenKind::Equal) {
+            self.expression();
+            self.emit_bytes([chunk::OpCode::SetGlobal as u8, arg]);
+        } else {
+            self.emit_bytes([chunk::OpCode::GetGlobal as u8, arg]);
+        }
+    }
+
+    fn grouping(s: &mut Compiler, _can_assign: bool) {
         s.expression();
         s.consume(
             scanner::TokenKind::RightParen,
@@ -476,7 +598,7 @@ impl<'a> Compiler<'a> {
         );
     }
 
-    fn binary(s: &mut Compiler) {
+    fn binary(s: &mut Compiler, _can_assign: bool) {
         let operator_kind = s.previous.kind;
         let rule_precedence = s.get_rule(operator_kind).precedence;
         s.parse_precedence(Precedence::from(rule_precedence as usize + 1));
@@ -515,7 +637,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn unary(s: &mut Compiler) {
+    fn unary(s: &mut Compiler, _can_assign: bool) {
         let operator_kind = s.previous.kind;
         s.parse_precedence(Precedence::Unary);
 
@@ -528,12 +650,12 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn number(s: &mut Compiler) {
+    fn number(s: &mut Compiler, _can_assign: bool) {
         let value = s.previous.source.as_str().parse::<f64>().unwrap();
         s.emit_constant(value::Value::Number(value));
     }
 
-    fn literal(s: &mut Compiler) {
+    fn literal(s: &mut Compiler, _can_assign: bool) {
         match s.previous.kind {
             scanner::TokenKind::False => {
                 s.emit_byte(chunk::OpCode::False as u8);
@@ -548,9 +670,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn string(s: &mut Compiler) {
+    fn string(s: &mut Compiler, _can_assign: bool) {
         s.emit_constant(value::Value::from(
             &s.previous.source[1..s.previous.source.len() - 1],
         ));
+    }
+
+    fn variable(s: &mut Compiler, can_assign: bool) {
+        s.named_variable(s.previous.clone(), can_assign);
     }
 }
