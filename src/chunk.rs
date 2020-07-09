@@ -22,6 +22,8 @@ pub enum OpCode {
     True,
     False,
     Pop,
+    GetLocal,
+    SetLocal,
     GetGlobal,
     DefineGlobal,
     SetGlobal,
@@ -46,6 +48,8 @@ impl From<u8> for OpCode {
             value if value == OpCode::True as u8 => OpCode::True,
             value if value == OpCode::False as u8 => OpCode::False,
             value if value == OpCode::Pop as u8 => OpCode::Pop,
+            value if value == OpCode::GetLocal as u8 => OpCode::GetLocal,
+            value if value == OpCode::SetLocal as u8 => OpCode::SetLocal,
             value if value == OpCode::GetGlobal as u8 => OpCode::GetGlobal,
             value if value == OpCode::DefineGlobal as u8 => {
                 OpCode::DefineGlobal

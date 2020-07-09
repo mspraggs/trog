@@ -19,6 +19,7 @@ use std::io::{self, Write};
 use std::process;
 
 mod chunk;
+mod common;
 mod compiler;
 mod debug;
 mod object;

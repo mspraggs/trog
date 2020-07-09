@@ -14,6 +14,7 @@
  */
 
 use crate::chunk;
+use crate::common;
 use crate::debug;
 use crate::scanner;
 use crate::value;
@@ -60,7 +61,7 @@ impl From<usize> for Precedence {
     }
 }
 
-type ParseFn = fn(&mut Compiler, bool) -> ();
+type ParseFn = fn(&mut Parser, bool) -> ();
 
 #[derive(Copy, Clone)]
 struct ParseRule {
@@ -69,13 +70,44 @@ struct ParseRule {
     precedence: Precedence,
 }
 
+#[derive(Default)]
+struct Local {
+    name: scanner::Token,
+    depth: Option<usize>,
+}
+
+#[derive(Default)]
+struct Compiler {
+    locals: Vec<Local>,
+    scope_depth: usize,
+}
+
+impl Compiler {
+    fn new() -> Self {
+        Default::default()
+    }
+
+    fn add_local(&mut self, name: &scanner::Token) -> bool {
+        if self.locals.len() == common::MAX_LOCALS {
+            return false;
+        }
+
+        self.locals.push(Local {
+            name: name.clone(),
+            depth: None,
+        });
+
+        return true;
+    }
+}
+
 pub fn compile(source: String) -> Option<chunk::Chunk> {
     let mut chunk = chunk::Chunk::new();
+    let compiler = Box::new(Compiler::new());
     let mut scanner = scanner::Scanner::from_source(source);
 
-    let mut compiler =
-        Compiler::with_scanner_and_chunk(&mut scanner, &mut chunk);
-    if compiler.compile() {
+    let mut parser = Parser::new(&mut scanner, compiler, &mut chunk);
+    if parser.parse() {
         if cfg!(debug_assertions) {
             debug::disassemble_chunk(&chunk, "code");
         }
@@ -85,32 +117,35 @@ pub fn compile(source: String) -> Option<chunk::Chunk> {
     None
 }
 
-struct Compiler<'a> {
+struct Parser<'a> {
     current: scanner::Token,
     previous: scanner::Token,
     had_error: bool,
     panic_mode: bool,
     scanner: &'a mut scanner::Scanner,
+    compiler: Box<Compiler>,
     chunk: &'a mut chunk::Chunk,
     rules: [ParseRule; 40],
 }
 
-impl<'a> Compiler<'a> {
-    fn with_scanner_and_chunk(
+impl<'a> Parser<'a> {
+    fn new(
         scanner: &'a mut scanner::Scanner,
+        compiler: Box<Compiler>,
         chunk: &'a mut chunk::Chunk,
-    ) -> Compiler<'a> {
-        Compiler {
+    ) -> Parser<'a> {
+        Parser {
             current: scanner::Token::new(),
             previous: scanner::Token::new(),
             had_error: false,
             panic_mode: false,
             scanner: scanner,
+            compiler: compiler,
             chunk: chunk,
             rules: [
                 // LeftParen
                 ParseRule {
-                    prefix: Some(Compiler::grouping),
+                    prefix: Some(Parser::grouping),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -146,14 +181,14 @@ impl<'a> Compiler<'a> {
                 },
                 // Minus
                 ParseRule {
-                    prefix: Some(Compiler::unary),
-                    infix: Some(Compiler::binary),
+                    prefix: Some(Parser::unary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Term,
                 },
                 // Plus
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Term,
                 },
                 // SemiColon
@@ -165,25 +200,25 @@ impl<'a> Compiler<'a> {
                 // Slash
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Factor,
                 },
                 // Star
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Factor,
                 },
                 // Bang
                 ParseRule {
-                    prefix: Some(Compiler::unary),
+                    prefix: Some(Parser::unary),
                     infix: None,
                     precedence: Precedence::None,
                 },
                 // BangEqual
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Equality,
                 },
                 // Equal
@@ -195,48 +230,48 @@ impl<'a> Compiler<'a> {
                 // EqualEqual
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Equality,
                 },
                 // Greater
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Comparison,
                 },
                 // GreaterEqual
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Comparison,
                 },
                 // Less
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Comparison,
                 },
                 // LessEqual
                 ParseRule {
                     prefix: None,
-                    infix: Some(Compiler::binary),
+                    infix: Some(Parser::binary),
                     precedence: Precedence::Comparison,
                 },
                 // Identifier
                 ParseRule {
-                    prefix: Some(Compiler::variable),
+                    prefix: Some(Parser::variable),
                     infix: None,
                     precedence: Precedence::None,
                 },
                 // Str
                 ParseRule {
-                    prefix: Some(Compiler::string),
+                    prefix: Some(Parser::string),
                     infix: None,
                     precedence: Precedence::None,
                 },
                 // Number
                 ParseRule {
-                    prefix: Some(Compiler::number),
+                    prefix: Some(Parser::number),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -260,7 +295,7 @@ impl<'a> Compiler<'a> {
                 },
                 // False
                 ParseRule {
-                    prefix: Some(Compiler::literal),
+                    prefix: Some(Parser::literal),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -284,7 +319,7 @@ impl<'a> Compiler<'a> {
                 },
                 // Nil
                 ParseRule {
-                    prefix: Some(Compiler::literal),
+                    prefix: Some(Parser::literal),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -320,7 +355,7 @@ impl<'a> Compiler<'a> {
                 },
                 // True
                 ParseRule {
-                    prefix: Some(Compiler::literal),
+                    prefix: Some(Parser::literal),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -352,7 +387,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile(&mut self) -> bool {
+    fn parse(&mut self) -> bool {
         self.advance();
 
         while !self.match_token(scanner::TokenKind::Eof) {
@@ -402,6 +437,19 @@ impl<'a> Compiler<'a> {
 
     fn expression(&mut self) {
         self.parse_precedence(Precedence::Assignment);
+    }
+
+    fn block(&mut self) {
+        while !self.check(scanner::TokenKind::RightBrace)
+            && !self.check(scanner::TokenKind::Eof)
+        {
+            self.declaration();
+        }
+
+        self.consume(
+            scanner::TokenKind::RightBrace,
+            "Expected '}' after block.",
+        );
     }
 
     fn var_declaration(&mut self) {
@@ -462,9 +510,37 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn begin_scope(&mut self) {
+        self.compiler.scope_depth += 1;
+    }
+
+    fn end_scope(&mut self) {
+        self.compiler.scope_depth -= 1;
+
+        loop {
+            match self.compiler.locals.last() {
+                Some(local) => {
+                    if local.depth.unwrap() <= self.compiler.scope_depth {
+                        break;
+                    }
+                }
+                None => {
+                    break;
+                }
+            }
+
+            self.emit_byte(chunk::OpCode::Pop as u8);
+            self.compiler.locals.pop();
+        }
+    }
+
     fn statement(&mut self) {
         if self.match_token(scanner::TokenKind::Print) {
             self.print_statement();
+        } else if self.match_token(scanner::TokenKind::LeftBrace) {
+            self.begin_scope();
+            self.block();
+            self.end_scope();
         } else {
             self.expression_statement();
         }
@@ -540,13 +616,63 @@ impl<'a> Compiler<'a> {
         self.make_constant(value::Value::from(token.source.clone()))
     }
 
+    fn declare_variable(&mut self) {
+        if self.compiler.scope_depth == 0 {
+            return;
+        }
+
+        let mut error_locations: Vec<scanner::Token> = Vec::new();
+
+        for local in self.compiler.locals.iter().rev() {
+            match local.depth {
+                Some(value) => {
+                    if value < self.compiler.scope_depth {
+                        break;
+                    }
+                }
+                None => {}
+            }
+
+            if self.previous.source == local.name.source {
+                error_locations.push(self.previous.clone());
+            }
+        }
+
+        for token in error_locations {
+            self.error_at(
+                token,
+                "Variable with this name already declared in this scope.",
+            );
+        }
+
+        if !self.compiler.add_local(&self.previous) {
+            self.error("Too many variables in function.");
+        }
+    }
+
     fn parse_variable(&mut self, error_message: &str) -> u8 {
         self.consume(scanner::TokenKind::Identifier, error_message);
+
+        self.declare_variable();
+        if self.compiler.scope_depth > 0 {
+            return 0;
+        }
+
         let name = self.previous.clone();
         self.identifier_constant(&name)
     }
 
+    fn mark_initialised(&mut self) {
+        self.compiler.locals.last_mut().unwrap().depth =
+            Some(self.compiler.scope_depth);
+    }
+
     fn define_variable(&mut self, global: u8) {
+        if self.compiler.scope_depth > 0 {
+            self.mark_initialised();
+            return;
+        }
+
         self.emit_bytes([chunk::OpCode::DefineGlobal as u8, global]);
     }
 
@@ -580,17 +706,46 @@ impl<'a> Compiler<'a> {
         self.had_error = true;
     }
 
+    fn resolve_local(&mut self, name: &scanner::Token) -> Option<u8> {
+        for (i, local) in self.compiler.locals.iter().enumerate().rev() {
+            if local.name.source == name.source {
+                if local.depth.is_none() {
+                    self.error("Cannot read variable in its own initialiser.");
+                }
+                return Some(i as u8);
+            }
+        }
+
+        None
+    }
+
     fn named_variable(&mut self, name: scanner::Token, can_assign: bool) {
-        let arg = self.identifier_constant(&name);
+        let (get_op, set_op, arg): (chunk::OpCode, chunk::OpCode, u8) =
+            (|| {
+                if let Some(result) = self.resolve_local(&name) {
+                    return (
+                        chunk::OpCode::GetLocal,
+                        chunk::OpCode::SetLocal,
+                        result,
+                    );
+                } else {
+                    return (
+                        chunk::OpCode::GetGlobal,
+                        chunk::OpCode::SetGlobal,
+                        self.identifier_constant(&name),
+                    );
+                }
+            })();
+
         if can_assign && self.match_token(scanner::TokenKind::Equal) {
             self.expression();
-            self.emit_bytes([chunk::OpCode::SetGlobal as u8, arg]);
+            self.emit_bytes([set_op as u8, arg]);
         } else {
-            self.emit_bytes([chunk::OpCode::GetGlobal as u8, arg]);
+            self.emit_bytes([get_op as u8, arg]);
         }
     }
 
-    fn grouping(s: &mut Compiler, _can_assign: bool) {
+    fn grouping(s: &mut Parser, _can_assign: bool) {
         s.expression();
         s.consume(
             scanner::TokenKind::RightParen,
@@ -598,7 +753,7 @@ impl<'a> Compiler<'a> {
         );
     }
 
-    fn binary(s: &mut Compiler, _can_assign: bool) {
+    fn binary(s: &mut Parser, _can_assign: bool) {
         let operator_kind = s.previous.kind;
         let rule_precedence = s.get_rule(operator_kind).precedence;
         s.parse_precedence(Precedence::from(rule_precedence as usize + 1));
@@ -637,7 +792,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn unary(s: &mut Compiler, _can_assign: bool) {
+    fn unary(s: &mut Parser, _can_assign: bool) {
         let operator_kind = s.previous.kind;
         s.parse_precedence(Precedence::Unary);
 
@@ -650,12 +805,12 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn number(s: &mut Compiler, _can_assign: bool) {
+    fn number(s: &mut Parser, _can_assign: bool) {
         let value = s.previous.source.as_str().parse::<f64>().unwrap();
         s.emit_constant(value::Value::Number(value));
     }
 
-    fn literal(s: &mut Compiler, _can_assign: bool) {
+    fn literal(s: &mut Parser, _can_assign: bool) {
         match s.previous.kind {
             scanner::TokenKind::False => {
                 s.emit_byte(chunk::OpCode::False as u8);
@@ -670,13 +825,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn string(s: &mut Compiler, _can_assign: bool) {
+    fn string(s: &mut Parser, _can_assign: bool) {
         s.emit_constant(value::Value::from(
             &s.previous.source[1..s.previous.source.len() - 1],
         ));
     }
 
-    fn variable(s: &mut Compiler, can_assign: bool) {
+    fn variable(s: &mut Parser, can_assign: bool) {
         s.named_variable(s.previous.clone(), can_assign);
     }
 }

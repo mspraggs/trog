@@ -121,6 +121,18 @@ impl VM {
                     self.stack.pop();
                 }
 
+                chunk::OpCode::GetLocal => {
+                    let slot = self.read_byte();
+                    let value = self.stack[slot as usize].clone();
+                    self.stack.push(value);
+                }
+
+                chunk::OpCode::SetLocal => {
+                    let slot = self.read_byte();
+                    self.stack[slot as usize] =
+                        (*self.stack.last().unwrap()).clone();
+                }
+
                 chunk::OpCode::GetGlobal => {
                     let name = self.read_string();
                     match self.globals.get(&name.data) {
