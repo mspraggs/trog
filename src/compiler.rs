@@ -278,8 +278,8 @@ impl<'a> Parser<'a> {
                 // And
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Parser::and),
+                    precedence: Precedence::And,
                 },
                 // Class
                 ParseRule {
@@ -326,8 +326,8 @@ impl<'a> Parser<'a> {
                 // Or
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Parser::or),
+                    precedence: Precedence::Or,
                 },
                 // Print
                 ParseRule {
@@ -477,6 +477,89 @@ impl<'a> Parser<'a> {
         self.emit_byte(chunk::OpCode::Pop as u8);
     }
 
+    fn for_statement(&mut self) {
+        self.begin_scope();
+
+        self.consume(
+            scanner::TokenKind::LeftParen,
+            "Expected '(' after 'for'.",
+        );
+        if self.match_token(scanner::TokenKind::SemiColon) {
+            // No initialiser
+        } else if self.match_token(scanner::TokenKind::Var) {
+            self.var_declaration();
+        } else {
+            self.expression_statement();
+        }
+
+        let mut loop_start = self.chunk.code.len();
+
+        let mut exit_jump: Option<usize> = None;
+
+        if !self.match_token(scanner::TokenKind::SemiColon) {
+            self.expression();
+            self.consume(
+                scanner::TokenKind::SemiColon,
+                "Expected ';' after loop condition.",
+            );
+
+            // We'll need to jump out of the loop if the condition is false, so
+            // we add a conditional jump here.
+            exit_jump = Some(self.emit_jump(chunk::OpCode::JumpIfFalse));
+            self.emit_byte(chunk::OpCode::Pop as u8);
+        }
+
+        if !self.match_token(scanner::TokenKind::RightParen) {
+            let body_jump = self.emit_jump(chunk::OpCode::Jump);
+
+            let increment_start = self.chunk.code.len();
+            self.expression();
+            self.emit_byte(chunk::OpCode::Pop as u8);
+            self.consume(
+                scanner::TokenKind::RightParen,
+                "Expected ')' after for clauses.",
+            );
+
+            self.emit_loop(loop_start);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+        self.statement();
+
+        self.emit_loop(loop_start);
+
+        if let Some(offset) = exit_jump {
+            self.patch_jump(offset);
+            self.emit_byte(chunk::OpCode::Pop as u8);
+        }
+
+        self.end_scope();
+    }
+
+    fn if_statement(&mut self) {
+        self.consume(scanner::TokenKind::LeftParen, "Expected '(' after 'if'.");
+        self.expression();
+        self.consume(
+            scanner::TokenKind::RightParen,
+            "Expected ')' after condition.",
+        );
+
+        let then_jump = self.emit_jump(chunk::OpCode::JumpIfFalse);
+        self.emit_byte(chunk::OpCode::Pop as u8);
+        self.statement();
+
+        let else_jump = self.emit_jump(chunk::OpCode::Jump);
+
+        self.patch_jump(then_jump);
+        self.emit_byte(chunk::OpCode::Pop as u8);
+
+        if self.match_token(scanner::TokenKind::Else) {
+            self.statement();
+        }
+        self.patch_jump(else_jump);
+    }
+
     fn print_statement(&mut self) {
         self.expression();
         self.consume(
@@ -484,6 +567,30 @@ impl<'a> Parser<'a> {
             "Expected ';' after value.",
         );
         self.emit_byte(chunk::OpCode::Print as u8);
+    }
+
+    fn while_statement(&mut self) {
+        let loop_start = self.chunk.code.len();
+
+        self.consume(
+            scanner::TokenKind::LeftParen,
+            "'Expected '(' after 'while'.",
+        );
+        self.expression();
+        self.consume(
+            scanner::TokenKind::RightParen,
+            "'Expected ')' after expression.",
+        );
+
+        let exit_jump = self.emit_jump(chunk::OpCode::JumpIfFalse);
+
+        self.emit_byte(chunk::OpCode::Pop as u8);
+        self.statement();
+
+        self.emit_loop(loop_start);
+
+        self.patch_jump(exit_jump);
+        self.emit_byte(chunk::OpCode::Pop as u8);
     }
 
     fn synchronise(&mut self) {
@@ -537,6 +644,12 @@ impl<'a> Parser<'a> {
     fn statement(&mut self) {
         if self.match_token(scanner::TokenKind::Print) {
             self.print_statement();
+        } else if self.match_token(scanner::TokenKind::For) {
+            self.for_statement();
+        } else if self.match_token(scanner::TokenKind::If) {
+            self.if_statement();
+        } else if self.match_token(scanner::TokenKind::While) {
+            self.while_statement();
         } else if self.match_token(scanner::TokenKind::LeftBrace) {
             self.begin_scope();
             self.block();
@@ -567,6 +680,24 @@ impl<'a> Parser<'a> {
         self.emit_byte(bytes[1]);
     }
 
+    fn emit_loop(&mut self, loop_start: usize) {
+        self.emit_byte(chunk::OpCode::Loop as u8);
+
+        let offset = self.chunk.code.len() - loop_start + 2;
+        if offset > common::MAX_JUMP_SIZE {
+            self.error("Loop body too large.");
+        }
+
+        self.emit_byte(((offset >> 8) & 0xff) as u8);
+        self.emit_byte((offset & 0xff) as u8);
+    }
+
+    fn emit_jump(&mut self, instruction: chunk::OpCode) -> usize {
+        self.emit_byte(instruction as u8);
+        self.emit_bytes([0xff, 0xff]);
+        self.chunk.code.len() - 2
+    }
+
     fn emit_return(&mut self) {
         self.emit_byte(chunk::OpCode::Return as u8);
     }
@@ -583,6 +714,17 @@ impl<'a> Parser<'a> {
     fn emit_constant(&mut self, value: value::Value) {
         let constant = self.make_constant(value);
         self.emit_bytes([chunk::OpCode::Constant as u8, constant]);
+    }
+
+    fn patch_jump(&mut self, offset: usize) {
+        let jump = self.chunk.code.len() - offset - 2;
+
+        if jump > common::MAX_JUMP_SIZE {
+            self.error("Too much code to jump over.");
+        }
+
+        self.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
+        self.chunk.code[offset + 1] = (jump & 0xff) as u8;
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -833,5 +975,25 @@ impl<'a> Parser<'a> {
 
     fn variable(s: &mut Parser, can_assign: bool) {
         s.named_variable(s.previous.clone(), can_assign);
+    }
+
+    fn and(s: &mut Parser, _can_assign: bool) {
+        let end_jump = s.emit_jump(chunk::OpCode::JumpIfFalse);
+
+        s.emit_byte(chunk::OpCode::Pop as u8);
+        s.parse_precedence(Precedence::And);
+
+        s.patch_jump(end_jump);
+    }
+
+    fn or(s: &mut Parser, _can_assign: bool) {
+        let else_jump = s.emit_jump(chunk::OpCode::JumpIfFalse);
+        let end_jump = s.emit_jump(chunk::OpCode::Jump);
+
+        s.patch_jump(else_jump);
+        s.emit_byte(chunk::OpCode::Pop as u8);
+
+        s.parse_precedence(Precedence::Or);
+        s.patch_jump(end_jump);
     }
 }

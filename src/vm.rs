@@ -240,6 +240,23 @@ impl VM {
                     println!("{}", self.stack.pop().unwrap());
                 }
 
+                chunk::OpCode::Jump => {
+                    let offset = self.read_short();
+                    self.ip += offset as usize;
+                }
+
+                chunk::OpCode::JumpIfFalse => {
+                    let offset = self.read_short();
+                    if self.is_falsey((*self.stack.last().unwrap()).clone()) {
+                        self.ip += offset as usize;
+                    }
+                }
+
+                chunk::OpCode::Loop => {
+                    let offset = self.read_short();
+                    self.ip -= offset as usize;
+                }
+
                 chunk::OpCode::Return => {
                     return InterpretResult::Ok;
                 }
@@ -251,6 +268,13 @@ impl VM {
         let ret = self.chunk.code[self.ip];
         self.ip += 1;
         return ret;
+    }
+
+    fn read_short(&mut self) -> u16 {
+        let ret = ((self.chunk.code[self.ip] as u16) << 8)
+            | self.chunk.code[self.ip + 1] as u16;
+        self.ip += 2;
+        ret
     }
 
     fn read_opcode(&mut self) -> chunk::OpCode {

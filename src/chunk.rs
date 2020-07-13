@@ -37,6 +37,9 @@ pub enum OpCode {
     Not,
     Negate,
     Print,
+    Jump,
+    JumpIfFalse,
+    Loop,
     Return,
 }
 
@@ -65,6 +68,9 @@ impl From<u8> for OpCode {
             value if value == OpCode::Not as u8 => OpCode::Not,
             value if value == OpCode::Negate as u8 => OpCode::Negate,
             value if value == OpCode::Print as u8 => OpCode::Print,
+            value if value == OpCode::Jump as u8 => OpCode::Jump,
+            value if value == OpCode::JumpIfFalse as u8 => OpCode::JumpIfFalse,
+            value if value == OpCode::Loop as u8 => OpCode::Loop,
             value if value == OpCode::Return as u8 => OpCode::Return,
             _ => panic!("Unknown opcode {}", value),
         }

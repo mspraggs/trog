@@ -14,3 +14,4 @@
  */
 
 pub const MAX_LOCALS: usize = u8::MAX as usize + 1;
+pub const MAX_JUMP_SIZE: usize = u16::MAX as usize + 1;
