@@ -13,9 +13,14 @@
  * limitations under the License.
  */
 
+use std::cell;
+use std::mem;
+use std::rc;
+
 use crate::chunk;
 use crate::common;
 use crate::debug;
+use crate::object;
 use crate::scanner;
 use crate::value;
 
@@ -61,6 +66,18 @@ impl From<usize> for Precedence {
     }
 }
 
+#[derive(PartialEq)]
+enum FunctionKind {
+    Function,
+    Script,
+}
+
+impl Default for FunctionKind {
+    fn default() -> Self {
+        FunctionKind::Script
+    }
+}
+
 type ParseFn = fn(&mut Parser, bool) -> ();
 
 #[derive(Copy, Clone)]
@@ -78,17 +95,34 @@ struct Local {
 
 #[derive(Default)]
 struct Compiler {
+    enclosing: Option<Box<Compiler>>,
+    function: Box<object::ObjFunction>,
+    kind: FunctionKind,
+
     locals: Vec<Local>,
     scope_depth: usize,
 }
 
 impl Compiler {
-    fn new() -> Self {
-        Default::default()
+    fn new(
+        kind: FunctionKind,
+        name: String,
+        enclosing: Option<Box<Compiler>>,
+    ) -> Self {
+        Compiler {
+            enclosing: enclosing,
+            function: Box::new(object::ObjFunction::new(name)),
+            kind: kind,
+            locals: vec![Local {
+                name: scanner::Token::new(),
+                depth: Some(0),
+            }],
+            scope_depth: 0,
+        }
     }
 
     fn add_local(&mut self, name: &scanner::Token) -> bool {
-        if self.locals.len() == common::MAX_LOCALS {
+        if self.locals.len() == common::LOCALS_MAX {
             return false;
         }
 
@@ -101,20 +135,11 @@ impl Compiler {
     }
 }
 
-pub fn compile(source: String) -> Option<chunk::Chunk> {
-    let mut chunk = chunk::Chunk::new();
-    let compiler = Box::new(Compiler::new());
+pub fn compile(source: String) -> Option<Box<object::ObjFunction>> {
     let mut scanner = scanner::Scanner::from_source(source);
 
-    let mut parser = Parser::new(&mut scanner, compiler, &mut chunk);
-    if parser.parse() {
-        if cfg!(debug_assertions) {
-            debug::disassemble_chunk(&chunk, "code");
-        }
-        return Some(chunk);
-    }
-
-    None
+    let mut parser = Parser::new(&mut scanner);
+    parser.parse()
 }
 
 struct Parser<'a> {
@@ -124,30 +149,28 @@ struct Parser<'a> {
     panic_mode: bool,
     scanner: &'a mut scanner::Scanner,
     compiler: Box<Compiler>,
-    chunk: &'a mut chunk::Chunk,
     rules: [ParseRule; 40],
 }
 
 impl<'a> Parser<'a> {
-    fn new(
-        scanner: &'a mut scanner::Scanner,
-        compiler: Box<Compiler>,
-        chunk: &'a mut chunk::Chunk,
-    ) -> Parser<'a> {
+    fn new(scanner: &'a mut scanner::Scanner) -> Parser<'a> {
         Parser {
             current: scanner::Token::new(),
             previous: scanner::Token::new(),
             had_error: false,
             panic_mode: false,
             scanner: scanner,
-            compiler: compiler,
-            chunk: chunk,
+            compiler: Box::new(Compiler::new(
+                FunctionKind::Script,
+                String::from(""),
+                None,
+            )),
             rules: [
                 // LeftParen
                 ParseRule {
                     prefix: Some(Parser::grouping),
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Parser::call),
+                    precedence: Precedence::Call,
                 },
                 // RightParen
                 ParseRule {
@@ -387,15 +410,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse(&mut self) -> bool {
+    fn parse(&mut self) -> Option<Box<object::ObjFunction>> {
         self.advance();
 
         while !self.match_token(scanner::TokenKind::Eof) {
             self.declaration();
         }
 
-        self.emit_return();
-        !self.had_error
+        if self.had_error {
+            return None;
+        }
+
+        Some(self.finalise_compiler())
     }
 
     fn advance(&mut self) {
@@ -452,6 +478,87 @@ impl<'a> Parser<'a> {
         );
     }
 
+    fn new_compiler(&mut self, kind: FunctionKind) {
+        let mut enclosing: Box<Compiler> = Default::default();
+        std::mem::swap(&mut enclosing, &mut self.compiler);
+        self.compiler = Box::new(Compiler::new(
+            kind,
+            self.previous.source.clone(),
+            Some(enclosing),
+        ));
+    }
+
+    fn finalise_compiler(&mut self) -> Box<object::ObjFunction> {
+        self.emit_return();
+
+        if cfg!(debug_assertions) && !self.had_error {
+            let func_name = format!("{}", self.compiler.function);
+            debug::disassemble_chunk(
+                &self.compiler.function.chunk,
+                func_name.as_str(),
+            );
+        }
+
+        let mut function: Box<object::ObjFunction> = Default::default();
+        mem::swap(&mut function, &mut self.compiler.function);
+        if self.compiler.enclosing.is_some() {
+            self.compiler = self.compiler.enclosing.take().unwrap();
+        }
+
+        function
+    }
+
+    fn function(&mut self, kind: FunctionKind) {
+        self.new_compiler(kind);
+        self.begin_scope();
+
+        self.consume(
+            scanner::TokenKind::LeftParen,
+            "Expected '(' after function name.",
+        );
+        if !self.check(scanner::TokenKind::RightParen) {
+            loop {
+                self.compiler.function.arity += 1;
+                if self.compiler.function.arity > 255 {
+                    self.error_at_current(
+                        "Cannot have more than 255 parameters.",
+                    );
+                }
+
+                let param_constant =
+                    self.parse_variable("Expected parameter name.");
+                self.define_variable(param_constant);
+
+                if !self.match_token(scanner::TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(
+            scanner::TokenKind::RightParen,
+            "Expected ')' after parameters.",
+        );
+
+        self.consume(
+            scanner::TokenKind::LeftBrace,
+            "Expected '{' before function body.",
+        );
+        self.block();
+
+        let function =
+            rc::Rc::new(cell::RefCell::new(*self.finalise_compiler()));
+
+        let constant = self.make_constant(value::Value::ObjFunction(function));
+        self.emit_bytes([chunk::OpCode::Constant as u8, constant]);
+    }
+
+    fn fun_declaration(&mut self) {
+        let global = self.parse_variable("Expected function name.");
+        self.mark_initialised();
+        self.function(FunctionKind::Function);
+        self.define_variable(global);
+    }
+
     fn var_declaration(&mut self) {
         let global = self.parse_variable("Expected variable name.");
 
@@ -492,7 +599,7 @@ impl<'a> Parser<'a> {
             self.expression_statement();
         }
 
-        let mut loop_start = self.chunk.code.len();
+        let mut loop_start = self.chunk().code.len();
 
         let mut exit_jump: Option<usize> = None;
 
@@ -512,7 +619,7 @@ impl<'a> Parser<'a> {
         if !self.match_token(scanner::TokenKind::RightParen) {
             let body_jump = self.emit_jump(chunk::OpCode::Jump);
 
-            let increment_start = self.chunk.code.len();
+            let increment_start = self.chunk().code.len();
             self.expression();
             self.emit_byte(chunk::OpCode::Pop as u8);
             self.consume(
@@ -569,8 +676,24 @@ impl<'a> Parser<'a> {
         self.emit_byte(chunk::OpCode::Print as u8);
     }
 
+    fn return_statement(&mut self) {
+        if self.compiler.kind == FunctionKind::Script {
+            self.error("Cannot return from top-level code.");
+        }
+        if self.match_token(scanner::TokenKind::SemiColon) {
+            self.emit_return();
+        } else {
+            self.expression();
+            self.consume(
+                scanner::TokenKind::SemiColon,
+                "Expected ';' after return value.",
+            );
+            self.emit_byte(chunk::OpCode::Return as u8);
+        }
+    }
+
     fn while_statement(&mut self) {
-        let loop_start = self.chunk.code.len();
+        let loop_start = self.chunk().code.len();
 
         self.consume(
             scanner::TokenKind::LeftParen,
@@ -648,6 +771,8 @@ impl<'a> Parser<'a> {
             self.for_statement();
         } else if self.match_token(scanner::TokenKind::If) {
             self.if_statement();
+        } else if self.match_token(scanner::TokenKind::Return) {
+            self.return_statement();
         } else if self.match_token(scanner::TokenKind::While) {
             self.while_statement();
         } else if self.match_token(scanner::TokenKind::LeftBrace) {
@@ -660,7 +785,9 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.match_token(scanner::TokenKind::Var) {
+        if self.match_token(scanner::TokenKind::Fun) {
+            self.fun_declaration();
+        } else if self.match_token(scanner::TokenKind::Var) {
             self.var_declaration();
         } else {
             self.statement();
@@ -672,7 +799,8 @@ impl<'a> Parser<'a> {
     }
 
     fn emit_byte(&mut self, byte: u8) {
-        self.chunk.write(byte, self.previous.line as i32);
+        let line = self.previous.line as i32;
+        self.chunk().write(byte, line);
     }
 
     fn emit_bytes(&mut self, bytes: [u8; 2]) {
@@ -683,8 +811,8 @@ impl<'a> Parser<'a> {
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_byte(chunk::OpCode::Loop as u8);
 
-        let offset = self.chunk.code.len() - loop_start + 2;
-        if offset > common::MAX_JUMP_SIZE {
+        let offset = self.chunk().code.len() - loop_start + 2;
+        if offset > common::JUMP_SIZE_MAX {
             self.error("Loop body too large.");
         }
 
@@ -695,15 +823,16 @@ impl<'a> Parser<'a> {
     fn emit_jump(&mut self, instruction: chunk::OpCode) -> usize {
         self.emit_byte(instruction as u8);
         self.emit_bytes([0xff, 0xff]);
-        self.chunk.code.len() - 2
+        self.chunk().code.len() - 2
     }
 
     fn emit_return(&mut self) {
+        self.emit_byte(chunk::OpCode::Nil as u8);
         self.emit_byte(chunk::OpCode::Return as u8);
     }
 
     fn make_constant(&mut self, value: value::Value) -> u8 {
-        let constant = self.chunk.add_constant(value);
+        let constant = self.chunk().add_constant(value);
         if constant > u8::MAX as usize {
             self.error("Too many constants in one chunk.");
             return 0;
@@ -717,14 +846,14 @@ impl<'a> Parser<'a> {
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = self.chunk.code.len() - offset - 2;
+        let jump = self.chunk().code.len() - offset - 2;
 
-        if jump > common::MAX_JUMP_SIZE {
+        if jump > common::JUMP_SIZE_MAX {
             self.error("Too much code to jump over.");
         }
 
-        self.chunk.code[offset] = ((jump >> 8) & 0xff) as u8;
-        self.chunk.code[offset + 1] = (jump & 0xff) as u8;
+        self.chunk().code[offset] = ((jump >> 8) & 0xff) as u8;
+        self.chunk().code[offset + 1] = (jump & 0xff) as u8;
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -805,6 +934,9 @@ impl<'a> Parser<'a> {
     }
 
     fn mark_initialised(&mut self) {
+        if self.compiler.scope_depth == 0 {
+            return;
+        }
         self.compiler.locals.last_mut().unwrap().depth =
             Some(self.compiler.scope_depth);
     }
@@ -816,6 +948,29 @@ impl<'a> Parser<'a> {
         }
 
         self.emit_bytes([chunk::OpCode::DefineGlobal as u8, global]);
+    }
+
+    fn argument_list(&mut self) -> u8 {
+        let mut arg_count: u8 = 0;
+        if !self.check(scanner::TokenKind::RightParen) {
+            loop {
+                self.expression();
+                if arg_count == 255 {
+                    self.error("Cannot have more than 255 arguments.");
+                }
+                arg_count += 1;
+
+                if !self.match_token(scanner::TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+
+        self.consume(
+            scanner::TokenKind::RightParen,
+            "Expected ')' after arguments.",
+        );
+        arg_count
     }
 
     fn get_rule(&self, kind: scanner::TokenKind) -> &ParseRule {
@@ -859,6 +1014,10 @@ impl<'a> Parser<'a> {
         }
 
         None
+    }
+
+    fn chunk(&mut self) -> &mut chunk::Chunk {
+        &mut self.compiler.function.chunk
     }
 
     fn named_variable(&mut self, name: scanner::Token, can_assign: bool) {
@@ -932,6 +1091,11 @@ impl<'a> Parser<'a> {
             }
             _ => {}
         }
+    }
+
+    fn call(s: &mut Parser, _can_assign: bool) {
+        let arg_count = s.argument_list();
+        s.emit_bytes([chunk::OpCode::Call as u8, arg_count]);
     }
 
     fn unary(s: &mut Parser, _can_assign: bool) {

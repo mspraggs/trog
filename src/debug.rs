@@ -68,6 +68,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
             jump_instruction("JUMP_IF_FALSE", 1, chunk, offset)
         }
         chunk::OpCode::Loop => jump_instruction("LOOP", 1, chunk, offset),
+        chunk::OpCode::Call => byte_instruction("CALL", chunk, offset),
         chunk::OpCode::Return => simple_instruction("RETURN", offset),
     }
 }

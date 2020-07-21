@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+use std::cell;
 use std::cmp;
 use std::fmt;
 use std::rc;
@@ -23,13 +24,33 @@ use crate::object;
 pub enum Value {
     Boolean(bool),
     Number(f64),
-    ObjString(rc::Rc<object::ObjString>),
+    ObjString(rc::Rc<cell::RefCell<object::ObjString>>),
+    ObjFunction(rc::Rc<cell::RefCell<object::ObjFunction>>),
+    ObjNative(rc::Rc<cell::RefCell<object::ObjNative>>),
     None,
+}
+
+impl Value {
+    pub fn as_bool(&self) -> bool {
+        match self {
+            Value::None => true,
+            Value::Boolean(underlying) => !underlying,
+            _ => false,
+        }
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::Number(value)
+    }
 }
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Value::ObjString(rc::Rc::new(object::ObjString::new(value)))
+        Value::ObjString(rc::Rc::new(cell::RefCell::new(
+            object::ObjString::new(value),
+        )))
     }
 }
 
@@ -39,12 +60,26 @@ impl From<&str> for Value {
     }
 }
 
+impl From<object::NativeFn> for Value {
+    fn from(value: object::NativeFn) -> Self {
+        Value::ObjNative(rc::Rc::new(cell::RefCell::new(
+            object::ObjNative::new(value),
+        )))
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Value::Number(underlying) => write!(f, "{}", underlying),
             Value::Boolean(underlying) => write!(f, "{}", underlying),
-            Value::ObjString(underlying) => write!(f, "{}", underlying.data),
+            Value::ObjString(underlying) => {
+                write!(f, "{}", underlying.borrow().data)
+            }
+            Value::ObjFunction(underlying) => {
+                write!(f, "{}", underlying.borrow())
+            }
+            Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::None => write!(f, "nil"),
         }
     }

@@ -40,6 +40,7 @@ pub enum OpCode {
     Jump,
     JumpIfFalse,
     Loop,
+    Call,
     Return,
 }
 
@@ -71,13 +72,14 @@ impl From<u8> for OpCode {
             value if value == OpCode::Jump as u8 => OpCode::Jump,
             value if value == OpCode::JumpIfFalse as u8 => OpCode::JumpIfFalse,
             value if value == OpCode::Loop as u8 => OpCode::Loop,
+            value if value == OpCode::Call as u8 => OpCode::Call,
             value if value == OpCode::Return as u8 => OpCode::Return,
             _ => panic!("Unknown opcode {}", value),
         }
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Chunk {
     pub code: Vec<u8>,
     pub lines: Vec<i32>,

@@ -27,7 +27,7 @@ mod scanner;
 mod value;
 mod vm;
 
-fn repl(vm: &mut vm::VM) {
+fn repl(vm: &mut vm::Vm) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -45,7 +45,7 @@ fn repl(vm: &mut vm::VM) {
     }
 }
 
-fn run_file(vm: &mut vm::VM, path: &String) {
+fn run_file(vm: &mut vm::Vm, path: &String) {
     let source = fs::read_to_string(path);
     let result = match source {
         Ok(contents) => vm::interpret(vm, contents),
@@ -66,7 +66,7 @@ fn run_file(vm: &mut vm::VM, path: &String) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut vm = vm::VM::new();
+    let mut vm = vm::Vm::new();
 
     if args.len() == 1 {
         repl(&mut vm);
