@@ -13,9 +13,7 @@
  * limitations under the License.
  */
 
-use std::cell;
 use std::mem;
-use std::rc;
 
 use crate::chunk;
 use crate::common;
@@ -43,24 +41,16 @@ impl From<usize> for Precedence {
     fn from(value: usize) -> Self {
         match value {
             value if value == Precedence::None as usize => Precedence::None,
-            value if value == Precedence::Assignment as usize => {
-                Precedence::Assignment
-            }
+            value if value == Precedence::Assignment as usize => Precedence::Assignment,
             value if value == Precedence::Or as usize => Precedence::Or,
             value if value == Precedence::And as usize => Precedence::And,
-            value if value == Precedence::Equality as usize => {
-                Precedence::Equality
-            }
-            value if value == Precedence::Comparison as usize => {
-                Precedence::Comparison
-            }
+            value if value == Precedence::Equality as usize => Precedence::Equality,
+            value if value == Precedence::Comparison as usize => Precedence::Comparison,
             value if value == Precedence::Term as usize => Precedence::Term,
             value if value == Precedence::Factor as usize => Precedence::Factor,
             value if value == Precedence::Unary as usize => Precedence::Unary,
             value if value == Precedence::Call as usize => Precedence::Call,
-            value if value == Precedence::Primary as usize => {
-                Precedence::Primary
-            }
+            value if value == Precedence::Primary as usize => Precedence::Primary,
             _ => panic!("Unknown precedence {}", value),
         }
     }
@@ -91,6 +81,13 @@ struct ParseRule {
 struct Local {
     name: scanner::Token,
     depth: Option<usize>,
+    is_captured: bool,
+}
+
+#[derive(Default)]
+struct Upvalue {
+    index: u8,
+    is_local: bool,
 }
 
 #[derive(Default)]
@@ -100,15 +97,19 @@ struct Compiler {
     kind: FunctionKind,
 
     locals: Vec<Local>,
+    upvalues: Vec<Upvalue>,
     scope_depth: usize,
 }
 
+enum CompilerError {
+    InvalidCompilerKind,
+    LocalNotFound,
+    ReadVarInInitialiser,
+    TooManyClosureVars,
+}
+
 impl Compiler {
-    fn new(
-        kind: FunctionKind,
-        name: String,
-        enclosing: Option<Box<Compiler>>,
-    ) -> Self {
+    fn new(kind: FunctionKind, name: String, enclosing: Option<Box<Compiler>>) -> Self {
         Compiler {
             enclosing: enclosing,
             function: Box::new(object::ObjFunction::new(name)),
@@ -116,7 +117,9 @@ impl Compiler {
             locals: vec![Local {
                 name: scanner::Token::new(),
                 depth: Some(0),
+                is_captured: false,
             }],
+            upvalues: Vec::new(),
             scope_depth: 0,
         }
     }
@@ -129,9 +132,60 @@ impl Compiler {
         self.locals.push(Local {
             name: name.clone(),
             depth: None,
+            is_captured: false,
         });
 
         return true;
+    }
+
+    fn resolve_local(&self, name: &scanner::Token) -> Result<u8, CompilerError> {
+        for (i, local) in self.locals.iter().enumerate().rev() {
+            if local.name.source == name.source {
+                if local.depth.is_none() {
+                    return Err(CompilerError::ReadVarInInitialiser);
+                }
+                return Ok(i as u8);
+            }
+        }
+
+        Err(CompilerError::LocalNotFound)
+    }
+
+    fn add_upvalue(&mut self, index: u8, is_local: bool) -> Result<u8, CompilerError> {
+        let upvalue_count = self.upvalues.len();
+
+        for (i, upvalue) in self.upvalues.iter().enumerate() {
+            if upvalue.index == index && upvalue.is_local == is_local {
+                return Ok(i as u8);
+            }
+        }
+
+        if upvalue_count == common::UPVALUES_MAX {
+            return Err(CompilerError::TooManyClosureVars);
+        }
+
+        self.upvalues.push(Upvalue {
+            index: index,
+            is_local: is_local,
+        });
+        Ok(upvalue_count as u8)
+    }
+
+    fn resolve_upvalue(&mut self, name: &scanner::Token) -> Result<u8, CompilerError> {
+        if self.kind == FunctionKind::Script {
+            return Err(CompilerError::InvalidCompilerKind);
+        }
+
+        let enclosing = self.enclosing.as_deref_mut().unwrap();
+
+        if let Ok(index) = enclosing.resolve_local(name) {
+            enclosing.locals[index as usize].is_captured = true;
+            return self.add_upvalue(index, true);
+        }
+
+        enclosing
+            .resolve_upvalue(name)
+            .map(|i| self.add_upvalue(i, false))?
     }
 }
 
@@ -160,11 +214,7 @@ impl<'a> Parser<'a> {
             had_error: false,
             panic_mode: false,
             scanner: scanner,
-            compiler: Box::new(Compiler::new(
-                FunctionKind::Script,
-                String::from(""),
-                None,
-            )),
+            compiler: Box::new(Compiler::new(FunctionKind::Script, String::from(""), None)),
             rules: [
                 // LeftParen
                 ParseRule {
@@ -421,7 +471,7 @@ impl<'a> Parser<'a> {
             return None;
         }
 
-        Some(self.finalise_compiler())
+        Some(self.finalise_compiler().0)
     }
 
     fn advance(&mut self) {
@@ -466,16 +516,11 @@ impl<'a> Parser<'a> {
     }
 
     fn block(&mut self) {
-        while !self.check(scanner::TokenKind::RightBrace)
-            && !self.check(scanner::TokenKind::Eof)
-        {
+        while !self.check(scanner::TokenKind::RightBrace) && !self.check(scanner::TokenKind::Eof) {
             self.declaration();
         }
 
-        self.consume(
-            scanner::TokenKind::RightBrace,
-            "Expected '}' after block.",
-        );
+        self.consume(scanner::TokenKind::RightBrace, "Expected '}' after block.");
     }
 
     fn new_compiler(&mut self, kind: FunctionKind) {
@@ -488,24 +533,24 @@ impl<'a> Parser<'a> {
         ));
     }
 
-    fn finalise_compiler(&mut self) -> Box<object::ObjFunction> {
+    fn finalise_compiler(&mut self) -> (Box<object::ObjFunction>, Box<Compiler>) {
         self.emit_return();
 
         if cfg!(debug_assertions) && !self.had_error {
             let func_name = format!("{}", self.compiler.function);
-            debug::disassemble_chunk(
-                &self.compiler.function.chunk,
-                func_name.as_str(),
-            );
+            debug::disassemble_chunk(&self.compiler.function.chunk, func_name.as_str());
         }
+
+        let upvalue_count = self.compiler.upvalues.len();
+        self.compiler.function.upvalue_count = upvalue_count;
 
         let mut function: Box<object::ObjFunction> = Default::default();
         mem::swap(&mut function, &mut self.compiler.function);
-        if self.compiler.enclosing.is_some() {
-            self.compiler = self.compiler.enclosing.take().unwrap();
-        }
+        let mut enclosed: Box<Compiler> = Default::default();
+        mem::swap(&mut enclosed, &mut self.compiler);
+        self.compiler = enclosed.enclosing.take().unwrap_or_default();
 
-        function
+        (function, enclosed)
     }
 
     fn function(&mut self, kind: FunctionKind) {
@@ -520,13 +565,10 @@ impl<'a> Parser<'a> {
             loop {
                 self.compiler.function.arity += 1;
                 if self.compiler.function.arity > 255 {
-                    self.error_at_current(
-                        "Cannot have more than 255 parameters.",
-                    );
+                    self.error_at_current("Cannot have more than 255 parameters.");
                 }
 
-                let param_constant =
-                    self.parse_variable("Expected parameter name.");
+                let param_constant = self.parse_variable("Expected parameter name.");
                 self.define_variable(param_constant);
 
                 if !self.match_token(scanner::TokenKind::Comma) {
@@ -545,11 +587,15 @@ impl<'a> Parser<'a> {
         );
         self.block();
 
-        let function =
-            rc::Rc::new(cell::RefCell::new(*self.finalise_compiler()));
+        let (function, compiler) = self.finalise_compiler();
 
-        let constant = self.make_constant(value::Value::ObjFunction(function));
-        self.emit_bytes([chunk::OpCode::Constant as u8, constant]);
+        let constant = self.make_constant(value::Value::from(*function));
+        self.emit_bytes([chunk::OpCode::Closure as u8, constant]);
+
+        for upvalue in compiler.upvalues.iter() {
+            self.emit_byte(upvalue.is_local as u8);
+            self.emit_byte(upvalue.index as u8);
+        }
     }
 
     fn fun_declaration(&mut self) {
@@ -587,10 +633,7 @@ impl<'a> Parser<'a> {
     fn for_statement(&mut self) {
         self.begin_scope();
 
-        self.consume(
-            scanner::TokenKind::LeftParen,
-            "Expected '(' after 'for'.",
-        );
+        self.consume(scanner::TokenKind::LeftParen, "Expected '(' after 'for'.");
         if self.match_token(scanner::TokenKind::SemiColon) {
             // No initialiser
         } else if self.match_token(scanner::TokenKind::Var) {
@@ -669,10 +712,7 @@ impl<'a> Parser<'a> {
 
     fn print_statement(&mut self) {
         self.expression();
-        self.consume(
-            scanner::TokenKind::SemiColon,
-            "Expected ';' after value.",
-        );
+        self.consume(scanner::TokenKind::SemiColon, "Expected ';' after value.");
         self.emit_byte(chunk::OpCode::Print as u8);
     }
 
@@ -748,18 +788,23 @@ impl<'a> Parser<'a> {
         self.compiler.scope_depth -= 1;
 
         loop {
-            match self.compiler.locals.last() {
+            let opcode = match self.compiler.locals.last() {
                 Some(local) => {
                     if local.depth.unwrap() <= self.compiler.scope_depth {
-                        break;
+                        return;
+                    }
+                    if local.is_captured {
+                        chunk::OpCode::CloseUpvalue
+                    } else {
+                        chunk::OpCode::Pop
                     }
                 }
                 None => {
-                    break;
+                    return;
                 }
-            }
+            };
 
-            self.emit_byte(chunk::OpCode::Pop as u8);
+            self.emit_byte(opcode as u8);
             self.compiler.locals.pop();
         }
     }
@@ -870,9 +915,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        while precedence as usize
-            <= self.get_rule(self.current.kind).precedence as usize
-        {
+        while precedence as usize <= self.get_rule(self.current.kind).precedence as usize {
             self.advance();
             let infix_rule = self.get_rule(self.previous.kind).infix;
             infix_rule.unwrap()(self, can_assign);
@@ -937,8 +980,7 @@ impl<'a> Parser<'a> {
         if self.compiler.scope_depth == 0 {
             return;
         }
-        self.compiler.locals.last_mut().unwrap().depth =
-            Some(self.compiler.scope_depth);
+        self.compiler.locals.last_mut().unwrap().depth = Some(self.compiler.scope_depth);
     }
 
     fn define_variable(&mut self, global: u8) {
@@ -1003,40 +1045,51 @@ impl<'a> Parser<'a> {
         self.had_error = true;
     }
 
-    fn resolve_local(&mut self, name: &scanner::Token) -> Option<u8> {
-        for (i, local) in self.compiler.locals.iter().enumerate().rev() {
-            if local.name.source == name.source {
-                if local.depth.is_none() {
-                    self.error("Cannot read variable in its own initialiser.");
-                }
-                return Some(i as u8);
+    fn compiler_error(&mut self, error: CompilerError) {
+        match error {
+            CompilerError::ReadVarInInitialiser => {
+                self.error("Cannot read variable in its own initialiser.");
             }
+            CompilerError::TooManyClosureVars => {
+                self.error("Too many closure variables in function.");
+            }
+            _ => {}
         }
-
-        None
     }
 
-    fn chunk(&mut self) -> &mut chunk::Chunk {
-        &mut self.compiler.function.chunk
+    fn resolve_local(&mut self, name: &scanner::Token) -> Option<u8> {
+        match self.compiler.resolve_local(name) {
+            Ok(index) => Some(index),
+            Err(error) => {
+                self.compiler_error(error);
+                None
+            }
+        }
+    }
+
+    fn resolve_upvalue(&mut self, name: &scanner::Token) -> Option<u8> {
+        match self.compiler.resolve_upvalue(name) {
+            Ok(index) => Some(index),
+            Err(error) => {
+                self.compiler_error(error);
+                None
+            }
+        }
     }
 
     fn named_variable(&mut self, name: scanner::Token, can_assign: bool) {
-        let (get_op, set_op, arg): (chunk::OpCode, chunk::OpCode, u8) =
-            (|| {
-                if let Some(result) = self.resolve_local(&name) {
-                    return (
-                        chunk::OpCode::GetLocal,
-                        chunk::OpCode::SetLocal,
-                        result,
-                    );
-                } else {
-                    return (
-                        chunk::OpCode::GetGlobal,
-                        chunk::OpCode::SetGlobal,
-                        self.identifier_constant(&name),
-                    );
-                }
-            })();
+        let (get_op, set_op, arg): (chunk::OpCode, chunk::OpCode, u8) = (|| {
+            if let Some(result) = self.resolve_local(&name) {
+                return (chunk::OpCode::GetLocal, chunk::OpCode::SetLocal, result);
+            } else if let Some(result) = self.resolve_upvalue(&name) {
+                return (chunk::OpCode::GetUpvalue, chunk::OpCode::SetUpvalue, result);
+            }
+            return (
+                chunk::OpCode::GetGlobal,
+                chunk::OpCode::SetGlobal,
+                self.identifier_constant(&name),
+            );
+        })();
 
         if can_assign && self.match_token(scanner::TokenKind::Equal) {
             self.expression();
@@ -1044,6 +1097,10 @@ impl<'a> Parser<'a> {
         } else {
             self.emit_bytes([get_op as u8, arg]);
         }
+    }
+
+    fn chunk(&mut self) -> &mut chunk::Chunk {
+        &mut self.compiler.function.chunk
     }
 
     fn grouping(s: &mut Parser, _can_assign: bool) {
@@ -1060,35 +1117,22 @@ impl<'a> Parser<'a> {
         s.parse_precedence(Precedence::from(rule_precedence as usize + 1));
 
         match operator_kind {
-            scanner::TokenKind::BangEqual => s.emit_bytes([
-                chunk::OpCode::Equal as u8,
-                chunk::OpCode::Not as u8,
-            ]),
-            scanner::TokenKind::EqualEqual => {
-                s.emit_byte(chunk::OpCode::Equal as u8)
+            scanner::TokenKind::BangEqual => {
+                s.emit_bytes([chunk::OpCode::Equal as u8, chunk::OpCode::Not as u8])
             }
-            scanner::TokenKind::Greater => {
-                s.emit_byte(chunk::OpCode::Greater as u8)
+            scanner::TokenKind::EqualEqual => s.emit_byte(chunk::OpCode::Equal as u8),
+            scanner::TokenKind::Greater => s.emit_byte(chunk::OpCode::Greater as u8),
+            scanner::TokenKind::GreaterEqual => {
+                s.emit_bytes([chunk::OpCode::Less as u8, chunk::OpCode::Not as u8])
             }
-            scanner::TokenKind::GreaterEqual => s.emit_bytes([
-                chunk::OpCode::Less as u8,
-                chunk::OpCode::Not as u8,
-            ]),
             scanner::TokenKind::Less => s.emit_byte(chunk::OpCode::Less as u8),
-            scanner::TokenKind::LessEqual => s.emit_bytes([
-                chunk::OpCode::Greater as u8,
-                chunk::OpCode::Not as u8,
-            ]),
+            scanner::TokenKind::LessEqual => {
+                s.emit_bytes([chunk::OpCode::Greater as u8, chunk::OpCode::Not as u8])
+            }
             scanner::TokenKind::Plus => s.emit_byte(chunk::OpCode::Add as u8),
-            scanner::TokenKind::Minus => {
-                s.emit_byte(chunk::OpCode::Subtract as u8)
-            }
-            scanner::TokenKind::Star => {
-                s.emit_byte(chunk::OpCode::Multiply as u8)
-            }
-            scanner::TokenKind::Slash => {
-                s.emit_byte(chunk::OpCode::Divide as u8)
-            }
+            scanner::TokenKind::Minus => s.emit_byte(chunk::OpCode::Subtract as u8),
+            scanner::TokenKind::Star => s.emit_byte(chunk::OpCode::Multiply as u8),
+            scanner::TokenKind::Slash => s.emit_byte(chunk::OpCode::Divide as u8),
             _ => {}
         }
     }
@@ -1103,9 +1147,7 @@ impl<'a> Parser<'a> {
         s.parse_precedence(Precedence::Unary);
 
         match operator_kind {
-            scanner::TokenKind::Minus => {
-                s.emit_byte(chunk::OpCode::Negate as u8)
-            }
+            scanner::TokenKind::Minus => s.emit_byte(chunk::OpCode::Negate as u8),
             scanner::TokenKind::Bang => s.emit_byte(chunk::OpCode::Not as u8),
             _ => {}
         }

@@ -14,6 +14,7 @@
  */
 
 use crate::chunk;
+use crate::value;
 
 pub fn disassemble_chunk(chunk: &chunk::Chunk, name: &str) {
     println!("=== {} ===", name);
@@ -35,24 +36,18 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
 
     let instruction = chunk::OpCode::from(chunk.code[offset]);
     match instruction {
-        chunk::OpCode::Constant => {
-            constant_instruction("CONSTANT", chunk, offset)
-        }
+        chunk::OpCode::Constant => constant_instruction("CONSTANT", chunk, offset),
         chunk::OpCode::Nil => simple_instruction("NIL", offset),
         chunk::OpCode::True => simple_instruction("TRUE", offset),
         chunk::OpCode::False => simple_instruction("FALSE", offset),
         chunk::OpCode::Pop => simple_instruction("POP", offset),
         chunk::OpCode::GetLocal => byte_instruction("GET_LOCAL", chunk, offset),
         chunk::OpCode::SetLocal => byte_instruction("SET_LOCAL", chunk, offset),
-        chunk::OpCode::GetGlobal => {
-            constant_instruction("GET_GLOBAL", chunk, offset)
-        }
-        chunk::OpCode::DefineGlobal => {
-            constant_instruction("DEFINE_GLOBAL", chunk, offset)
-        }
-        chunk::OpCode::SetGlobal => {
-            constant_instruction("SET_GLOBAL", chunk, offset)
-        }
+        chunk::OpCode::GetGlobal => constant_instruction("GET_GLOBAL", chunk, offset),
+        chunk::OpCode::DefineGlobal => constant_instruction("DEFINE_GLOBAL", chunk, offset),
+        chunk::OpCode::SetGlobal => constant_instruction("SET_GLOBAL", chunk, offset),
+        chunk::OpCode::GetUpvalue => byte_instruction("GET_UPVALUE", chunk, offset),
+        chunk::OpCode::SetUpvalue => byte_instruction("SET_UPVALUE", chunk, offset),
         chunk::OpCode::Equal => simple_instruction("EQUAL", offset),
         chunk::OpCode::Greater => simple_instruction("GREATER", offset),
         chunk::OpCode::Less => simple_instruction("LESS", offset),
@@ -64,11 +59,44 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::Negate => simple_instruction("NEGATE", offset),
         chunk::OpCode::Print => simple_instruction("PRINT", offset),
         chunk::OpCode::Jump => jump_instruction("JUMP", 1, chunk, offset),
-        chunk::OpCode::JumpIfFalse => {
-            jump_instruction("JUMP_IF_FALSE", 1, chunk, offset)
-        }
-        chunk::OpCode::Loop => jump_instruction("LOOP", 1, chunk, offset),
+        chunk::OpCode::JumpIfFalse => jump_instruction("JUMP_IF_FALSE", 1, chunk, offset),
+        chunk::OpCode::Loop => jump_instruction("LOOP", -1, chunk, offset),
         chunk::OpCode::Call => byte_instruction("CALL", chunk, offset),
+        chunk::OpCode::Closure => {
+            let mut offset = offset + 1;
+            let constant = chunk.code[offset] as usize;
+            offset += 1;
+            println!(
+                "{:16} {:4} {}",
+                "CLOSURE", constant, chunk.constants[constant]
+            );
+
+            let function = match chunk.constants[constant] {
+                value::Value::ObjFunction(ref underlying) => underlying.clone(),
+                _ => panic!("Expected function object."),
+            };
+
+            for _ in 0..function.borrow().upvalue_count {
+                let is_local = if chunk.code[offset] != 0 {
+                    "local"
+                } else {
+                    "upvalue"
+                };
+                offset += 1;
+                let index = chunk.code[offset] as usize;
+                offset += 1;
+
+                println!(
+                    "{:04}      |                     {} {}",
+                    offset - 2,
+                    is_local,
+                    index
+                );
+            }
+
+            offset
+        }
+        chunk::OpCode::CloseUpvalue => simple_instruction("CLOSE_UPVALUE", offset),
         chunk::OpCode::Return => simple_instruction("RETURN", offset),
     }
 }
@@ -84,24 +112,14 @@ fn byte_instruction(name: &str, chunk: &chunk::Chunk, offset: usize) -> usize {
     offset + 2
 }
 
-fn jump_instruction(
-    name: &str,
-    sign: i32,
-    chunk: &chunk::Chunk,
-    offset: usize,
-) -> usize {
-    let jump = ((chunk.code[offset + 1] as u16) << 8)
-        | (chunk.code[offset + 2] as u16);
+fn jump_instruction(name: &str, sign: i32, chunk: &chunk::Chunk, offset: usize) -> usize {
+    let jump = ((chunk.code[offset + 1] as u16) << 8) | (chunk.code[offset + 2] as u16);
     let target = (offset + 3) as isize + sign as isize * jump as isize;
     println!("{:16} {:4} -> {}", name, offset, target);
     offset + 3
 }
 
-fn constant_instruction(
-    name: &str,
-    chunk: &chunk::Chunk,
-    offset: usize,
-) -> usize {
+fn constant_instruction(name: &str, chunk: &chunk::Chunk, offset: usize) -> usize {
     let constant = chunk.code[offset + 1];
     println!(
         "{:16} {:4} '{}'",

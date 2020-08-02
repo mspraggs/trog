@@ -25,8 +25,10 @@ pub enum Value {
     Boolean(bool),
     Number(f64),
     ObjString(rc::Rc<cell::RefCell<object::ObjString>>),
+    ObjUpvalue(rc::Rc<cell::RefCell<object::ObjUpvalue>>),
     ObjFunction(rc::Rc<cell::RefCell<object::ObjFunction>>),
     ObjNative(rc::Rc<cell::RefCell<object::ObjNative>>),
+    ObjClosure(rc::Rc<cell::RefCell<object::ObjClosure>>),
     None,
 }
 
@@ -34,7 +36,7 @@ impl Value {
     pub fn as_bool(&self) -> bool {
         match self {
             Value::None => true,
-            Value::Boolean(underlying) => !underlying,
+            Value::Boolean(underlying) => *underlying,
             _ => false,
         }
     }
@@ -48,9 +50,9 @@ impl From<f64> for Value {
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Value::ObjString(rc::Rc::new(cell::RefCell::new(
-            object::ObjString::new(value),
-        )))
+        Value::ObjString(rc::Rc::new(cell::RefCell::new(object::ObjString::new(
+            value,
+        ))))
     }
 }
 
@@ -60,11 +62,17 @@ impl From<&str> for Value {
     }
 }
 
+impl From<object::ObjFunction> for Value {
+    fn from(value: object::ObjFunction) -> Self {
+        Value::ObjFunction(rc::Rc::new(cell::RefCell::new(value)))
+    }
+}
+
 impl From<object::NativeFn> for Value {
     fn from(value: object::NativeFn) -> Self {
-        Value::ObjNative(rc::Rc::new(cell::RefCell::new(
-            object::ObjNative::new(value),
-        )))
+        Value::ObjNative(rc::Rc::new(cell::RefCell::new(object::ObjNative::new(
+            value,
+        ))))
     }
 }
 
@@ -73,13 +81,11 @@ impl fmt::Display for Value {
         match self {
             Value::Number(underlying) => write!(f, "{}", underlying),
             Value::Boolean(underlying) => write!(f, "{}", underlying),
-            Value::ObjString(underlying) => {
-                write!(f, "{}", underlying.borrow().data)
-            }
-            Value::ObjFunction(underlying) => {
-                write!(f, "{}", underlying.borrow())
-            }
+            Value::ObjString(underlying) => write!(f, "{}", underlying.borrow().data),
+            Value::ObjUpvalue(_) => write!(f, "upvalue"),
+            Value::ObjFunction(underlying) => write!(f, "{}", underlying.borrow()),
             Value::ObjNative(_) => write!(f, "<native fn>"),
+            Value::ObjClosure(underlying) => write!(f, "{}", underlying.borrow().function.borrow()),
             Value::None => write!(f, "nil"),
         }
     }
@@ -90,9 +96,7 @@ impl cmp::PartialEq for Value {
         match (self, other) {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
-            (Value::ObjString(first), Value::ObjString(second)) => {
-                first == second
-            }
+            (Value::ObjString(first), Value::ObjString(second)) => first == second,
             (Value::None, Value::None) => true,
             _ => false,
         }

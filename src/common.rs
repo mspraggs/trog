@@ -14,4 +14,5 @@
  */
 
 pub const LOCALS_MAX: usize = u8::MAX as usize + 1;
+pub const UPVALUES_MAX: usize = u8::MAX as usize + 1;
 pub const JUMP_SIZE_MAX: usize = u16::MAX as usize + 1;

@@ -252,12 +252,7 @@ impl Scanner {
         }
     }
 
-    fn check_keyword(
-        &self,
-        start: usize,
-        rest: &str,
-        kind: TokenKind,
-    ) -> TokenKind {
+    fn check_keyword(&self, start: usize, rest: &str, kind: TokenKind) -> TokenKind {
         let slice_begin = self.start + start;
         let slice_end = slice_begin + rest.len();
 

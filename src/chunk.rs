@@ -27,6 +27,8 @@ pub enum OpCode {
     GetGlobal,
     DefineGlobal,
     SetGlobal,
+    GetUpvalue,
+    SetUpvalue,
     Equal,
     Greater,
     Less,
@@ -41,6 +43,8 @@ pub enum OpCode {
     JumpIfFalse,
     Loop,
     Call,
+    Closure,
+    CloseUpvalue,
     Return,
 }
 
@@ -55,10 +59,10 @@ impl From<u8> for OpCode {
             value if value == OpCode::GetLocal as u8 => OpCode::GetLocal,
             value if value == OpCode::SetLocal as u8 => OpCode::SetLocal,
             value if value == OpCode::GetGlobal as u8 => OpCode::GetGlobal,
-            value if value == OpCode::DefineGlobal as u8 => {
-                OpCode::DefineGlobal
-            }
+            value if value == OpCode::DefineGlobal as u8 => OpCode::DefineGlobal,
             value if value == OpCode::SetGlobal as u8 => OpCode::SetGlobal,
+            value if value == OpCode::GetUpvalue as u8 => OpCode::GetUpvalue,
+            value if value == OpCode::SetUpvalue as u8 => OpCode::SetUpvalue,
             value if value == OpCode::Equal as u8 => OpCode::Equal,
             value if value == OpCode::Greater as u8 => OpCode::Greater,
             value if value == OpCode::Less as u8 => OpCode::Less,
@@ -73,6 +77,8 @@ impl From<u8> for OpCode {
             value if value == OpCode::JumpIfFalse as u8 => OpCode::JumpIfFalse,
             value if value == OpCode::Loop as u8 => OpCode::Loop,
             value if value == OpCode::Call as u8 => OpCode::Call,
+            value if value == OpCode::Closure as u8 => OpCode::Closure,
+            value if value == OpCode::CloseUpvalue as u8 => OpCode::CloseUpvalue,
             value if value == OpCode::Return as u8 => OpCode::Return,
             _ => panic!("Unknown opcode {}", value),
         }

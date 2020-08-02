@@ -38,9 +38,43 @@ impl cmp::PartialEq for ObjString {
     }
 }
 
+pub enum ObjUpvalue {
+    Closed(value::Value),
+    Open(usize),
+}
+
+impl ObjUpvalue {
+    pub fn new(index: usize) -> Self {
+        ObjUpvalue::Open(index)
+    }
+
+    pub fn is_open(&self) -> bool {
+        match self {
+            Self::Open(_) => true,
+            Self::Closed(_) => false,
+        }
+    }
+
+    pub fn is_open_with_index(&self, index: usize) -> bool {
+        self.is_open_with_pred(|i| i == index)
+    }
+
+    pub fn is_open_with_pred(&self, predicate: impl Fn(usize) -> bool) -> bool {
+        match self {
+            Self::Open(index) => predicate(*index),
+            Self::Closed(_) => false,
+        }
+    }
+
+    pub fn close(&mut self, value: value::Value) {
+        *self = Self::Closed(value);
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ObjFunction {
     pub arity: u32,
+    pub upvalue_count: usize,
     pub chunk: chunk::Chunk,
     pub name: rc::Rc<cell::RefCell<ObjString>>,
 }
@@ -49,6 +83,7 @@ impl ObjFunction {
     pub fn new(name: String) -> Self {
         ObjFunction {
             arity: 0,
+            upvalue_count: 0,
             chunk: chunk::Chunk::new(),
             name: rc::Rc::new(cell::RefCell::new(ObjString::new(name))),
         }
@@ -75,6 +110,21 @@ impl ObjNative {
     pub fn new(function: NativeFn) -> Self {
         ObjNative {
             function: Some(function),
+        }
+    }
+}
+
+pub struct ObjClosure {
+    pub function: rc::Rc<cell::RefCell<ObjFunction>>,
+    pub upvalues: Vec<rc::Rc<cell::RefCell<ObjUpvalue>>>,
+}
+
+impl ObjClosure {
+    pub fn new(function: rc::Rc<cell::RefCell<ObjFunction>>) -> Self {
+        let upvalue_count = function.borrow().upvalue_count as usize;
+        ObjClosure {
+            function: function,
+            upvalues: vec![rc::Rc::new(cell::RefCell::new(ObjUpvalue::new(0))); upvalue_count],
         }
     }
 }
