@@ -13,22 +13,22 @@
  * limitations under the License.
  */
 
-use std::cell;
+use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
-use std::rc;
 
+use crate::memory;
 use crate::object;
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub enum Value {
     Boolean(bool),
     Number(f64),
-    ObjString(rc::Rc<cell::RefCell<object::ObjString>>),
-    ObjUpvalue(rc::Rc<cell::RefCell<object::ObjUpvalue>>),
-    ObjFunction(rc::Rc<cell::RefCell<object::ObjFunction>>),
-    ObjNative(rc::Rc<cell::RefCell<object::ObjNative>>),
-    ObjClosure(rc::Rc<cell::RefCell<object::ObjClosure>>),
+    ObjString(memory::Gc<object::ObjString>),
+    ObjUpvalue(memory::Gc<RefCell<object::ObjUpvalue>>),
+    ObjFunction(memory::Gc<object::ObjFunction>),
+    ObjNative(memory::Gc<object::ObjNative>),
+    ObjClosure(memory::Gc<RefCell<object::ObjClosure>>),
     None,
 }
 
@@ -42,6 +42,30 @@ impl Value {
     }
 }
 
+impl memory::GcManaged for Value {
+    fn mark(&self) {
+        match self {
+            Value::ObjString(inner) => inner.mark(),
+            Value::ObjUpvalue(inner) => inner.mark(),
+            Value::ObjFunction(inner) => inner.mark(),
+            Value::ObjNative(inner) => inner.mark(),
+            Value::ObjClosure(inner) => inner.mark(),
+            _ => {}
+        }
+    }
+
+    fn blacken(&self) {
+        match self {
+            Value::ObjString(inner) => inner.blacken(),
+            Value::ObjUpvalue(inner) => inner.blacken(),
+            Value::ObjFunction(inner) => inner.blacken(),
+            Value::ObjNative(inner) => inner.blacken(),
+            Value::ObjClosure(inner) => inner.blacken(),
+            _ => {}
+        }
+    }
+}
+
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
         Value::Number(value)
@@ -50,9 +74,8 @@ impl From<f64> for Value {
 
 impl From<String> for Value {
     fn from(value: String) -> Self {
-        Value::ObjString(rc::Rc::new(cell::RefCell::new(object::ObjString::new(
-            value,
-        ))))
+        let root = memory::allocate(object::ObjString::new(value));
+        Value::ObjString(root.as_gc())
     }
 }
 
@@ -64,15 +87,21 @@ impl From<&str> for Value {
 
 impl From<object::ObjFunction> for Value {
     fn from(value: object::ObjFunction) -> Self {
-        Value::ObjFunction(rc::Rc::new(cell::RefCell::new(value)))
+        let root = memory::allocate(value);
+        Value::ObjFunction(root.as_gc())
+    }
+}
+
+impl From<memory::Gc<object::ObjFunction>> for Value {
+    fn from(value: memory::Gc<object::ObjFunction>) -> Self {
+        Value::ObjFunction(value)
     }
 }
 
 impl From<object::NativeFn> for Value {
     fn from(value: object::NativeFn) -> Self {
-        Value::ObjNative(rc::Rc::new(cell::RefCell::new(object::ObjNative::new(
-            value,
-        ))))
+        let root = memory::allocate(object::ObjNative::new(value));
+        Value::ObjNative(root.as_gc())
     }
 }
 
@@ -81,11 +110,11 @@ impl fmt::Display for Value {
         match self {
             Value::Number(underlying) => write!(f, "{}", underlying),
             Value::Boolean(underlying) => write!(f, "{}", underlying),
-            Value::ObjString(underlying) => write!(f, "{}", underlying.borrow().data),
+            Value::ObjString(underlying) => write!(f, "{}", underlying.data),
             Value::ObjUpvalue(_) => write!(f, "upvalue"),
-            Value::ObjFunction(underlying) => write!(f, "{}", underlying.borrow()),
+            Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
-            Value::ObjClosure(underlying) => write!(f, "{}", underlying.borrow().function.borrow()),
+            Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow().function),
             Value::None => write!(f, "nil"),
         }
     }
@@ -96,7 +125,7 @@ impl cmp::PartialEq for Value {
         match (self, other) {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
-            (Value::ObjString(first), Value::ObjString(second)) => first == second,
+            (Value::ObjString(first), Value::ObjString(second)) => **first == **second,
             (Value::None, Value::None) => true,
             _ => false,
         }

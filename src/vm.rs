@@ -15,13 +15,14 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::ops::DerefMut;
 use std::time;
 
 use crate::chunk;
 use crate::common;
 use crate::compiler;
 use crate::debug;
+use crate::memory;
 use crate::object;
 use crate::value;
 
@@ -43,25 +44,35 @@ pub fn interpret(vm: &mut Vm, source: String) -> InterpretResult {
 }
 
 struct CallFrame {
-    closure: Rc<RefCell<object::ObjClosure>>,
+    closure: memory::Gc<RefCell<object::ObjClosure>>,
     ip: usize,
     slot_base: usize,
 }
 
+impl memory::GcManaged for CallFrame {
+    fn mark(&self) {
+        self.closure.mark();
+    }
+
+    fn blacken(&self) {
+        self.closure.blacken();
+    }
+}
+
 pub struct Vm {
-    frames: Vec<CallFrame>,
-    stack: Vec<value::Value>,
-    globals: HashMap<String, value::Value>,
-    open_upvalues: Vec<Rc<RefCell<object::ObjUpvalue>>>,
+    frames: memory::UniqueRoot<Vec<CallFrame>>,
+    stack: memory::UniqueRoot<Vec<value::Value>>,
+    globals: memory::UniqueRoot<HashMap<String, value::Value>>,
+    open_upvalues: memory::UniqueRoot<Vec<memory::Gc<RefCell<object::ObjUpvalue>>>>,
 }
 
 impl Default for Vm {
     fn default() -> Self {
         Vm {
-            frames: Vec::with_capacity(FRAMES_MAX),
-            stack: Vec::with_capacity(STACK_MAX),
-            globals: HashMap::new(),
-            open_upvalues: Vec::new(),
+            frames: memory::allocate_unique(Vec::with_capacity(FRAMES_MAX)),
+            stack: memory::allocate_unique(Vec::with_capacity(STACK_MAX)),
+            globals: memory::allocate_unique(HashMap::new()),
+            open_upvalues: memory::allocate_unique(Vec::new()),
         }
     }
 }
@@ -80,18 +91,14 @@ impl Vm {
         Default::default()
     }
 
-    pub fn interpret(&mut self, function: Box<object::ObjFunction>) -> InterpretResult {
+    pub fn interpret(&mut self, function: memory::Root<object::ObjFunction>) -> InterpretResult {
         self.define_native("clock", clock_native);
-        let function_object = Rc::new(RefCell::new(*function));
-        self.stack
-            .push(value::Value::ObjFunction(function_object.clone()));
+        self.stack.push(value::Value::ObjFunction(function.as_gc()));
 
-        let closure = Rc::new(RefCell::new(object::ObjClosure::new(
-            function_object.clone(),
-        )));
+        let closure = memory::allocate(RefCell::new(object::ObjClosure::new(function.as_gc())));
         self.stack.pop();
-        self.stack.push(value::Value::ObjClosure(closure.clone()));
-        self.call_value(value::Value::ObjClosure(closure.clone()), 0);
+        self.stack.push(value::Value::ObjClosure(closure.as_gc()));
+        self.call_value(value::Value::ObjClosure(closure.as_gc()), 0);
         self.run()
     }
 
@@ -121,7 +128,7 @@ impl Vm {
         macro_rules! read_byte {
             () => {{
                 let ip = frame.ip;
-                let ret = frame.closure.borrow().function.borrow().chunk.code[ip];
+                let ret = frame.closure.borrow().function.chunk.code[ip];
                 frame.ip += 1;
                 ret
             }};
@@ -129,9 +136,8 @@ impl Vm {
 
         macro_rules! read_short {
             () => {{
-                let ret = ((frame.closure.borrow().function.borrow().chunk.code[frame.ip] as u16)
-                    << 8)
-                    | frame.closure.borrow().function.borrow().chunk.code[frame.ip + 1] as u16;
+                let ret = ((frame.closure.borrow().function.chunk.code[frame.ip] as u16) << 8)
+                    | frame.closure.borrow().function.chunk.code[frame.ip + 1] as u16;
                 frame.ip += 2;
                 ret
             }};
@@ -139,8 +145,7 @@ impl Vm {
 
         macro_rules! read_constant {
             () => {
-                frame.closure.borrow().function.borrow().chunk.constants[read_byte!() as usize]
-                    .clone()
+                frame.closure.borrow().function.chunk.constants[read_byte!() as usize]
             };
         }
 
@@ -160,10 +165,7 @@ impl Vm {
                     print!("[ {} ]", v);
                 }
                 println!("");
-                debug::disassemble_instruction(
-                    &frame.closure.borrow().function.borrow().chunk,
-                    frame.ip,
-                );
+                debug::disassemble_instruction(&frame.closure.borrow().function.chunk, frame.ip);
             }
             let instruction = chunk::OpCode::from(read_byte!());
 
@@ -191,24 +193,23 @@ impl Vm {
 
                 chunk::OpCode::GetLocal => {
                     let slot = read_byte!() as usize;
-                    let value = self.stack[frame.slot_base + slot].clone();
+                    let value = self.stack[frame.slot_base + slot];
                     self.stack.push(value);
                 }
 
                 chunk::OpCode::SetLocal => {
                     let slot = read_byte!() as usize;
-                    self.stack[frame.slot_base + slot] = (*self.stack.last().unwrap()).clone();
+                    self.stack[frame.slot_base + slot] = *self.stack.last().unwrap();
                 }
 
                 chunk::OpCode::GetGlobal => {
                     let name = read_string!();
-                    let borrowed_name = name.borrow();
-                    match self.globals.get(&borrowed_name.data) {
+                    match self.globals.get(&name.data) {
                         Some(value) => {
-                            self.stack.push(value.clone());
+                            self.stack.push(*value);
                         }
                         None => {
-                            let msg = format!("Undefined variable '{}'.", borrowed_name.data);
+                            let msg = format!("Undefined variable '{}'.", name.data);
                             self.runtime_error(msg.as_str());
                             return InterpretResult::RuntimeError;
                         }
@@ -217,24 +218,21 @@ impl Vm {
 
                 chunk::OpCode::DefineGlobal => {
                     let name = read_string!();
-                    self.globals.insert(
-                        name.borrow().data.clone(),
-                        self.stack.last().unwrap().clone(),
-                    );
+                    self.globals
+                        .insert(name.data.clone(), *self.stack.last().unwrap());
                     self.stack.pop();
                 }
 
                 chunk::OpCode::SetGlobal => {
                     let name = read_string!();
-                    let prev = self.globals.insert(
-                        name.borrow().data.clone(),
-                        self.stack.last().unwrap().clone(),
-                    );
+                    let prev = self
+                        .globals
+                        .insert(name.data.clone(), *self.stack.last().unwrap());
                     match prev {
                         Some(_) => {}
                         None => {
-                            self.globals.remove(&name.borrow().data);
-                            let msg = format!("Undefined variable '{}'.", name.borrow().data);
+                            self.globals.remove(&name.data);
+                            let msg = format!("Undefined variable '{}'.", name.data);
                             self.runtime_error(msg.as_str());
                             return InterpretResult::RuntimeError;
                         }
@@ -242,22 +240,22 @@ impl Vm {
                 }
 
                 chunk::OpCode::GetUpvalue => {
-                    let upvalue = read_byte!() as usize;
-                    self.stack
-                        .push(match *frame.closure.borrow().upvalues[upvalue].borrow() {
-                            object::ObjUpvalue::Open(slot) => self.stack[slot].clone(),
-                            object::ObjUpvalue::Closed(ref value) => value.clone(),
-                        });
+                    let upvalue_index = read_byte!() as usize;
+                    let upvalue = match *frame.closure.borrow().upvalues[upvalue_index].borrow() {
+                        object::ObjUpvalue::Open(slot) => self.stack[slot],
+                        object::ObjUpvalue::Closed(value) => value,
+                    };
+                    self.stack.push(upvalue);
                 }
 
                 chunk::OpCode::SetUpvalue => {
                     let upvalue = read_byte!() as usize;
                     match *frame.closure.borrow_mut().upvalues[upvalue].borrow_mut() {
                         object::ObjUpvalue::Open(slot) => {
-                            self.stack[slot] = self.stack.last().unwrap().clone();
+                            self.stack[slot] = *self.stack.last().unwrap();
                         }
                         object::ObjUpvalue::Closed(ref mut value) => {
-                            *value = self.stack.last().unwrap().clone();
+                            *value = *self.stack.last().unwrap();
                         }
                     };
                 }
@@ -277,13 +275,9 @@ impl Vm {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
                     match (a.unwrap(), b.unwrap()) {
-                        (value::Value::ObjString(a), value::Value::ObjString(b)) => {
-                            self.stack.push(value::Value::from(format!(
-                                "{}{}",
-                                a.borrow().data,
-                                b.borrow().data
-                            )))
-                        }
+                        (value::Value::ObjString(a), value::Value::ObjString(b)) => self
+                            .stack
+                            .push(value::Value::from(format!("{}{}", a.data, b.data))),
 
                         (value::Value::Number(a), value::Value::Number(b)) => {
                             self.stack.push(value::Value::Number(a + b));
@@ -343,10 +337,7 @@ impl Vm {
 
                 chunk::OpCode::Call => {
                     let arg_count = read_byte!() as usize;
-                    if !self.call_value(
-                        self.stack[self.stack.len() - 1 - arg_count].clone(),
-                        arg_count,
-                    ) {
+                    if !self.call_value(self.stack[self.stack.len() - 1 - arg_count], arg_count) {
                         return InterpretResult::RuntimeError;
                     }
                     frame = self.frames.last_mut().unwrap();
@@ -358,19 +349,19 @@ impl Vm {
                         _ => panic!("Expected ObjFunction."),
                     };
 
-                    let upvalue_count = function.borrow().upvalue_count;
+                    let upvalue_count = function.upvalue_count;
 
-                    let closure = Rc::new(RefCell::new(object::ObjClosure::new(function)));
-                    self.stack.push(value::Value::ObjClosure(closure.clone()));
+                    let closure = memory::allocate(RefCell::new(object::ObjClosure::new(function)));
+                    self.stack.push(value::Value::ObjClosure(closure.as_gc()));
 
                     for i in 0..upvalue_count {
                         let is_local = read_byte!() != 0;
                         let index = read_byte!() as usize;
                         let slot_base = frame.slot_base;
                         closure.borrow_mut().upvalues[i] = if is_local {
-                            capture_upvalue(&mut self.open_upvalues, slot_base + index)
+                            capture_upvalue(self.open_upvalues.deref_mut(), slot_base + index)
                         } else {
-                            frame.closure.borrow().upvalues[index].clone()
+                            frame.closure.borrow().upvalues[index]
                         };
                     }
                 }
@@ -413,7 +404,7 @@ impl Vm {
             }
 
             value::Value::ObjNative(wrapped) => {
-                let function = wrapped.borrow().function.unwrap();
+                let function = wrapped.function.unwrap();
                 let frame_begin = self.stack.len() - arg_count - 1;
                 let result = function(arg_count, &mut self.stack[frame_begin..]);
                 self.stack.truncate(frame_begin);
@@ -428,11 +419,11 @@ impl Vm {
         }
     }
 
-    fn call(&mut self, closure: Rc<RefCell<object::ObjClosure>>, arg_count: usize) -> bool {
-        if arg_count as u32 != closure.borrow().function.borrow().arity {
+    fn call(&mut self, closure: memory::Gc<RefCell<object::ObjClosure>>, arg_count: usize) -> bool {
+        if arg_count as u32 != closure.borrow().function.arity {
             let msg = format!(
                 "Expected {} arguments but got {}.",
-                closure.borrow().function.borrow().arity,
+                closure.borrow().function.arity,
                 arg_count
             );
             self.runtime_error(msg.as_str());
@@ -461,14 +452,14 @@ impl Vm {
         eprintln!("{}", message);
 
         for frame in self.frames.iter().rev() {
-            let function = frame.closure.borrow().function.clone();
+            let function = frame.closure.borrow().function;
 
-            let instruction = frame.ip - function.borrow().chunk.code.len() - 1;
-            eprint!("[line {}] in ", function.borrow().chunk.lines[instruction]);
-            if function.borrow().name.borrow().data.len() == 0 {
+            let instruction = frame.ip - 1;
+            eprint!("[line {}] in ", function.chunk.lines[instruction]);
+            if function.name.borrow().data.len() == 0 {
                 eprintln!("script");
             } else {
-                eprintln!("{}()", function.borrow().name.borrow().data);
+                eprintln!("{}()", function.name.borrow().data);
             }
         }
 
@@ -478,37 +469,37 @@ impl Vm {
     fn define_native(&mut self, name: &str, function: object::NativeFn) {
         self.stack.push(value::Value::from(function));
         self.globals
-            .insert(String::from(name), self.stack.last().unwrap().clone());
+            .insert(String::from(name), *self.stack.last().unwrap());
         self.stack.pop();
     }
 }
 
 fn capture_upvalue(
-    open_upvalues: &mut Vec<Rc<RefCell<object::ObjUpvalue>>>,
+    open_upvalues: &mut Vec<memory::Gc<RefCell<object::ObjUpvalue>>>,
     location: usize,
-) -> Rc<RefCell<object::ObjUpvalue>> {
+) -> memory::Gc<RefCell<object::ObjUpvalue>> {
     let result = open_upvalues
         .iter()
         .find(|&u| u.borrow().is_open_with_index(location));
 
     let upvalue = if let Some(upvalue) = result {
-        upvalue.clone()
+        *upvalue
     } else {
-        Rc::new(RefCell::new(object::ObjUpvalue::new(location)))
+        memory::allocate(RefCell::new(object::ObjUpvalue::new(location))).as_gc()
     };
 
-    open_upvalues.push(upvalue.clone());
+    open_upvalues.push(upvalue);
     upvalue
 }
 
 fn close_upvalues(
-    open_upvalues: &mut Vec<Rc<RefCell<object::ObjUpvalue>>>,
+    open_upvalues: &mut Vec<memory::Gc<RefCell<object::ObjUpvalue>>>,
     last: usize,
     value: &value::Value,
 ) {
     for upvalue in open_upvalues.iter() {
         if upvalue.borrow().is_open_with_index(last) {
-            upvalue.borrow_mut().close(value.clone());
+            upvalue.borrow_mut().close(*value);
         }
     }
 

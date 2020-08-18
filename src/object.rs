@@ -16,9 +16,9 @@
 use std::cell;
 use std::cmp;
 use std::fmt;
-use std::rc;
 
 use crate::chunk;
+use crate::memory;
 use crate::value;
 
 #[derive(Clone, Default)]
@@ -30,6 +30,12 @@ impl ObjString {
     pub fn new(data: String) -> Self {
         ObjString { data: data }
     }
+}
+
+impl memory::GcManaged for ObjString {
+    fn mark(&self) {}
+
+    fn blacken(&self) {}
 }
 
 impl cmp::PartialEq for ObjString {
@@ -71,12 +77,28 @@ impl ObjUpvalue {
     }
 }
 
+impl memory::GcManaged for ObjUpvalue {
+    fn mark(&self) {
+        match self {
+            ObjUpvalue::Closed(value) => value.mark(),
+            ObjUpvalue::Open(_) => {}
+        }
+    }
+
+    fn blacken(&self) {
+        match self {
+            ObjUpvalue::Closed(value) => value.blacken(),
+            ObjUpvalue::Open(_) => {}
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
     pub chunk: chunk::Chunk,
-    pub name: rc::Rc<cell::RefCell<ObjString>>,
+    pub name: memory::Gc<cell::RefCell<ObjString>>,
 }
 
 impl ObjFunction {
@@ -85,8 +107,20 @@ impl ObjFunction {
             arity: 0,
             upvalue_count: 0,
             chunk: chunk::Chunk::new(),
-            name: rc::Rc::new(cell::RefCell::new(ObjString::new(name))),
+            name: memory::allocate(cell::RefCell::new(ObjString::new(name))).as_gc(),
         }
+    }
+}
+
+impl memory::GcManaged for ObjFunction {
+    fn mark(&self) {
+        self.chunk.mark();
+        self.name.mark();
+    }
+
+    fn blacken(&self) {
+        self.chunk.blacken();
+        self.name.blacken();
     }
 }
 
@@ -114,17 +148,38 @@ impl ObjNative {
     }
 }
 
+impl memory::GcManaged for ObjNative {
+    fn mark(&self) {}
+
+    fn blacken(&self) {}
+}
+
 pub struct ObjClosure {
-    pub function: rc::Rc<cell::RefCell<ObjFunction>>,
-    pub upvalues: Vec<rc::Rc<cell::RefCell<ObjUpvalue>>>,
+    pub function: memory::Gc<ObjFunction>,
+    pub upvalues: Vec<memory::Gc<cell::RefCell<ObjUpvalue>>>,
 }
 
 impl ObjClosure {
-    pub fn new(function: rc::Rc<cell::RefCell<ObjFunction>>) -> Self {
-        let upvalue_count = function.borrow().upvalue_count as usize;
+    pub fn new(function: memory::Gc<ObjFunction>) -> Self {
+        let upvalue_count = function.upvalue_count as usize;
         ObjClosure {
             function: function,
-            upvalues: vec![rc::Rc::new(cell::RefCell::new(ObjUpvalue::new(0))); upvalue_count],
+            upvalues: vec![
+                memory::allocate(cell::RefCell::new(ObjUpvalue::new(0))).as_gc();
+                upvalue_count
+            ],
         }
+    }
+}
+
+impl memory::GcManaged for ObjClosure {
+    fn mark(&self) {
+        self.function.mark();
+        self.upvalues.mark();
+    }
+
+    fn blacken(&self) {
+        self.function.blacken();
+        self.upvalues.blacken();
     }
 }

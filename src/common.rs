@@ -16,3 +16,5 @@
 pub const LOCALS_MAX: usize = u8::MAX as usize + 1;
 pub const UPVALUES_MAX: usize = u8::MAX as usize + 1;
 pub const JUMP_SIZE_MAX: usize = u16::MAX as usize + 1;
+pub const HEAP_INIT_BYTES_MAX: usize = 65536;
+pub const HEAP_GROWTH_FACTOR: usize = 2;

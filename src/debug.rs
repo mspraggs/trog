@@ -76,7 +76,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
                 _ => panic!("Expected function object."),
             };
 
-            for _ in 0..function.borrow().upvalue_count {
+            for _ in 0..function.upvalue_count {
                 let is_local = if chunk.code[offset] != 0 {
                     "local"
                 } else {

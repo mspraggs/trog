@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+use crate::memory;
 use crate::value;
 
 #[repr(u8)]
@@ -105,5 +106,15 @@ impl Chunk {
     pub fn add_constant(&mut self, value: value::Value) -> usize {
         self.constants.push(value);
         self.constants.len() - 1
+    }
+}
+
+impl memory::GcManaged for Chunk {
+    fn mark(&self) {
+        self.constants.mark();
+    }
+
+    fn blacken(&self) {
+        self.constants.blacken();
     }
 }

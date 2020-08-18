@@ -18,6 +18,7 @@ use std::mem;
 use crate::chunk;
 use crate::common;
 use crate::debug;
+use crate::memory;
 use crate::object;
 use crate::scanner;
 use crate::value;
@@ -93,7 +94,7 @@ struct Upvalue {
 #[derive(Default)]
 struct Compiler {
     enclosing: Option<Box<Compiler>>,
-    function: Box<object::ObjFunction>,
+    function: memory::Root<object::ObjFunction>,
     kind: FunctionKind,
 
     locals: Vec<Local>,
@@ -112,7 +113,7 @@ impl Compiler {
     fn new(kind: FunctionKind, name: String, enclosing: Option<Box<Compiler>>) -> Self {
         Compiler {
             enclosing: enclosing,
-            function: Box::new(object::ObjFunction::new(name)),
+            function: memory::allocate(object::ObjFunction::new(name)),
             kind: kind,
             locals: vec![Local {
                 name: scanner::Token::new(),
@@ -189,7 +190,7 @@ impl Compiler {
     }
 }
 
-pub fn compile(source: String) -> Option<Box<object::ObjFunction>> {
+pub fn compile(source: String) -> Option<memory::Root<object::ObjFunction>> {
     let mut scanner = scanner::Scanner::from_source(source);
 
     let mut parser = Parser::new(&mut scanner);
@@ -460,7 +461,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse(&mut self) -> Option<Box<object::ObjFunction>> {
+    fn parse(&mut self) -> Option<memory::Root<object::ObjFunction>> {
         self.advance();
 
         while !self.match_token(scanner::TokenKind::Eof) {
@@ -533,18 +534,18 @@ impl<'a> Parser<'a> {
         ));
     }
 
-    fn finalise_compiler(&mut self) -> (Box<object::ObjFunction>, Box<Compiler>) {
+    fn finalise_compiler(&mut self) -> (memory::Root<object::ObjFunction>, Box<Compiler>) {
         self.emit_return();
 
         if cfg!(debug_assertions) && !self.had_error {
-            let func_name = format!("{}", self.compiler.function);
+            let func_name = format!("{}", *self.compiler.function);
             debug::disassemble_chunk(&self.compiler.function.chunk, func_name.as_str());
         }
 
         let upvalue_count = self.compiler.upvalues.len();
         self.compiler.function.upvalue_count = upvalue_count;
 
-        let mut function: Box<object::ObjFunction> = Default::default();
+        let mut function: memory::Root<object::ObjFunction> = Default::default();
         mem::swap(&mut function, &mut self.compiler.function);
         let mut enclosed: Box<Compiler> = Default::default();
         mem::swap(&mut enclosed, &mut self.compiler);
@@ -589,7 +590,7 @@ impl<'a> Parser<'a> {
 
         let (function, compiler) = self.finalise_compiler();
 
-        let constant = self.make_constant(value::Value::from(*function));
+        let constant = self.make_constant(value::Value::from(function.as_gc()));
         self.emit_bytes([chunk::OpCode::Closure as u8, constant]);
 
         for upvalue in compiler.upvalues.iter() {

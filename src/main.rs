@@ -22,6 +22,7 @@ mod chunk;
 mod common;
 mod compiler;
 mod debug;
+mod memory;
 mod object;
 mod scanner;
 mod value;
