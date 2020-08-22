@@ -250,8 +250,8 @@ impl<'a> Parser<'a> {
                 // Dot
                 ParseRule {
                     prefix: None,
-                    infix: None,
-                    precedence: Precedence::None,
+                    infix: Some(Parser::dot),
+                    precedence: Precedence::Call,
                 },
                 // Minus
                 ParseRule {
@@ -599,6 +599,25 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn class_declaration(&mut self) {
+        self.consume(scanner::TokenKind::Identifier, "Expected class name.");
+        let name = self.previous.clone();
+        let name_constant = self.identifier_constant(&name);
+        self.declare_variable();
+
+        self.emit_bytes([chunk::OpCode::Class as u8, name_constant]);
+        self.define_variable(name_constant);
+
+        self.consume(
+            scanner::TokenKind::LeftBrace,
+            "Expected '{' before class body.",
+        );
+        self.consume(
+            scanner::TokenKind::RightBrace,
+            "Expected '}' after class body.",
+        );
+    }
+
     fn fun_declaration(&mut self) {
         let global = self.parse_variable("Expected function name.");
         self.mark_initialised();
@@ -831,7 +850,9 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) {
-        if self.match_token(scanner::TokenKind::Fun) {
+        if self.match_token(scanner::TokenKind::Class) {
+            self.class_declaration();
+        } else if self.match_token(scanner::TokenKind::Fun) {
             self.fun_declaration();
         } else if self.match_token(scanner::TokenKind::Var) {
             self.var_declaration();
@@ -1141,6 +1162,19 @@ impl<'a> Parser<'a> {
     fn call(s: &mut Parser, _can_assign: bool) {
         let arg_count = s.argument_list();
         s.emit_bytes([chunk::OpCode::Call as u8, arg_count]);
+    }
+
+    fn dot(s: &mut Parser, can_assign: bool) {
+        s.consume(scanner::TokenKind::Identifier, "Expected property name after '.'.");
+        let previous = s.previous.clone();
+        let name = s.identifier_constant(&previous);
+
+        if can_assign && s.match_token(scanner::TokenKind::Equal) {
+            s.expression();
+            s.emit_bytes([chunk::OpCode::SetProperty as u8, name]);
+        } else {
+            s.emit_bytes([chunk::OpCode::GetProperty as u8, name]);
+        }
     }
 
     fn unary(s: &mut Parser, _can_assign: bool) {

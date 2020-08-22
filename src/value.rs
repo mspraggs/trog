@@ -29,6 +29,8 @@ pub enum Value {
     ObjFunction(memory::Gc<object::ObjFunction>),
     ObjNative(memory::Gc<object::ObjNative>),
     ObjClosure(memory::Gc<RefCell<object::ObjClosure>>),
+    ObjClass(memory::Gc<object::ObjClass>),
+    ObjInstance(memory::Gc<RefCell<object::ObjInstance>>),
     None,
 }
 
@@ -50,6 +52,8 @@ impl memory::GcManaged for Value {
             Value::ObjFunction(inner) => inner.mark(),
             Value::ObjNative(inner) => inner.mark(),
             Value::ObjClosure(inner) => inner.mark(),
+            Value::ObjClass(inner) => inner.mark(),
+            Value::ObjInstance(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -61,6 +65,8 @@ impl memory::GcManaged for Value {
             Value::ObjFunction(inner) => inner.blacken(),
             Value::ObjNative(inner) => inner.blacken(),
             Value::ObjClosure(inner) => inner.blacken(),
+            Value::ObjClass(inner) => inner.blacken(),
+            Value::ObjInstance(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -115,6 +121,10 @@ impl fmt::Display for Value {
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow().function),
+            Value::ObjClass(underlying) => write!(f, "{}", underlying.name.data),
+            Value::ObjInstance(underlying) => {
+                write!(f, "{} instance", underlying.borrow().class.name.data)
+            }
             Value::None => write!(f, "nil"),
         }
     }

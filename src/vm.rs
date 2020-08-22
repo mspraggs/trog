@@ -260,6 +260,45 @@ impl Vm {
                     };
                 }
 
+                chunk::OpCode::GetProperty => {
+                    let instance = match *self.stack.last().unwrap() {
+                        value::Value::ObjInstance(ptr) => ptr,
+                        _ => {
+                            self.runtime_error("Only instances have properties.");
+                            return InterpretResult::RuntimeError;
+                        },
+                    };
+                    let name = read_string!();
+
+                    let borrowed_instance = instance.borrow();
+                    if let Some(property) = borrowed_instance.fields.get(&name.data) {
+                        self.stack.pop();
+                        self.stack.push(*property);
+                    } else {
+                        let msg = format!("Undefined property '{}'.", name.data);
+                        self.runtime_error(msg.as_str());
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+
+                chunk::OpCode::SetProperty => {
+                    let instance_pos = self.stack.len() - 2;
+                    let instance = match self.stack[instance_pos] {
+                        value::Value::ObjInstance(ptr) => ptr,
+                        _ => {
+                            self.runtime_error("Only instances have fields.");
+                            return InterpretResult::RuntimeError;
+                        }
+                    };
+                    let name = read_string!();
+                    let value = *self.stack.last().unwrap();
+                    instance.borrow_mut().fields.insert(name.data.clone(), value);
+
+                    self.stack.pop();
+                    self.stack.pop();
+                    self.stack.push(value);
+                }
+
                 chunk::OpCode::Equal => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
@@ -393,12 +432,25 @@ impl Vm {
 
                     frame = self.frames.last_mut().unwrap();
                 }
+
+                chunk::OpCode::Class => {
+                    let class = memory::allocate(object::ObjClass::new(read_string!()));
+                    self.stack.push(value::Value::ObjClass(class.as_gc()));
+                }
             }
         }
     }
 
     fn call_value(&mut self, value: value::Value, arg_count: usize) -> bool {
         match value {
+            value::Value::ObjClass(class) => {
+                let stack_pos = self.stack.len() - arg_count - 1;
+                let instance = memory::allocate(RefCell::new(object::ObjInstance::new(class)));
+                self.stack[stack_pos] = value::Value::ObjInstance(instance.as_gc());
+
+                return true;
+            }
+
             value::Value::ObjClosure(function) => {
                 return self.call(function, arg_count);
             }

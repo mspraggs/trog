@@ -48,6 +48,8 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::SetGlobal => constant_instruction("SET_GLOBAL", chunk, offset),
         chunk::OpCode::GetUpvalue => byte_instruction("GET_UPVALUE", chunk, offset),
         chunk::OpCode::SetUpvalue => byte_instruction("SET_UPVALUE", chunk, offset),
+        chunk::OpCode::GetProperty => constant_instruction("GET_PROPERTY", chunk, offset),
+        chunk::OpCode::SetProperty => constant_instruction("SET_PROPERTY", chunk, offset),
         chunk::OpCode::Equal => simple_instruction("EQUAL", offset),
         chunk::OpCode::Greater => simple_instruction("GREATER", offset),
         chunk::OpCode::Less => simple_instruction("LESS", offset),
@@ -98,6 +100,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         }
         chunk::OpCode::CloseUpvalue => simple_instruction("CLOSE_UPVALUE", offset),
         chunk::OpCode::Return => simple_instruction("RETURN", offset),
+        chunk::OpCode::Class => constant_instruction("CLASS", chunk, offset),
     }
 }
 

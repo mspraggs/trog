@@ -15,6 +15,7 @@
 
 use std::cell;
 use std::cmp;
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::chunk;
@@ -181,5 +182,51 @@ impl memory::GcManaged for ObjClosure {
     fn blacken(&self) {
         self.function.blacken();
         self.upvalues.blacken();
+    }
+}
+
+pub struct ObjClass {
+    pub name: memory::Gc<ObjString>,
+}
+
+impl ObjClass {
+    pub fn new(name: memory::Gc<ObjString>) -> Self {
+        ObjClass { name: name }
+    }
+}
+
+impl memory::GcManaged for ObjClass {
+    fn mark(&self) {
+        self.name.mark();
+    }
+
+    fn blacken(&self) {
+        self.name.blacken();
+    }
+}
+
+pub struct ObjInstance {
+    pub class: memory::Gc<ObjClass>,
+    pub fields: HashMap<String, value::Value>,
+}
+
+impl ObjInstance {
+    pub fn new(class: memory::Gc<ObjClass>) -> Self {
+        ObjInstance {
+            class: class,
+            fields: HashMap::new(),
+        }
+    }
+}
+
+impl memory::GcManaged for ObjInstance {
+    fn mark(&self) {
+        self.class.mark();
+        self.fields.mark();
+    }
+
+    fn blacken(&self) {
+        self.class.blacken();
+        self.fields.blacken();
     }
 }

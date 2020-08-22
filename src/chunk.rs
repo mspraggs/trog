@@ -30,6 +30,8 @@ pub enum OpCode {
     SetGlobal,
     GetUpvalue,
     SetUpvalue,
+    GetProperty,
+    SetProperty,
     Equal,
     Greater,
     Less,
@@ -47,6 +49,7 @@ pub enum OpCode {
     Closure,
     CloseUpvalue,
     Return,
+    Class,
 }
 
 impl From<u8> for OpCode {
@@ -64,6 +67,8 @@ impl From<u8> for OpCode {
             value if value == OpCode::SetGlobal as u8 => OpCode::SetGlobal,
             value if value == OpCode::GetUpvalue as u8 => OpCode::GetUpvalue,
             value if value == OpCode::SetUpvalue as u8 => OpCode::SetUpvalue,
+            value if value == OpCode::GetProperty as u8 => OpCode::GetProperty,
+            value if value == OpCode::SetProperty as u8 => OpCode::SetProperty,
             value if value == OpCode::Equal as u8 => OpCode::Equal,
             value if value == OpCode::Greater as u8 => OpCode::Greater,
             value if value == OpCode::Less as u8 => OpCode::Less,
@@ -81,6 +86,7 @@ impl From<u8> for OpCode {
             value if value == OpCode::Closure as u8 => OpCode::Closure,
             value if value == OpCode::CloseUpvalue as u8 => OpCode::CloseUpvalue,
             value if value == OpCode::Return as u8 => OpCode::Return,
+            value if value == OpCode::Class as u8 => OpCode::Class,
             _ => panic!("Unknown opcode {}", value),
         }
     }

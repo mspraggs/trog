@@ -42,7 +42,11 @@ pub fn allocate<T: 'static + GcManaged>(data: T) -> Root<T> {
 
 pub fn allocate_unique<T: 'static + GcManaged>(data: T) -> UniqueRoot<T> {
     let ptr = HEAP.with(|heap| {
-        heap.borrow_mut().collect_if_required();
+        if cfg!(debug_assertions) {
+            heap.borrow_mut().collect();
+        } else {
+            heap.borrow_mut().collect_if_required();
+        }
         heap.borrow_mut().allocate(data)
     });
     let root = UniqueRoot { ptr: ptr };
