@@ -46,10 +46,12 @@ pub enum OpCode {
     JumpIfFalse,
     Loop,
     Call,
+    Invoke,
     Closure,
     CloseUpvalue,
     Return,
     Class,
+    Method,
 }
 
 impl From<u8> for OpCode {
@@ -83,10 +85,12 @@ impl From<u8> for OpCode {
             value if value == OpCode::JumpIfFalse as u8 => OpCode::JumpIfFalse,
             value if value == OpCode::Loop as u8 => OpCode::Loop,
             value if value == OpCode::Call as u8 => OpCode::Call,
+            value if value == OpCode::Invoke as u8 => OpCode::Invoke,
             value if value == OpCode::Closure as u8 => OpCode::Closure,
             value if value == OpCode::CloseUpvalue as u8 => OpCode::CloseUpvalue,
             value if value == OpCode::Return as u8 => OpCode::Return,
             value if value == OpCode::Class as u8 => OpCode::Class,
+            value if value == OpCode::Method as u8 => OpCode::Method,
             _ => panic!("Unknown opcode {}", value),
         }
     }

@@ -29,8 +29,9 @@ pub enum Value {
     ObjFunction(memory::Gc<object::ObjFunction>),
     ObjNative(memory::Gc<object::ObjNative>),
     ObjClosure(memory::Gc<RefCell<object::ObjClosure>>),
-    ObjClass(memory::Gc<object::ObjClass>),
+    ObjClass(memory::Gc<RefCell<object::ObjClass>>),
     ObjInstance(memory::Gc<RefCell<object::ObjInstance>>),
+    ObjBoundMethod(memory::Gc<RefCell<object::ObjBoundMethod>>),
     None,
 }
 
@@ -54,6 +55,7 @@ impl memory::GcManaged for Value {
             Value::ObjClosure(inner) => inner.mark(),
             Value::ObjClass(inner) => inner.mark(),
             Value::ObjInstance(inner) => inner.mark(),
+            Value::ObjBoundMethod(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -67,6 +69,7 @@ impl memory::GcManaged for Value {
             Value::ObjClosure(inner) => inner.blacken(),
             Value::ObjClass(inner) => inner.blacken(),
             Value::ObjInstance(inner) => inner.blacken(),
+            Value::ObjBoundMethod(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -121,9 +124,14 @@ impl fmt::Display for Value {
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow().function),
-            Value::ObjClass(underlying) => write!(f, "{}", underlying.name.data),
-            Value::ObjInstance(underlying) => {
-                write!(f, "{} instance", underlying.borrow().class.name.data)
+            Value::ObjClass(underlying) => write!(f, "{}", underlying.borrow().name.data),
+            Value::ObjInstance(underlying) => write!(
+                f,
+                "{} instance",
+                underlying.borrow().class.borrow().name.data
+            ),
+            Value::ObjBoundMethod(underlying) => {
+                write!(f, "{}", *underlying.borrow().method.borrow().function)
             }
             Value::None => write!(f, "nil"),
         }

@@ -187,31 +187,37 @@ impl memory::GcManaged for ObjClosure {
 
 pub struct ObjClass {
     pub name: memory::Gc<ObjString>,
+    pub methods: HashMap<String, value::Value>,
 }
 
 impl ObjClass {
     pub fn new(name: memory::Gc<ObjString>) -> Self {
-        ObjClass { name: name }
+        ObjClass {
+            name: name,
+            methods: HashMap::new(),
+        }
     }
 }
 
 impl memory::GcManaged for ObjClass {
     fn mark(&self) {
         self.name.mark();
+        self.methods.mark();
     }
 
     fn blacken(&self) {
         self.name.blacken();
+        self.methods.blacken();
     }
 }
 
 pub struct ObjInstance {
-    pub class: memory::Gc<ObjClass>,
+    pub class: memory::Gc<cell::RefCell<ObjClass>>,
     pub fields: HashMap<String, value::Value>,
 }
 
 impl ObjInstance {
-    pub fn new(class: memory::Gc<ObjClass>) -> Self {
+    pub fn new(class: memory::Gc<cell::RefCell<ObjClass>>) -> Self {
         ObjInstance {
             class: class,
             fields: HashMap::new(),
@@ -228,5 +234,31 @@ impl memory::GcManaged for ObjInstance {
     fn blacken(&self) {
         self.class.blacken();
         self.fields.blacken();
+    }
+}
+
+pub struct ObjBoundMethod {
+    pub receiver: value::Value,
+    pub method: memory::Gc<cell::RefCell<ObjClosure>>,
+}
+
+impl ObjBoundMethod {
+    pub fn new(receiver: value::Value, method: memory::Gc<cell::RefCell<ObjClosure>>) -> Self {
+        ObjBoundMethod {
+            receiver: receiver,
+            method: method,
+        }
+    }
+}
+
+impl memory::GcManaged for ObjBoundMethod {
+    fn mark(&self) {
+        self.receiver.mark();
+        self.method.mark();
+    }
+
+    fn blacken(&self) {
+        self.receiver.mark();
+        self.method.blacken();
     }
 }

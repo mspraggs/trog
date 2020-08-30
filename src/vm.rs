@@ -64,6 +64,7 @@ pub struct Vm {
     stack: memory::UniqueRoot<Vec<value::Value>>,
     globals: memory::UniqueRoot<HashMap<String, value::Value>>,
     open_upvalues: memory::UniqueRoot<Vec<memory::Gc<RefCell<object::ObjUpvalue>>>>,
+    init_string: memory::UniqueRoot<object::ObjString>,
 }
 
 impl Default for Vm {
@@ -73,6 +74,7 @@ impl Default for Vm {
             stack: memory::allocate_unique(Vec::with_capacity(STACK_MAX)),
             globals: memory::allocate_unique(HashMap::new()),
             open_upvalues: memory::allocate_unique(Vec::new()),
+            init_string: memory::allocate_unique(object::ObjString::new(String::from("init"))),
         }
     }
 }
@@ -266,7 +268,7 @@ impl Vm {
                         _ => {
                             self.runtime_error("Only instances have properties.");
                             return InterpretResult::RuntimeError;
-                        },
+                        }
                     };
                     let name = read_string!();
 
@@ -274,8 +276,9 @@ impl Vm {
                     if let Some(property) = borrowed_instance.fields.get(&name.data) {
                         self.stack.pop();
                         self.stack.push(*property);
-                    } else {
-                        let msg = format!("Undefined property '{}'.", name.data);
+                    } else if let Some(msg) =
+                        bind_method(&mut self.stack, borrowed_instance.class, name)
+                    {
                         self.runtime_error(msg.as_str());
                         return InterpretResult::RuntimeError;
                     }
@@ -292,7 +295,10 @@ impl Vm {
                     };
                     let name = read_string!();
                     let value = *self.stack.last().unwrap();
-                    instance.borrow_mut().fields.insert(name.data.clone(), value);
+                    instance
+                        .borrow_mut()
+                        .fields
+                        .insert(name.data.clone(), value);
 
                     self.stack.pop();
                     self.stack.pop();
@@ -382,6 +388,15 @@ impl Vm {
                     frame = self.frames.last_mut().unwrap();
                 }
 
+                chunk::OpCode::Invoke => {
+                    let method = read_string!();
+                    let arg_count = read_byte!() as usize;
+                    if !self.invoke(method, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                    frame = self.frames.last_mut().unwrap();
+                }
+
                 chunk::OpCode::Closure => {
                     let function = match read_constant!() {
                         value::Value::ObjFunction(underlying) => underlying,
@@ -434,8 +449,14 @@ impl Vm {
                 }
 
                 chunk::OpCode::Class => {
-                    let class = memory::allocate(object::ObjClass::new(read_string!()));
+                    let class =
+                        memory::allocate(RefCell::new(object::ObjClass::new(read_string!())));
                     self.stack.push(value::Value::ObjClass(class.as_gc()));
+                }
+
+                chunk::OpCode::Method => {
+                    let name = read_string!();
+                    define_method(self.stack.as_mut(), name);
                 }
             }
         }
@@ -443,10 +464,26 @@ impl Vm {
 
     fn call_value(&mut self, value: value::Value, arg_count: usize) -> bool {
         match value {
+            value::Value::ObjBoundMethod(bound) => {
+                let stack_pos = self.stack.len() - arg_count - 1;
+                self.stack[stack_pos] = bound.borrow().receiver;
+                return self.call(bound.borrow().method, arg_count);
+            }
+
             value::Value::ObjClass(class) => {
                 let stack_pos = self.stack.len() - arg_count - 1;
                 let instance = memory::allocate(RefCell::new(object::ObjInstance::new(class)));
                 self.stack[stack_pos] = value::Value::ObjInstance(instance.as_gc());
+
+                if let Some(value::Value::ObjClosure(initialiser)) =
+                    class.borrow().methods.get(&self.init_string.data)
+                {
+                    return self.call(*initialiser, arg_count);
+                } else if arg_count != 0 {
+                    let msg = format!("Expected 0 arguments but got {}.", arg_count);
+                    self.runtime_error(msg.as_str());
+                    return false;
+                }
 
                 return true;
             }
@@ -467,6 +504,42 @@ impl Vm {
             _ => {
                 self.runtime_error("Can only call functions and classes.");
                 return false;
+            }
+        }
+    }
+
+    fn invoke_from_class(
+        &mut self,
+        class: memory::Gc<RefCell<object::ObjClass>>,
+        name: memory::Gc<object::ObjString>,
+        arg_count: usize,
+    ) -> bool {
+        if let Some(value) = class.borrow().methods.get(&name.data) {
+            return match value {
+                value::Value::ObjClosure(closure) => self.call(*closure, arg_count),
+                _ => unreachable!(),
+            };
+        }
+        let msg = format!("Undefined property '{}'.", name.data);
+        self.runtime_error(msg.as_str());
+        false
+    }
+
+    fn invoke(&mut self, name: memory::Gc<object::ObjString>, arg_count: usize) -> bool {
+        let stack_pos = self.stack.len() - arg_count - 1;
+        let receiver = self.stack[stack_pos];
+        match receiver {
+            value::Value::ObjInstance(instance) => {
+                if let Some(value) = instance.borrow().fields.get(&name.data) {
+                    self.stack[stack_pos] = *value;
+                    return self.call_value(*value, arg_count);
+                }
+
+                self.invoke_from_class(instance.borrow().class, name, arg_count)
+            }
+            _ => {
+                self.runtime_error("Only instances have methods.");
+                false
             }
         }
     }
@@ -556,4 +629,38 @@ fn close_upvalues(
     }
 
     open_upvalues.retain(|u| u.borrow().is_open());
+}
+
+fn define_method(stack: &mut Vec<value::Value>, name: memory::Gc<object::ObjString>) {
+    let method = *stack.last().unwrap();
+    let class_pos = stack.len() - 2;
+    let class = match stack[class_pos] {
+        value::Value::ObjClass(ptr) => ptr,
+        _ => unreachable!(),
+    };
+    class.borrow_mut().methods.insert(name.data.clone(), method);
+    stack.pop();
+}
+
+fn bind_method(
+    stack: &mut Vec<value::Value>,
+    class: memory::Gc<RefCell<object::ObjClass>>,
+    name: memory::Gc<object::ObjString>,
+) -> Option<String> {
+    let borrowed_class = class.borrow();
+    let method = match borrowed_class.methods.get(&name.data) {
+        Some(value::Value::ObjClosure(ptr)) => *ptr,
+        None => {
+            let msg = format!("Undefined property '{}'.", name.data);
+            return Some(msg);
+        }
+        _ => unreachable!(),
+    };
+
+    let instance = *stack.last().unwrap();
+    let bound = memory::allocate(RefCell::new(object::ObjBoundMethod::new(instance, method)));
+    stack.pop();
+    stack.push(value::Value::ObjBoundMethod(bound.as_gc()));
+
+    None
 }

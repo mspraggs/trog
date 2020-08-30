@@ -57,9 +57,11 @@ impl From<usize> for Precedence {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 enum FunctionKind {
     Function,
+    Initialiser,
+    Method,
     Script,
 }
 
@@ -116,7 +118,11 @@ impl Compiler {
             function: memory::allocate(object::ObjFunction::new(name)),
             kind: kind,
             locals: vec![Local {
-                name: scanner::Token::new(),
+                name: scanner::Token::from_string(if kind != FunctionKind::Function {
+                    "this"
+                } else {
+                    ""
+                }),
                 depth: Some(0),
                 is_captured: false,
             }],
@@ -190,6 +196,10 @@ impl Compiler {
     }
 }
 
+struct ClassCompiler {
+    name: scanner::Token,
+}
+
 pub fn compile(source: String) -> Option<memory::Root<object::ObjFunction>> {
     let mut scanner = scanner::Scanner::from_source(source);
 
@@ -204,6 +214,7 @@ struct Parser<'a> {
     panic_mode: bool,
     scanner: &'a mut scanner::Scanner,
     compiler: Box<Compiler>,
+    class_compilers: Vec<ClassCompiler>,
     rules: [ParseRule; 40],
 }
 
@@ -216,6 +227,7 @@ impl<'a> Parser<'a> {
             panic_mode: false,
             scanner: scanner,
             compiler: Box::new(Compiler::new(FunctionKind::Script, String::from(""), None)),
+            class_compilers: Vec::new(),
             rules: [
                 // LeftParen
                 ParseRule {
@@ -423,7 +435,7 @@ impl<'a> Parser<'a> {
                 },
                 // This
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Parser::this),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -545,6 +557,7 @@ impl<'a> Parser<'a> {
         let upvalue_count = self.compiler.upvalues.len();
         self.compiler.function.upvalue_count = upvalue_count;
 
+        // TODO: Use a Vec of compilers here to simplify this logic.
         let mut function: memory::Root<object::ObjFunction> = Default::default();
         mem::swap(&mut function, &mut self.compiler.function);
         let mut enclosed: Box<Compiler> = Default::default();
@@ -599,6 +612,20 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn method(&mut self) {
+        self.consume(scanner::TokenKind::Identifier, "Expected method name.");
+        let previous = self.previous.clone();
+        let constant = self.identifier_constant(&previous);
+
+        let kind = if self.previous.source == "init" {
+            FunctionKind::Initialiser
+        } else {
+            FunctionKind::Method
+        };
+        self.function(kind);
+        self.emit_bytes([chunk::OpCode::Method as u8, constant]);
+    }
+
     fn class_declaration(&mut self) {
         self.consume(scanner::TokenKind::Identifier, "Expected class name.");
         let name = self.previous.clone();
@@ -608,14 +635,25 @@ impl<'a> Parser<'a> {
         self.emit_bytes([chunk::OpCode::Class as u8, name_constant]);
         self.define_variable(name_constant);
 
+        self.class_compilers.push(ClassCompiler {
+            name: self.previous.clone(),
+        });
+
+        self.named_variable(name, false);
         self.consume(
             scanner::TokenKind::LeftBrace,
             "Expected '{' before class body.",
         );
+        while !self.check(scanner::TokenKind::RightBrace) && !self.check(scanner::TokenKind::Eof) {
+            self.method();
+        }
         self.consume(
             scanner::TokenKind::RightBrace,
             "Expected '}' after class body.",
         );
+        self.emit_byte(chunk::OpCode::Pop as u8);
+
+        self.class_compilers.pop();
     }
 
     fn fun_declaration(&mut self) {
@@ -743,6 +781,9 @@ impl<'a> Parser<'a> {
         if self.match_token(scanner::TokenKind::SemiColon) {
             self.emit_return();
         } else {
+            if self.compiler.kind == FunctionKind::Initialiser {
+                self.error("Cannot return a value from an initialiser.");
+            }
             self.expression();
             self.consume(
                 scanner::TokenKind::SemiColon,
@@ -894,7 +935,11 @@ impl<'a> Parser<'a> {
     }
 
     fn emit_return(&mut self) {
-        self.emit_byte(chunk::OpCode::Nil as u8);
+        if self.compiler.kind == FunctionKind::Initialiser {
+            self.emit_bytes([chunk::OpCode::GetLocal as u8, 0]);
+        } else {
+            self.emit_byte(chunk::OpCode::Nil as u8);
+        }
         self.emit_byte(chunk::OpCode::Return as u8);
     }
 
@@ -1165,13 +1210,20 @@ impl<'a> Parser<'a> {
     }
 
     fn dot(s: &mut Parser, can_assign: bool) {
-        s.consume(scanner::TokenKind::Identifier, "Expected property name after '.'.");
+        s.consume(
+            scanner::TokenKind::Identifier,
+            "Expected property name after '.'.",
+        );
         let previous = s.previous.clone();
         let name = s.identifier_constant(&previous);
 
         if can_assign && s.match_token(scanner::TokenKind::Equal) {
             s.expression();
             s.emit_bytes([chunk::OpCode::SetProperty as u8, name]);
+        } else if s.match_token(scanner::TokenKind::LeftParen) {
+            let arg_count = s.argument_list();
+            s.emit_bytes([chunk::OpCode::Invoke as u8, name]);
+            s.emit_byte(arg_count);
         } else {
             s.emit_bytes([chunk::OpCode::GetProperty as u8, name]);
         }
@@ -1216,6 +1268,14 @@ impl<'a> Parser<'a> {
 
     fn variable(s: &mut Parser, can_assign: bool) {
         s.named_variable(s.previous.clone(), can_assign);
+    }
+
+    fn this(s: &mut Parser, _can_assign: bool) {
+        if s.class_compilers.is_empty() {
+            s.error("Cannot use 'this' outside of a class.");
+            return;
+        }
+        Parser::variable(s, false);
     }
 
     fn and(s: &mut Parser, _can_assign: bool) {

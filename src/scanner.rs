@@ -75,6 +75,14 @@ impl Token {
     pub fn new() -> Self {
         Default::default()
     }
+
+    pub fn from_string(source: &str) -> Self {
+        Token {
+            kind: Default::default(),
+            line: Default::default(),
+            source: String::from(source),
+        }
+    }
 }
 
 fn is_alpha(s: &str) -> bool {
