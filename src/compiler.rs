@@ -198,6 +198,7 @@ impl Compiler {
 
 struct ClassCompiler {
     name: scanner::Token,
+    has_superclass: bool,
 }
 
 pub fn compile(source: String) -> Option<memory::Root<object::ObjFunction>> {
@@ -429,7 +430,7 @@ impl<'a> Parser<'a> {
                 },
                 // Super
                 ParseRule {
-                    prefix: None,
+                    prefix: Some(Parser::super_),
                     infix: None,
                     precedence: Precedence::None,
                 },
@@ -637,7 +638,26 @@ impl<'a> Parser<'a> {
 
         self.class_compilers.push(ClassCompiler {
             name: self.previous.clone(),
+            has_superclass: false,
         });
+
+        if self.match_token(scanner::TokenKind::Less) {
+            self.consume(scanner::TokenKind::Identifier, "Expected superclass name.");
+            Parser::variable(self, false);
+
+            if name.source == self.previous.source {
+                self.error("A class cannot inherit from iteself.");
+            }
+
+            self.begin_scope();
+            self.compiler
+                .add_local(&scanner::Token::from_string("super"));
+            self.define_variable(0);
+
+            self.named_variable(name.clone(), false);
+            self.emit_byte(chunk::OpCode::Inherit as u8);
+            self.class_compilers.last_mut().unwrap().has_superclass = true;
+        }
 
         self.named_variable(name, false);
         self.consume(
@@ -652,6 +672,10 @@ impl<'a> Parser<'a> {
             "Expected '}' after class body.",
         );
         self.emit_byte(chunk::OpCode::Pop as u8);
+
+        if self.class_compilers.last().unwrap().has_superclass {
+            self.end_scope();
+        }
 
         self.class_compilers.pop();
     }
@@ -1268,6 +1292,33 @@ impl<'a> Parser<'a> {
 
     fn variable(s: &mut Parser, can_assign: bool) {
         s.named_variable(s.previous.clone(), can_assign);
+    }
+
+    fn super_(s: &mut Parser, _can_assign: bool) {
+        if s.class_compilers.is_empty() {
+            s.error("Cannot use 'super' outside of a class.");
+        } else if !s.class_compilers.last().unwrap().has_superclass {
+            s.error("Cannot use 'super' in a class with no superclass.");
+        }
+
+        s.consume(scanner::TokenKind::Dot, "Expected '.' after 'super'.");
+        s.consume(
+            scanner::TokenKind::Identifier,
+            "Expected superclass method name.",
+        );
+        let previous = s.previous.clone();
+        let name = s.identifier_constant(&previous);
+
+        s.named_variable(scanner::Token::from_string("this"), false);
+        if s.match_token(scanner::TokenKind::LeftParen) {
+            let arg_count = s.argument_list();
+            s.named_variable(scanner::Token::from_string("super"), false);
+            s.emit_bytes([chunk::OpCode::SuperInvoke as u8, name]);
+            s.emit_byte(arg_count);
+        } else {
+            s.named_variable(scanner::Token::from_string("super"), false);
+            s.emit_bytes([chunk::OpCode::GetSuper as u8, name]);
+        }
     }
 
     fn this(s: &mut Parser, _can_assign: bool) {

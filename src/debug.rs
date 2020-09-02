@@ -50,6 +50,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::SetUpvalue => byte_instruction("SET_UPVALUE", chunk, offset),
         chunk::OpCode::GetProperty => constant_instruction("GET_PROPERTY", chunk, offset),
         chunk::OpCode::SetProperty => constant_instruction("SET_PROPERTY", chunk, offset),
+        chunk::OpCode::GetSuper => constant_instruction("GET_SUPER", chunk, offset),
         chunk::OpCode::Equal => simple_instruction("EQUAL", offset),
         chunk::OpCode::Greater => simple_instruction("GREATER", offset),
         chunk::OpCode::Less => simple_instruction("LESS", offset),
@@ -65,6 +66,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::Loop => jump_instruction("LOOP", -1, chunk, offset),
         chunk::OpCode::Call => byte_instruction("CALL", chunk, offset),
         chunk::OpCode::Invoke => invoke_instruction("INVOKE", chunk, offset),
+        chunk::OpCode::SuperInvoke => invoke_instruction("SUPER_INVOKE", chunk, offset),
         chunk::OpCode::Closure => {
             let mut offset = offset + 1;
             let constant = chunk.code[offset] as usize;
@@ -102,6 +104,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
         chunk::OpCode::CloseUpvalue => simple_instruction("CLOSE_UPVALUE", offset),
         chunk::OpCode::Return => simple_instruction("RETURN", offset),
         chunk::OpCode::Class => constant_instruction("CLASS", chunk, offset),
+        chunk::OpCode::Inherit => simple_instruction("INHERIT", offset),
         chunk::OpCode::Method => constant_instruction("METHOD", chunk, offset),
     }
 }

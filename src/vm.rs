@@ -305,6 +305,19 @@ impl Vm {
                     self.stack.push(value);
                 }
 
+                chunk::OpCode::GetSuper => {
+                    let name = read_string!();
+                    let superclass = match self.stack.pop().unwrap() {
+                        value::Value::ObjClass(ptr) => ptr,
+                        _ => unreachable!(),
+                    };
+
+                    if let Some(msg) = bind_method(&mut self.stack, superclass, name) {
+                        self.runtime_error(msg.as_str());
+                        return InterpretResult::RuntimeError;
+                    }
+                }
+
                 chunk::OpCode::Equal => {
                     let b = self.stack.pop();
                     let a = self.stack.pop();
@@ -397,6 +410,19 @@ impl Vm {
                     frame = self.frames.last_mut().unwrap();
                 }
 
+                chunk::OpCode::SuperInvoke => {
+                    let method = read_string!();
+                    let arg_count = read_byte!() as usize;
+                    let superclass = match self.stack.pop().unwrap() {
+                        value::Value::ObjClass(ptr) => ptr,
+                        _ => unreachable!(),
+                    };
+                    if !self.invoke_from_class(superclass, method, arg_count) {
+                        return InterpretResult::RuntimeError;
+                    }
+                    frame = self.frames.last_mut().unwrap();
+                }
+
                 chunk::OpCode::Closure => {
                     let function = match read_constant!() {
                         value::Value::ObjFunction(underlying) => underlying,
@@ -452,6 +478,25 @@ impl Vm {
                     let class =
                         memory::allocate(RefCell::new(object::ObjClass::new(read_string!())));
                     self.stack.push(value::Value::ObjClass(class.as_gc()));
+                }
+
+                chunk::OpCode::Inherit => {
+                    let superclass_pos = self.stack.len() - 2;
+                    let superclass = match self.stack[superclass_pos] {
+                        value::Value::ObjClass(ptr) => ptr,
+                        _ => {
+                            self.runtime_error("Superclass must be a class.");
+                            return InterpretResult::RuntimeError;
+                        }
+                    };
+                    let subclass = match self.stack.last().unwrap() {
+                        value::Value::ObjClass(ptr) => *ptr,
+                        _ => unreachable!(),
+                    };
+                    for (name, value) in superclass.borrow().methods.iter() {
+                        subclass.borrow_mut().methods.insert(name.clone(), *value);
+                    }
+                    self.stack.pop();
                 }
 
                 chunk::OpCode::Method => {
