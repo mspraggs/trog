@@ -117,7 +117,14 @@ impl From<object::NativeFn> for Value {
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::Number(underlying) => write!(f, "{}", underlying),
+            Value::Number(underlying) => {
+                // Sigh... surely there's a more succinct way to do this?
+                if *underlying == 0.0 && underlying.is_sign_negative() {
+                    write!(f, "-0")
+                } else {
+                    write!(f, "{}", underlying)
+                }
+            }
             Value::Boolean(underlying) => write!(f, "{}", underlying),
             Value::ObjString(underlying) => write!(f, "{}", underlying.data),
             Value::ObjUpvalue(_) => write!(f, "upvalue"),
