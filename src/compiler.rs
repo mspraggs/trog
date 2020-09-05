@@ -113,9 +113,10 @@ enum CompilerError {
 
 impl Compiler {
     fn new(kind: FunctionKind, name: String, enclosing: Option<Box<Compiler>>) -> Self {
+        let name = memory::allocate(object::ObjString::new(name));
         Compiler {
             enclosing: enclosing,
-            function: memory::allocate(object::ObjFunction::new(name)),
+            function: memory::allocate(object::ObjFunction::new(name.as_gc())),
             kind: kind,
             locals: vec![Local {
                 name: scanner::Token::from_string(if kind != FunctionKind::Function {

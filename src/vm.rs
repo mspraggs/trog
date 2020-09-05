@@ -628,10 +628,10 @@ impl Vm {
 
             let instruction = frame.ip - 1;
             eprint!("[line {}] in ", function.chunk.lines[instruction]);
-            if function.name.borrow().data.len() == 0 {
+            if function.name.data.len() == 0 {
                 eprintln!("script");
             } else {
-                eprintln!("{}()", function.name.borrow().data);
+                eprintln!("{}()", function.name.data);
             }
         }
 

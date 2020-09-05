@@ -99,16 +99,16 @@ pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
     pub chunk: chunk::Chunk,
-    pub name: memory::Gc<cell::RefCell<ObjString>>,
+    pub name: memory::Gc<ObjString>,
 }
 
 impl ObjFunction {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: memory::Gc<ObjString>) -> Self {
         ObjFunction {
             arity: 0,
             upvalue_count: 0,
             chunk: chunk::Chunk::new(),
-            name: memory::allocate(cell::RefCell::new(ObjString::new(name))).as_gc(),
+            name: name,
         }
     }
 }
@@ -127,9 +127,9 @@ impl memory::GcManaged for ObjFunction {
 
 impl fmt::Display for ObjFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.name.borrow().data.len() {
+        match self.name.data.len() {
             0 => write!(f, "<script>"),
-            _ => write!(f, "<fn {}>", self.name.borrow().data),
+            _ => write!(f, "<fn {}>", self.name.data),
         }
     }
 }
