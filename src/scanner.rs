@@ -64,7 +64,7 @@ impl Default for TokenKind {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
     pub line: usize,

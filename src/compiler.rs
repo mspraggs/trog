@@ -493,11 +493,8 @@ impl<'a> Parser<'a> {
 
         loop {
             self.current = self.scanner.scan_token();
-            match self.current.kind {
-                scanner::TokenKind::Error => {}
-                _ => {
-                    break;
-                }
+            if self.current.kind != scanner::TokenKind::Error {
+                break;
             }
 
             let msg = self.current.source.clone();
