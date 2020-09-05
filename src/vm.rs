@@ -161,7 +161,7 @@ impl Vm {
         }
 
         loop {
-            if cfg!(debug_assertions) {
+            if cfg!(feature = "debug_trace") {
                 print!("          ");
                 for v in self.stack.iter() {
                     print!("[ {} ]", v);

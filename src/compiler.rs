@@ -547,7 +547,7 @@ impl<'a> Parser<'a> {
     fn finalise_compiler(&mut self) -> (memory::Root<object::ObjFunction>, Box<Compiler>) {
         self.emit_return();
 
-        if cfg!(debug_assertions) && !self.had_error {
+        if cfg!(feature = "debug_bytecode") && !self.had_error {
             let func_name = format!("{}", *self.compiler.function);
             debug::disassemble_chunk(&self.compiler.function.chunk, func_name.as_str());
         }

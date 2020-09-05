@@ -28,7 +28,7 @@ use crate::common;
 
 pub fn allocate<T: 'static + GcManaged>(data: T) -> Root<T> {
     let ptr = HEAP.with(|heap| {
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_stress_gc") {
             heap.borrow_mut().collect();
         } else {
             heap.borrow_mut().collect_if_required();
@@ -42,7 +42,7 @@ pub fn allocate<T: 'static + GcManaged>(data: T) -> Root<T> {
 
 pub fn allocate_unique<T: 'static + GcManaged>(data: T) -> UniqueRoot<T> {
     let ptr = HEAP.with(|heap| {
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_stress_gc") {
             heap.borrow_mut().collect();
         } else {
             heap.borrow_mut().collect_if_required();
@@ -100,7 +100,7 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for GcBox<T> {
         if self.colour.replace(Colour::Grey) == Colour::Grey {
             return;
         }
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_trace_gc") {
             println!("{:?} mark", self as *const _);
         }
         self.data.mark();
@@ -110,7 +110,7 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for GcBox<T> {
         if self.colour.replace(Colour::Black) == Colour::Black {
             return;
         }
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_trace_gc") {
             println!("{:?} blacken", self as *const _);
         }
         self.data.blacken();
@@ -308,7 +308,7 @@ impl Heap {
         self.bytes_allocated
             .replace(self.bytes_allocated.get() + size);
 
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_trace_gc") {
             let new_ptr = self.objects.last().unwrap();
             println!(
                 "{:?} allocate {} for {:?}",
@@ -327,7 +327,7 @@ impl Heap {
     }
 
     fn collect(&mut self) {
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_trace_gc") {
             println!("-- gc begin")
         }
 
@@ -341,7 +341,7 @@ impl Heap {
         self.collection_threshold
             .replace(self.bytes_allocated.get() * common::HEAP_GROWTH_FACTOR);
 
-        if cfg!(debug_assertions) {
+        if cfg!(feature = "debug_trace_gc") {
             println!("-- gc end (freed {} bytes)", bytes_freed);
             println!(
                 "   collected {} bytes (from {} to {}) next at {}",
@@ -389,7 +389,7 @@ impl Heap {
             .iter()
             .filter(|obj| obj.colour.get() == Colour::White)
             .map(|obj| {
-                if cfg!(debug_assertions) {
+                if cfg!(feature = "debug_trace_gc") {
                     println!("{:?} free", obj.as_ref() as *const _);
                 }
                 mem::size_of_val(&obj.data)
