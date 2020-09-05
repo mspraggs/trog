@@ -151,6 +151,13 @@ impl cmp::PartialEq for Value {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
             (Value::ObjString(first), Value::ObjString(second)) => **first == **second,
+            (Value::ObjUpvalue(first), Value::ObjUpvalue(second)) => *first == *second,
+            (Value::ObjFunction(first), Value::ObjFunction(second)) => *first == *second,
+            (Value::ObjNative(first), Value::ObjNative(second)) => *first == *second,
+            (Value::ObjClosure(first), Value::ObjClosure(second)) => *first == *second,
+            (Value::ObjClass(first), Value::ObjClass(second)) => *first == *second,
+            (Value::ObjInstance(first), Value::ObjInstance(second)) => *first == *second,
+            (Value::ObjBoundMethod(first), Value::ObjBoundMethod(second)) => *first == *second,
             (Value::None, Value::None) => true,
             _ => false,
         }
