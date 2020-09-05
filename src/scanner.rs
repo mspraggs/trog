@@ -173,7 +173,10 @@ impl Scanner {
                 });
             }
             "\"" => self.string(),
-            _ => self.error_token("Unexpected character."),
+            c => {
+                let msg = format!("Unexpected character: '{}'.", c);
+                self.error_token(msg.as_str())
+            }
         }
     }
 
