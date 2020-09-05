@@ -95,7 +95,6 @@ struct Upvalue {
 
 #[derive(Default)]
 struct Compiler {
-    enclosing: Option<Box<Compiler>>,
     function: memory::Root<object::ObjFunction>,
     kind: FunctionKind,
 
@@ -112,10 +111,9 @@ enum CompilerError {
 }
 
 impl Compiler {
-    fn new(kind: FunctionKind, name: String, enclosing: Option<Box<Compiler>>) -> Self {
+    fn new(kind: FunctionKind, name: String) -> Self {
         let name = memory::allocate(object::ObjString::new(name));
         Compiler {
-            enclosing: enclosing,
             function: memory::allocate(object::ObjFunction::new(name.as_gc())),
             kind: kind,
             locals: vec![Local {
@@ -178,23 +176,6 @@ impl Compiler {
         });
         Ok(upvalue_count as u8)
     }
-
-    fn resolve_upvalue(&mut self, name: &scanner::Token) -> Result<u8, CompilerError> {
-        if self.kind == FunctionKind::Script {
-            return Err(CompilerError::InvalidCompilerKind);
-        }
-
-        let enclosing = self.enclosing.as_deref_mut().unwrap();
-
-        if let Ok(index) = enclosing.resolve_local(name) {
-            enclosing.locals[index as usize].is_captured = true;
-            return self.add_upvalue(index, true);
-        }
-
-        enclosing
-            .resolve_upvalue(name)
-            .map(|i| self.add_upvalue(i, false))?
-    }
 }
 
 struct ClassCompiler {
@@ -215,7 +196,7 @@ struct Parser<'a> {
     had_error: bool,
     panic_mode: bool,
     scanner: &'a mut scanner::Scanner,
-    compiler: Box<Compiler>,
+    compilers: Vec<Compiler>,
     class_compilers: Vec<ClassCompiler>,
     rules: [ParseRule; 40],
 }
@@ -228,7 +209,7 @@ impl<'a> Parser<'a> {
             had_error: false,
             panic_mode: false,
             scanner: scanner,
-            compiler: Box::new(Compiler::new(FunctionKind::Script, String::from(""), None)),
+            compilers: vec![Compiler::new(FunctionKind::Script, String::from(""))],
             class_compilers: Vec::new(),
             rules: [
                 // LeftParen
@@ -536,34 +517,27 @@ impl<'a> Parser<'a> {
     }
 
     fn new_compiler(&mut self, kind: FunctionKind) {
-        let mut enclosing: Box<Compiler> = Default::default();
-        std::mem::swap(&mut enclosing, &mut self.compiler);
-        self.compiler = Box::new(Compiler::new(
-            kind,
-            self.previous.source.clone(),
-            Some(enclosing),
-        ));
+        self.compilers
+            .push(Compiler::new(kind, self.previous.source.clone()));
     }
 
-    fn finalise_compiler(&mut self) -> (memory::Root<object::ObjFunction>, Box<Compiler>) {
+    fn finalise_compiler(&mut self) -> (memory::Root<object::ObjFunction>, Compiler) {
         self.emit_return();
 
         if cfg!(feature = "debug_bytecode") && !self.had_error {
-            let func_name = format!("{}", *self.compiler.function);
-            debug::disassemble_chunk(&self.compiler.function.chunk, func_name.as_str());
+            let func_name = format!("{}", *self.compiler().function);
+            debug::disassemble_chunk(&self.compiler().function.chunk, func_name.as_str());
         }
 
-        let upvalue_count = self.compiler.upvalues.len();
-        self.compiler.function.upvalue_count = upvalue_count;
+        let upvalue_count = self.compiler().upvalues.len();
+        self.compiler_mut().function.upvalue_count = upvalue_count;
 
         // TODO: Use a Vec of compilers here to simplify this logic.
         let mut function: memory::Root<object::ObjFunction> = Default::default();
-        mem::swap(&mut function, &mut self.compiler.function);
-        let mut enclosed: Box<Compiler> = Default::default();
-        mem::swap(&mut enclosed, &mut self.compiler);
-        self.compiler = enclosed.enclosing.take().unwrap_or_default();
+        let mut compiler = self.compilers.pop().unwrap();
+        mem::swap(&mut function, &mut compiler.function);
 
-        (function, enclosed)
+        (function, compiler)
     }
 
     fn function(&mut self, kind: FunctionKind) {
@@ -576,8 +550,8 @@ impl<'a> Parser<'a> {
         );
         if !self.check(scanner::TokenKind::RightParen) {
             loop {
-                self.compiler.function.arity += 1;
-                if self.compiler.function.arity > 255 {
+                self.compiler_mut().function.arity += 1;
+                if self.compiler().function.arity > 255 {
                     self.error_at_current("Cannot have more than 255 parameters.");
                 }
 
@@ -648,7 +622,7 @@ impl<'a> Parser<'a> {
             }
 
             self.begin_scope();
-            self.compiler
+            self.compiler_mut()
                 .add_local(&scanner::Token::from_string("super"));
             self.define_variable(0);
 
@@ -797,13 +771,13 @@ impl<'a> Parser<'a> {
     }
 
     fn return_statement(&mut self) {
-        if self.compiler.kind == FunctionKind::Script {
+        if self.compiler().kind == FunctionKind::Script {
             self.error("Cannot return from top-level code.");
         }
         if self.match_token(scanner::TokenKind::SemiColon) {
             self.emit_return();
         } else {
-            if self.compiler.kind == FunctionKind::Initialiser {
+            if self.compiler().kind == FunctionKind::Initialiser {
                 self.error("Cannot return a value from an initialiser.");
             }
             self.expression();
@@ -864,16 +838,17 @@ impl<'a> Parser<'a> {
     }
 
     fn begin_scope(&mut self) {
-        self.compiler.scope_depth += 1;
+        self.compiler_mut().scope_depth += 1;
     }
 
     fn end_scope(&mut self) {
-        self.compiler.scope_depth -= 1;
+        self.compiler_mut().scope_depth -= 1;
 
         loop {
-            let opcode = match self.compiler.locals.last() {
+            let scope_depth = self.compiler().scope_depth;
+            let opcode = match self.compiler().locals.last() {
                 Some(local) => {
-                    if local.depth.unwrap() <= self.compiler.scope_depth {
+                    if local.depth.unwrap() <= scope_depth {
                         return;
                     }
                     if local.is_captured {
@@ -888,7 +863,7 @@ impl<'a> Parser<'a> {
             };
 
             self.emit_byte(opcode as u8);
-            self.compiler.locals.pop();
+            self.compiler_mut().locals.pop();
         }
     }
 
@@ -957,7 +932,7 @@ impl<'a> Parser<'a> {
     }
 
     fn emit_return(&mut self) {
-        if self.compiler.kind == FunctionKind::Initialiser {
+        if self.compiler().kind == FunctionKind::Initialiser {
             self.emit_bytes([chunk::OpCode::GetLocal as u8, 0]);
         } else {
             self.emit_byte(chunk::OpCode::Nil as u8);
@@ -1020,16 +995,17 @@ impl<'a> Parser<'a> {
     }
 
     fn declare_variable(&mut self) {
-        if self.compiler.scope_depth == 0 {
+        let scope_depth = self.compiler().scope_depth;
+        if scope_depth == 0 {
             return;
         }
 
         let mut error_locations: Vec<scanner::Token> = Vec::new();
 
-        for local in self.compiler.locals.iter().rev() {
+        for local in self.compilers.last().unwrap().locals.iter().rev() {
             match local.depth {
                 Some(value) => {
-                    if value < self.compiler.scope_depth {
+                    if value < scope_depth {
                         break;
                     }
                 }
@@ -1048,7 +1024,7 @@ impl<'a> Parser<'a> {
             );
         }
 
-        if !self.compiler.add_local(&self.previous) {
+        if !self.compilers.last_mut().unwrap().add_local(&self.previous) {
             self.error("Too many variables in function.");
         }
     }
@@ -1057,7 +1033,7 @@ impl<'a> Parser<'a> {
         self.consume(scanner::TokenKind::Identifier, error_message);
 
         self.declare_variable();
-        if self.compiler.scope_depth > 0 {
+        if self.compiler().scope_depth > 0 {
             return 0;
         }
 
@@ -1066,14 +1042,14 @@ impl<'a> Parser<'a> {
     }
 
     fn mark_initialised(&mut self) {
-        if self.compiler.scope_depth == 0 {
+        if self.compiler().scope_depth == 0 {
             return;
         }
-        self.compiler.locals.last_mut().unwrap().depth = Some(self.compiler.scope_depth);
+        self.compiler_mut().locals.last_mut().unwrap().depth = Some(self.compiler().scope_depth);
     }
 
     fn define_variable(&mut self, global: u8) {
-        if self.compiler.scope_depth > 0 {
+        if self.compiler().scope_depth > 0 {
             self.mark_initialised();
             return;
         }
@@ -1147,7 +1123,7 @@ impl<'a> Parser<'a> {
     }
 
     fn resolve_local(&mut self, name: &scanner::Token) -> Option<u8> {
-        match self.compiler.resolve_local(name) {
+        match self.compiler_mut().resolve_local(name) {
             Ok(index) => Some(index),
             Err(error) => {
                 self.compiler_error(error);
@@ -1157,13 +1133,34 @@ impl<'a> Parser<'a> {
     }
 
     fn resolve_upvalue(&mut self, name: &scanner::Token) -> Option<u8> {
-        match self.compiler.resolve_upvalue(name) {
-            Ok(index) => Some(index),
-            Err(error) => {
-                self.compiler_error(error);
-                None
+        if self.compilers.len() < 2 {
+            // If there's only one scope then we're not going to find an upvalue.
+            self.compiler_error(CompilerError::InvalidCompilerKind);
+            return None;
+        }
+
+        // Iterate through the compilers outwards from the active one.
+        for enclosing in (0..self.compilers.len() - 1).rev() {
+            let current = enclosing + 1;
+            // Try and resolve the local in the enclosing compiler's scope.
+            if let Ok(index) = self.compilers[enclosing].resolve_local(name) {
+                // If we found it, mark as captured and propagate the upvalue to the compilers that
+                // are enclosed by the current one.
+                self.compilers[enclosing].locals[index as usize].is_captured = true;
+                let mut index = index;
+                for compiler in current..self.compilers.len() {
+                    index = match self.compilers[compiler].add_upvalue(index, compiler == current) {
+                        Ok(index) => index,
+                        Err(error) => {
+                            self.compiler_error(error);
+                            return None;
+                        }
+                    };
+                }
+                return Some(index);
             }
         }
+        None
     }
 
     fn named_variable(&mut self, name: scanner::Token, can_assign: bool) {
@@ -1188,8 +1185,16 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn compiler(&mut self) -> &Compiler {
+        &self.compilers.last().unwrap()
+    }
+
+    fn compiler_mut(&mut self) -> &mut Compiler {
+        self.compilers.last_mut().unwrap()
+    }
+
     fn chunk(&mut self) -> &mut chunk::Chunk {
-        &mut self.compiler.function.chunk
+        &mut self.compiler_mut().function.chunk
     }
 
     fn grouping(s: &mut Parser, _can_assign: bool) {
