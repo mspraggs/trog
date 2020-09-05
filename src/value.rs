@@ -38,9 +38,9 @@ pub enum Value {
 impl Value {
     pub fn as_bool(&self) -> bool {
         match self {
-            Value::None => true,
             Value::Boolean(underlying) => *underlying,
-            _ => false,
+            Value::None => false,
+            _ => true,
         }
     }
 }
