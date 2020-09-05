@@ -118,7 +118,7 @@ impl Vm {
                             value::Value::Number(second)
                         ) => (first, second),
                         _ => {
-                            self.runtime_error("Operands must be numbers.");
+                            self.runtime_error("Binary operands must both be numbers.");
                             return InterpretResult::RuntimeError;
                         }
                     };
@@ -342,7 +342,9 @@ impl Vm {
                         }
 
                         _ => {
-                            self.runtime_error("Operands must be two numbers or two strings.");
+                            self.runtime_error(
+                                "Binary operands must be two numbers or two strings.",
+                            );
                             return InterpretResult::RuntimeError;
                         }
                     }
@@ -366,7 +368,7 @@ impl Vm {
                             self.stack.push(value::Value::Number(-underlying));
                         }
                         _ => {
-                            self.runtime_error("Operand must be a number.");
+                            self.runtime_error("Unary operand must be a number.");
                             return InterpretResult::RuntimeError;
                         }
                     }
