@@ -163,6 +163,12 @@ impl<T: 'static + GcManaged> Deref for Gc<T> {
     }
 }
 
+impl<T: GcManaged> PartialEq for Gc<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ptr.as_ptr() == other.ptr.as_ptr()
+    }
+}
+
 pub struct Root<T: 'static + GcManaged> {
     ptr: GcBoxPtr<T>,
 }
