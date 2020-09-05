@@ -74,7 +74,7 @@ fn main() {
     } else if args.len() == 2 {
         run_file(&mut vm, &args[1]);
     } else {
-        eprintln!("Usage: ./pyrite [path]");
+        eprintln!("Usage: ./oxyscript [path]");
         process::exit(64);
     }
 }
