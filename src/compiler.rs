@@ -1139,7 +1139,7 @@ impl<'a> Parser<'a> {
     fn compiler_error(&mut self, error: CompilerError) {
         match error {
             CompilerError::ReadVarInInitialiser => {
-                self.error("Cannot read variable in its own initialiser.");
+                self.error("Cannot read local variable in its own initialiser.");
             }
             CompilerError::TooManyClosureVars => {
                 self.error("Too many closure variables in function.");
