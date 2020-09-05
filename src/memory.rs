@@ -78,7 +78,6 @@ type GcBoxPtr<T> = NonNull<GcBox<T>>;
 struct GcBox<T: GcManaged + ?Sized> {
     num_roots: Cell<usize>,
     colour: Cell<Colour>,
-    num_greys: Rc<RefCell<usize>>,
     data: T,
 }
 
@@ -101,7 +100,6 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for GcBox<T> {
         if self.colour.replace(Colour::Grey) == Colour::Grey {
             return;
         }
-        *self.num_greys.borrow_mut() += 1;
         if cfg!(debug_assertions) {
             println!("{:?} mark", self as *const _);
         }
@@ -112,7 +110,6 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for GcBox<T> {
         if self.colour.replace(Colour::Black) == Colour::Black {
             return;
         }
-        *self.num_greys.borrow_mut() -= 1;
         if cfg!(debug_assertions) {
             println!("{:?} blacken", self as *const _);
         }
@@ -284,7 +281,6 @@ impl<T: 'static + GcManaged> Drop for UniqueRoot<T> {
 pub struct Heap {
     collection_threshold: Cell<usize>,
     bytes_allocated: Cell<usize>,
-    num_greys: Rc<RefCell<usize>>,
     objects: Vec<Box<GcBox<dyn GcManaged>>>,
 }
 
@@ -293,7 +289,6 @@ impl Heap {
         Heap {
             collection_threshold: Cell::new(common::HEAP_INIT_BYTES_MAX),
             bytes_allocated: Cell::new(0),
-            num_greys: Rc::new(RefCell::new(0)),
             objects: Vec::new(),
         }
     }
@@ -302,7 +297,6 @@ impl Heap {
         let mut obj = Box::new(GcBox {
             num_roots: Cell::new(0),
             colour: Cell::new(Colour::White),
-            num_greys: self.num_greys.clone(),
             data: data,
         });
 
@@ -374,11 +368,18 @@ impl Heap {
     }
 
     fn trace_references(&mut self) {
-        while *self.num_greys.borrow() > 0 {
-            self.objects
+        let mut num_greys = self
+            .objects
+            .iter()
+            .filter(|obj| obj.colour.get() == Colour::Grey)
+            .count();
+        while num_greys > 0 {
+            num_greys = self
+                .objects
                 .iter_mut()
                 .filter(|obj| obj.colour.get() == Colour::Grey)
-                .for_each(|obj| obj.blacken());
+                .map(|obj| obj.blacken())
+                .count();
         }
     }
 
