@@ -344,8 +344,8 @@ impl Scanner {
     }
 
     fn string(&mut self) -> Token {
-        while self.peek() != "\"" && !self.is_at_end() {
-            if self.peek() == "\"" {
+        while !self.is_at_end() && self.peek() != "\"" {
+            if self.peek() == "\n" {
                 self.line += 1;
             }
             self.advance();
