@@ -185,19 +185,23 @@ impl Scanner {
     }
 
     fn advance(&mut self) -> &str {
-        self.current += 1;
-        &self.source[self.current - 1..self.current]
+        let slice_start = self.current;
+        self.current = self.get_next_char_boundary(self.current);
+        &self.source[slice_start..self.current]
     }
 
     fn peek(&self) -> &str {
-        &self.source[self.current..self.current + 1]
+        let slice_end = self.get_next_char_boundary(self.current);
+        &self.source[self.current..slice_end]
     }
 
     fn peek_next(&self) -> &str {
         if self.is_at_end() {
             return "";
         }
-        &self.source[self.current + 1..self.current + 2]
+        let slice_start = self.get_next_char_boundary(self.current);
+        let slice_end = self.get_next_char_boundary(slice_start);
+        &self.source[slice_start..slice_end]
     }
 
     fn match_char(&mut self, expected: &str) -> bool {
@@ -353,5 +357,13 @@ impl Scanner {
 
         self.advance();
         self.make_token(TokenKind::Str)
+    }
+
+    fn get_next_char_boundary(&self, start: usize) -> usize {
+        let mut pos = start + 1;
+        while pos <= self.source.len() && !self.source.as_str().is_char_boundary(pos) {
+            pos += 1;
+        }
+        pos
     }
 }
