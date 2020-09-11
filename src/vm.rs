@@ -290,11 +290,8 @@ impl Vm {
                     if let Some(property) = borrowed_instance.fields.get(&name.data) {
                         self.pop()?;
                         self.push(*property);
-                    } else if let Some(msg) =
-                        bind_method(&mut self.stack, borrowed_instance.class, name)
-                    {
-                        self.runtime_error(msg.as_str());
-                        return Err(VmError::RuntimeError);
+                    } else {
+                        self.bind_method(borrowed_instance.class, name)?;
                     }
                 }
 
@@ -325,10 +322,7 @@ impl Vm {
                         _ => unreachable!(),
                     };
 
-                    if let Some(msg) = bind_method(&mut self.stack, superclass, name) {
-                        self.runtime_error(msg.as_str());
-                        return Err(VmError::RuntimeError);
-                    }
+                    self.bind_method(superclass, name)?;
                 }
 
                 chunk::OpCode::Equal => {
@@ -444,7 +438,7 @@ impl Vm {
                         let index = read_byte!() as usize;
                         let slot_base = self.frame()?.slot_base;
                         closure.borrow_mut().upvalues[i] = if is_local {
-                            capture_upvalue(self.open_upvalues.deref_mut(), slot_base + index)
+                            self.capture_upvalue(slot_base + index)
                         } else {
                             self.frame()?.closure.borrow().upvalues[index]
                         };
@@ -452,15 +446,14 @@ impl Vm {
                 }
 
                 chunk::OpCode::CloseUpvalue => {
-                    let value = *self.peek(0);
-                    close_upvalues(&mut self.open_upvalues, self.stack.len() - 1, &value);
+                    self.close_upvalues(self.stack.len() - 1, *self.peek(0));
                     self.pop()?;
                 }
 
                 chunk::OpCode::Return => {
                     let result = self.pop()?;
                     for i in self.frame()?.slot_base..self.stack.len() {
-                        close_upvalues(&mut self.open_upvalues, i, &self.stack[i])
+                        self.close_upvalues(i, self.stack[i])
                     }
 
                     let prev_stack_size = self.frame()?.slot_base;
@@ -501,7 +494,7 @@ impl Vm {
 
                 chunk::OpCode::Method => {
                     let name = read_string!();
-                    define_method(self.stack.as_mut(), name)?;
+                    self.define_method(name)?;
                 }
             }
         }
@@ -648,6 +641,68 @@ impl Vm {
         self.pop().unwrap_or(value::Value::None);
     }
 
+    fn define_method(&mut self, name: memory::Gc<object::ObjString>) -> Result<(), VmError> {
+        let method = *self.peek(0);
+        let class = match *self.peek(1) {
+            value::Value::ObjClass(ptr) => ptr,
+            _ => unreachable!(),
+        };
+        class.borrow_mut().methods.insert(name.data.clone(), method);
+        self.pop().unwrap_or(value::Value::None);
+
+        Ok(())
+    }
+
+    fn bind_method(
+        &mut self,
+        class: memory::Gc<RefCell<object::ObjClass>>,
+        name: memory::Gc<object::ObjString>,
+    ) -> Result<(), VmError> {
+        let borrowed_class = class.borrow();
+        let method = match borrowed_class.methods.get(&name.data) {
+            Some(value::Value::ObjClosure(ptr)) => *ptr,
+            None => {
+                let msg = format!("Undefined property '{}'.", name.data);
+                self.runtime_error(msg.as_str());
+                return Err(VmError::AttributeError);
+            }
+            _ => unreachable!(),
+        };
+
+        let instance = *self.peek(0);
+        let bound = memory::allocate(RefCell::new(object::ObjBoundMethod::new(instance, method)));
+        self.pop()?;
+        self.push(value::Value::ObjBoundMethod(bound.as_gc()));
+
+        Ok(())
+    }
+
+    fn capture_upvalue(&mut self, location: usize) -> memory::Gc<RefCell<object::ObjUpvalue>> {
+        let result = self
+            .open_upvalues
+            .iter()
+            .find(|&u| u.borrow().is_open_with_index(location));
+
+        let upvalue = if let Some(upvalue) = result {
+            *upvalue
+        } else {
+            memory::allocate(RefCell::new(object::ObjUpvalue::new(location))).as_gc()
+        };
+
+        self.open_upvalues.push(upvalue);
+        upvalue
+    }
+
+    fn close_upvalues(&mut self, last: usize, value: value::Value) {
+        for upvalue in self.open_upvalues.iter() {
+            if upvalue.borrow().is_open_with_index(last) {
+                upvalue.borrow_mut().close(value);
+            }
+        }
+
+        self.open_upvalues.retain(|u| u.borrow().is_open());
+    }
+
     fn frame(&self) -> Result<&CallFrame, VmError> {
         self.frames.last().ok_or(VmError::IndexError)
     }
@@ -673,75 +728,4 @@ impl Vm {
     fn pop(&mut self) -> Result<value::Value, VmError> {
         self.stack.pop().ok_or(VmError::IndexError)
     }
-}
-
-fn capture_upvalue(
-    open_upvalues: &mut Vec<memory::Gc<RefCell<object::ObjUpvalue>>>,
-    location: usize,
-) -> memory::Gc<RefCell<object::ObjUpvalue>> {
-    let result = open_upvalues
-        .iter()
-        .find(|&u| u.borrow().is_open_with_index(location));
-
-    let upvalue = if let Some(upvalue) = result {
-        *upvalue
-    } else {
-        memory::allocate(RefCell::new(object::ObjUpvalue::new(location))).as_gc()
-    };
-
-    open_upvalues.push(upvalue);
-    upvalue
-}
-
-fn close_upvalues(
-    open_upvalues: &mut Vec<memory::Gc<RefCell<object::ObjUpvalue>>>,
-    last: usize,
-    value: &value::Value,
-) {
-    for upvalue in open_upvalues.iter() {
-        if upvalue.borrow().is_open_with_index(last) {
-            upvalue.borrow_mut().close(*value);
-        }
-    }
-
-    open_upvalues.retain(|u| u.borrow().is_open());
-}
-
-fn define_method(
-    stack: &mut Vec<value::Value>,
-    name: memory::Gc<object::ObjString>,
-) -> Result<(), VmError> {
-    let method = *stack.last().ok_or(VmError::IndexError)?;
-    let class_pos = stack.len() - 2;
-    let class = match stack[class_pos] {
-        value::Value::ObjClass(ptr) => ptr,
-        _ => unreachable!(),
-    };
-    class.borrow_mut().methods.insert(name.data.clone(), method);
-    stack.pop();
-
-    Ok(())
-}
-
-fn bind_method(
-    stack: &mut Vec<value::Value>,
-    class: memory::Gc<RefCell<object::ObjClass>>,
-    name: memory::Gc<object::ObjString>,
-) -> Option<String> {
-    let borrowed_class = class.borrow();
-    let method = match borrowed_class.methods.get(&name.data) {
-        Some(value::Value::ObjClosure(ptr)) => *ptr,
-        None => {
-            let msg = format!("Undefined property '{}'.", name.data);
-            return Some(msg);
-        }
-        _ => unreachable!(),
-    };
-
-    let instance = *stack.last().expect("Value stack empty.");
-    let bound = memory::allocate(RefCell::new(object::ObjBoundMethod::new(instance, method)));
-    stack.pop();
-    stack.push(value::Value::ObjBoundMethod(bound.as_gc()));
-
-    None
 }
