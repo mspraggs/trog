@@ -1058,7 +1058,7 @@ impl<'a> Parser<'a> {
     }
 
     fn argument_list(&mut self) -> u8 {
-        let mut arg_count: u8 = 0;
+        let mut arg_count: usize = 0;
         if !self.check(scanner::TokenKind::RightParen) {
             loop {
                 self.expression();
@@ -1077,7 +1077,7 @@ impl<'a> Parser<'a> {
             scanner::TokenKind::RightParen,
             "Expected ')' after arguments.",
         );
-        arg_count
+        arg_count as u8
     }
 
     fn get_rule(&self, kind: scanner::TokenKind) -> &ParseRule {
