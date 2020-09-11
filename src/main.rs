@@ -54,13 +54,13 @@ fn run_file(vm: &mut vm::Vm, path: &String) {
     };
 
     match result {
-        vm::InterpretResult::CompileError => {
+        Err(vm::VmError::CompileError) => {
             process::exit(65);
         }
-        vm::InterpretResult::RuntimeError => {
+        Err(_) => {
             process::exit(70);
         }
-        _ => {}
+        Ok(_) => {}
     };
 }
 

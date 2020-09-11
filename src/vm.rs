@@ -29,17 +29,21 @@ use crate::value;
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 
-pub enum InterpretResult {
-    Ok,
+#[derive(Debug)]
+pub enum VmError {
+    AttributeError,
     CompileError,
+    IndexError,
     RuntimeError,
+    TypeError,
+    ValueError,
 }
 
-pub fn interpret(vm: &mut Vm, source: String) -> InterpretResult {
+pub fn interpret(vm: &mut Vm, source: String) -> Result<(), VmError> {
     let compile_result = compiler::compile(source);
     match compile_result {
         Some(function) => vm.interpret(function),
-        None => InterpretResult::CompileError,
+        None => Err(VmError::CompileError),
     }
 }
 
@@ -93,25 +97,26 @@ impl Vm {
         Default::default()
     }
 
-    pub fn interpret(&mut self, function: memory::Root<object::ObjFunction>) -> InterpretResult {
+    pub fn interpret(
+        &mut self,
+        function: memory::Root<object::ObjFunction>,
+    ) -> Result<(), VmError> {
         self.define_native("clock", clock_native);
-        self.stack.push(value::Value::ObjFunction(function.as_gc()));
+        self.push(value::Value::ObjFunction(function.as_gc()));
 
         let closure = memory::allocate(RefCell::new(object::ObjClosure::new(function.as_gc())));
-        self.stack.pop();
-        self.stack.push(value::Value::ObjClosure(closure.as_gc()));
-        self.call_value(value::Value::ObjClosure(closure.as_gc()), 0);
+        self.pop()?;
+        self.push(value::Value::ObjClosure(closure.as_gc()));
+        self.call_value(value::Value::ObjClosure(closure.as_gc()), 0)?;
         self.run()
     }
 
-    fn run(&mut self) -> InterpretResult {
-        let mut frame = self.frames.last_mut().unwrap();
-
+    fn run(&mut self) -> Result<(), VmError> {
         macro_rules! binary_op {
             ($value_type:expr, $op:tt) => {
                 {
-                    let second_value = self.stack.pop().unwrap();
-                    let first_value = self.stack.pop().unwrap();
+                    let second_value = self.pop()?;
+                    let first_value = self.pop()?;
                     let (first, second) = match (first_value, second_value) {
                         (
                             value::Value::Number(first),
@@ -119,36 +124,40 @@ impl Vm {
                         ) => (first, second),
                         _ => {
                             self.runtime_error("Binary operands must both be numbers.");
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     };
-                    self.stack.push($value_type(first $op second));
+                    self.push($value_type(first $op second));
                 }
             };
         }
 
         macro_rules! read_byte {
             () => {{
-                let ip = frame.ip;
-                let ret = frame.closure.borrow().function.chunk.code[ip];
-                frame.ip += 1;
+                let ip = self.frame()?.ip;
+                let ret = self.frame()?.closure.borrow().function.chunk.code[ip];
+                self.frames.last_mut().ok_or(VmError::IndexError)?.ip += 1;
                 ret
             }};
         }
 
         macro_rules! read_short {
             () => {{
-                let ret = ((frame.closure.borrow().function.chunk.code[frame.ip] as u16) << 8)
-                    | frame.closure.borrow().function.chunk.code[frame.ip + 1] as u16;
-                frame.ip += 2;
+                let ret = ((self.frame()?.closure.borrow().function.chunk.code[self.frame()?.ip]
+                    as u16)
+                    << 8)
+                    | self.frame()?.closure.borrow().function.chunk.code[self.frame()?.ip + 1]
+                        as u16;
+                self.frame_mut()?.ip += 2;
                 ret
             }};
         }
 
         macro_rules! read_constant {
-            () => {
-                frame.closure.borrow().function.chunk.constants[read_byte!() as usize]
-            };
+            () => {{
+                let index = read_byte!() as usize;
+                self.frame()?.closure.borrow().function.chunk.constants[index]
+            }};
         }
 
         macro_rules! read_string {
@@ -167,162 +176,165 @@ impl Vm {
                     print!("[ {} ]", v);
                 }
                 println!("");
-                debug::disassemble_instruction(&frame.closure.borrow().function.chunk, frame.ip);
+                let ip = self.frame()?.ip;
+                debug::disassemble_instruction(&self.frame()?.closure.borrow().function.chunk, ip);
             }
             let instruction = chunk::OpCode::from(read_byte!());
 
             match instruction {
                 chunk::OpCode::Constant => {
                     let constant = read_constant!();
-                    self.stack.push(constant);
+                    self.push(constant);
                 }
 
                 chunk::OpCode::Nil => {
-                    self.stack.push(value::Value::None);
+                    self.push(value::Value::None);
                 }
 
                 chunk::OpCode::True => {
-                    self.stack.push(value::Value::Boolean(true));
+                    self.push(value::Value::Boolean(true));
                 }
 
                 chunk::OpCode::False => {
-                    self.stack.push(value::Value::Boolean(false));
+                    self.push(value::Value::Boolean(false));
                 }
 
                 chunk::OpCode::Pop => {
-                    self.stack.pop();
+                    self.pop()?;
                 }
 
                 chunk::OpCode::GetLocal => {
                     let slot = read_byte!() as usize;
-                    let value = self.stack[frame.slot_base + slot];
-                    self.stack.push(value);
+                    let slot_base = self.frame()?.slot_base;
+                    let value = self.stack[slot_base + slot];
+                    self.push(value);
                 }
 
                 chunk::OpCode::SetLocal => {
                     let slot = read_byte!() as usize;
-                    self.stack[frame.slot_base + slot] = *self.stack.last().unwrap();
+                    let slot_base = self.frame()?.slot_base;
+                    self.stack[slot_base + slot] = *self.peek(0);
                 }
 
                 chunk::OpCode::GetGlobal => {
                     let name = read_string!();
                     match self.globals.get(&name.data) {
                         Some(value) => {
-                            self.stack.push(*value);
+                            self.push(*value);
                         }
                         None => {
                             let msg = format!("Undefined variable '{}'.", name.data);
                             self.runtime_error(msg.as_str());
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     }
                 }
 
                 chunk::OpCode::DefineGlobal => {
                     let name = read_string!();
-                    self.globals
-                        .insert(name.data.clone(), *self.stack.last().unwrap());
-                    self.stack.pop();
+                    let value = *self.peek(0);
+                    self.globals.insert(name.data.clone(), value);
+                    self.pop()?;
                 }
 
                 chunk::OpCode::SetGlobal => {
                     let name = read_string!();
-                    let prev = self
-                        .globals
-                        .insert(name.data.clone(), *self.stack.last().unwrap());
+                    let value = *self.peek(0);
+                    let prev = self.globals.insert(name.data.clone(), value);
                     match prev {
                         Some(_) => {}
                         None => {
                             self.globals.remove(&name.data);
                             let msg = format!("Undefined variable '{}'.", name.data);
                             self.runtime_error(msg.as_str());
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     }
                 }
 
                 chunk::OpCode::GetUpvalue => {
                     let upvalue_index = read_byte!() as usize;
-                    let upvalue = match *frame.closure.borrow().upvalues[upvalue_index].borrow() {
-                        object::ObjUpvalue::Open(slot) => self.stack[slot],
-                        object::ObjUpvalue::Closed(value) => value,
-                    };
-                    self.stack.push(upvalue);
+                    let upvalue =
+                        match *self.frame()?.closure.borrow().upvalues[upvalue_index].borrow() {
+                            object::ObjUpvalue::Open(slot) => self.stack[slot],
+                            object::ObjUpvalue::Closed(value) => value,
+                        };
+                    self.push(upvalue);
                 }
 
                 chunk::OpCode::SetUpvalue => {
-                    let upvalue = read_byte!() as usize;
-                    match *frame.closure.borrow_mut().upvalues[upvalue].borrow_mut() {
+                    let upvalue_index = read_byte!() as usize;
+                    let stack_value = *self.peek(0);
+                    let closure = self.frame()?.closure;
+                    match *closure.borrow_mut().upvalues[upvalue_index].borrow_mut() {
                         object::ObjUpvalue::Open(slot) => {
-                            self.stack[slot] = *self.stack.last().unwrap();
+                            self.stack[slot] = stack_value;
                         }
                         object::ObjUpvalue::Closed(ref mut value) => {
-                            *value = *self.stack.last().unwrap();
+                            *value = stack_value;
                         }
                     };
                 }
 
                 chunk::OpCode::GetProperty => {
-                    let instance = match *self.stack.last().unwrap() {
+                    let instance = match *self.peek(0) {
                         value::Value::ObjInstance(ptr) => ptr,
                         _ => {
                             self.runtime_error("Only instances have properties.");
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     };
                     let name = read_string!();
 
                     let borrowed_instance = instance.borrow();
                     if let Some(property) = borrowed_instance.fields.get(&name.data) {
-                        self.stack.pop();
-                        self.stack.push(*property);
+                        self.pop()?;
+                        self.push(*property);
                     } else if let Some(msg) =
                         bind_method(&mut self.stack, borrowed_instance.class, name)
                     {
                         self.runtime_error(msg.as_str());
-                        return InterpretResult::RuntimeError;
+                        return Err(VmError::RuntimeError);
                     }
                 }
 
                 chunk::OpCode::SetProperty => {
-                    let instance_pos = self.stack.len() - 2;
-                    let instance = match self.stack[instance_pos] {
+                    let instance = match *self.peek(1) {
                         value::Value::ObjInstance(ptr) => ptr,
                         _ => {
                             self.runtime_error("Only instances have fields.");
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     };
                     let name = read_string!();
-                    let value = *self.stack.last().unwrap();
+                    let value = *self.peek(0);
                     instance
                         .borrow_mut()
                         .fields
                         .insert(name.data.clone(), value);
 
-                    self.stack.pop();
-                    self.stack.pop();
-                    self.stack.push(value);
+                    self.pop()?;
+                    self.pop()?;
+                    self.push(value);
                 }
 
                 chunk::OpCode::GetSuper => {
                     let name = read_string!();
-                    let superclass = match self.stack.pop().unwrap() {
+                    let superclass = match self.pop()? {
                         value::Value::ObjClass(ptr) => ptr,
                         _ => unreachable!(),
                     };
 
                     if let Some(msg) = bind_method(&mut self.stack, superclass, name) {
                         self.runtime_error(msg.as_str());
-                        return InterpretResult::RuntimeError;
+                        return Err(VmError::RuntimeError);
                     }
                 }
 
                 chunk::OpCode::Equal => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    self.stack
-                        .push(value::Value::Boolean(a.unwrap() == b.unwrap()));
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    self.push(value::Value::Boolean(a == b));
                 }
 
                 chunk::OpCode::Greater => binary_op!(value::Value::Boolean, >),
@@ -330,22 +342,22 @@ impl Vm {
                 chunk::OpCode::Less => binary_op!(value::Value::Boolean, <),
 
                 chunk::OpCode::Add => {
-                    let b = self.stack.pop();
-                    let a = self.stack.pop();
-                    match (a.unwrap(), b.unwrap()) {
+                    let b = self.pop()?;
+                    let a = self.pop()?;
+                    match (a, b) {
                         (value::Value::ObjString(a), value::Value::ObjString(b)) => self
                             .stack
                             .push(value::Value::from(format!("{}{}", a.data, b.data))),
 
                         (value::Value::Number(a), value::Value::Number(b)) => {
-                            self.stack.push(value::Value::Number(a + b));
+                            self.push(value::Value::Number(a + b));
                         }
 
                         _ => {
                             self.runtime_error(
                                 "Binary operands must be two numbers or two strings.",
                             );
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     }
                 }
@@ -357,72 +369,63 @@ impl Vm {
                 chunk::OpCode::Divide => binary_op!(value::Value::Number, /),
 
                 chunk::OpCode::Not => {
-                    let value = self.stack.pop().unwrap();
-                    self.stack.push(value::Value::Boolean(!value.as_bool()));
+                    let value = self.pop()?;
+                    self.push(value::Value::Boolean(!value.as_bool()));
                 }
 
                 chunk::OpCode::Negate => {
-                    let value = self.stack.pop().unwrap();
+                    let value = self.pop()?;
                     match value {
                         value::Value::Number(underlying) => {
-                            self.stack.push(value::Value::Number(-underlying));
+                            self.push(value::Value::Number(-underlying));
                         }
                         _ => {
                             self.runtime_error("Unary operand must be a number.");
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     }
                 }
 
                 chunk::OpCode::Print => {
-                    println!("{}", self.stack.pop().unwrap());
+                    println!("{}", self.pop()?);
                 }
 
                 chunk::OpCode::Jump => {
                     let offset = read_short!();
-                    frame.ip += offset as usize;
+                    self.frame_mut()?.ip += offset as usize;
                 }
 
                 chunk::OpCode::JumpIfFalse => {
                     let offset = read_short!();
-                    if !self.stack.last().unwrap().as_bool() {
-                        frame.ip += offset as usize;
+                    if !self.peek(0).as_bool() {
+                        self.frame_mut()?.ip += offset as usize;
                     }
                 }
 
                 chunk::OpCode::Loop => {
                     let offset = read_short!();
-                    frame.ip -= offset as usize;
+                    self.frame_mut()?.ip -= offset as usize;
                 }
 
                 chunk::OpCode::Call => {
                     let arg_count = read_byte!() as usize;
-                    if !self.call_value(self.stack[self.stack.len() - 1 - arg_count], arg_count) {
-                        return InterpretResult::RuntimeError;
-                    }
-                    frame = self.frames.last_mut().unwrap();
+                    self.call_value(*self.peek(arg_count), arg_count)?;
                 }
 
                 chunk::OpCode::Invoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
-                    if !self.invoke(method, arg_count) {
-                        return InterpretResult::RuntimeError;
-                    }
-                    frame = self.frames.last_mut().unwrap();
+                    self.invoke(method, arg_count)?;
                 }
 
                 chunk::OpCode::SuperInvoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
-                    let superclass = match self.stack.pop().unwrap() {
+                    let superclass = match self.pop()? {
                         value::Value::ObjClass(ptr) => ptr,
                         _ => unreachable!(),
                     };
-                    if !self.invoke_from_class(superclass, method, arg_count) {
-                        return InterpretResult::RuntimeError;
-                    }
-                    frame = self.frames.last_mut().unwrap();
+                    self.invoke_from_class(superclass, method, arg_count)?;
                 }
 
                 chunk::OpCode::Closure => {
@@ -434,52 +437,47 @@ impl Vm {
                     let upvalue_count = function.upvalue_count;
 
                     let closure = memory::allocate(RefCell::new(object::ObjClosure::new(function)));
-                    self.stack.push(value::Value::ObjClosure(closure.as_gc()));
+                    self.push(value::Value::ObjClosure(closure.as_gc()));
 
                     for i in 0..upvalue_count {
                         let is_local = read_byte!() != 0;
                         let index = read_byte!() as usize;
-                        let slot_base = frame.slot_base;
+                        let slot_base = self.frame()?.slot_base;
                         closure.borrow_mut().upvalues[i] = if is_local {
                             capture_upvalue(self.open_upvalues.deref_mut(), slot_base + index)
                         } else {
-                            frame.closure.borrow().upvalues[index]
+                            self.frame()?.closure.borrow().upvalues[index]
                         };
                     }
                 }
 
                 chunk::OpCode::CloseUpvalue => {
-                    close_upvalues(
-                        &mut self.open_upvalues,
-                        self.stack.len() - 1,
-                        self.stack.last().unwrap(),
-                    );
-                    self.stack.pop();
+                    let value = *self.peek(0);
+                    close_upvalues(&mut self.open_upvalues, self.stack.len() - 1, &value);
+                    self.pop()?;
                 }
 
                 chunk::OpCode::Return => {
-                    let result = self.stack.pop().unwrap();
-                    for i in frame.slot_base..self.stack.len() {
+                    let result = self.pop()?;
+                    for i in self.frame()?.slot_base..self.stack.len() {
                         close_upvalues(&mut self.open_upvalues, i, &self.stack[i])
                     }
 
-                    let prev_stack_size = frame.slot_base;
+                    let prev_stack_size = self.frame()?.slot_base;
                     self.frames.pop();
                     if self.frames.is_empty() {
-                        self.stack.pop();
-                        return InterpretResult::Ok;
+                        self.pop()?;
+                        return Ok(());
                     }
 
                     self.stack.truncate(prev_stack_size);
-                    self.stack.push(result);
-
-                    frame = self.frames.last_mut().unwrap();
+                    self.push(result);
                 }
 
                 chunk::OpCode::Class => {
                     let class =
                         memory::allocate(RefCell::new(object::ObjClass::new(read_string!())));
-                    self.stack.push(value::Value::ObjClass(class.as_gc()));
+                    self.push(value::Value::ObjClass(class.as_gc()));
                 }
 
                 chunk::OpCode::Inherit => {
@@ -488,39 +486,37 @@ impl Vm {
                         value::Value::ObjClass(ptr) => ptr,
                         _ => {
                             self.runtime_error("Superclass must be a class.");
-                            return InterpretResult::RuntimeError;
+                            return Err(VmError::RuntimeError);
                         }
                     };
-                    let subclass = match self.stack.last().unwrap() {
+                    let subclass = match self.peek(0) {
                         value::Value::ObjClass(ptr) => *ptr,
                         _ => unreachable!(),
                     };
                     for (name, value) in superclass.borrow().methods.iter() {
                         subclass.borrow_mut().methods.insert(name.clone(), *value);
                     }
-                    self.stack.pop();
+                    self.pop()?;
                 }
 
                 chunk::OpCode::Method => {
                     let name = read_string!();
-                    define_method(self.stack.as_mut(), name);
+                    define_method(self.stack.as_mut(), name)?;
                 }
             }
         }
     }
 
-    fn call_value(&mut self, value: value::Value, arg_count: usize) -> bool {
+    fn call_value(&mut self, value: value::Value, arg_count: usize) -> Result<(), VmError> {
         match value {
             value::Value::ObjBoundMethod(bound) => {
-                let stack_pos = self.stack.len() - arg_count - 1;
-                self.stack[stack_pos] = bound.borrow().receiver;
+                *self.peek_mut(arg_count) = bound.borrow().receiver;
                 return self.call(bound.borrow().method, arg_count);
             }
 
             value::Value::ObjClass(class) => {
-                let stack_pos = self.stack.len() - arg_count - 1;
                 let instance = memory::allocate(RefCell::new(object::ObjInstance::new(class)));
-                self.stack[stack_pos] = value::Value::ObjInstance(instance.as_gc());
+                *self.peek_mut(arg_count) = value::Value::ObjInstance(instance.as_gc());
 
                 if let Some(value::Value::ObjClosure(initialiser)) =
                     class.borrow().methods.get(&self.init_string.data)
@@ -529,10 +525,10 @@ impl Vm {
                 } else if arg_count != 0 {
                     let msg = format!("Expected 0 arguments but got {}.", arg_count);
                     self.runtime_error(msg.as_str());
-                    return false;
+                    return Err(VmError::TypeError);
                 }
 
-                return true;
+                return Ok(());
             }
 
             value::Value::ObjClosure(function) => {
@@ -540,17 +536,17 @@ impl Vm {
             }
 
             value::Value::ObjNative(wrapped) => {
-                let function = wrapped.function.unwrap();
+                let function = wrapped.function.ok_or(VmError::ValueError)?;
                 let frame_begin = self.stack.len() - arg_count - 1;
                 let result = function(arg_count, &mut self.stack[frame_begin..]);
                 self.stack.truncate(frame_begin);
-                self.stack.push(result);
-                return true;
+                self.push(result);
+                return Ok(());
             }
 
             _ => {
                 self.runtime_error("Can only call functions and classes.");
-                return false;
+                return Err(VmError::TypeError);
             }
         }
     }
@@ -560,7 +556,7 @@ impl Vm {
         class: memory::Gc<RefCell<object::ObjClass>>,
         name: memory::Gc<object::ObjString>,
         arg_count: usize,
-    ) -> bool {
+    ) -> Result<(), VmError> {
         if let Some(value) = class.borrow().methods.get(&name.data) {
             return match value {
                 value::Value::ObjClosure(closure) => self.call(*closure, arg_count),
@@ -569,16 +565,19 @@ impl Vm {
         }
         let msg = format!("Undefined property '{}'.", name.data);
         self.runtime_error(msg.as_str());
-        false
+        Err(VmError::AttributeError)
     }
 
-    fn invoke(&mut self, name: memory::Gc<object::ObjString>, arg_count: usize) -> bool {
-        let stack_pos = self.stack.len() - arg_count - 1;
-        let receiver = self.stack[stack_pos];
+    fn invoke(
+        &mut self,
+        name: memory::Gc<object::ObjString>,
+        arg_count: usize,
+    ) -> Result<(), VmError> {
+        let receiver = *self.peek(arg_count);
         match receiver {
             value::Value::ObjInstance(instance) => {
                 if let Some(value) = instance.borrow().fields.get(&name.data) {
-                    self.stack[stack_pos] = *value;
+                    *self.peek_mut(arg_count) = *value;
                     return self.call_value(*value, arg_count);
                 }
 
@@ -586,12 +585,16 @@ impl Vm {
             }
             _ => {
                 self.runtime_error("Only instances have methods.");
-                false
+                Err(VmError::ValueError)
             }
         }
     }
 
-    fn call(&mut self, closure: memory::Gc<RefCell<object::ObjClosure>>, arg_count: usize) -> bool {
+    fn call(
+        &mut self,
+        closure: memory::Gc<RefCell<object::ObjClosure>>,
+        arg_count: usize,
+    ) -> Result<(), VmError> {
         if arg_count as u32 != closure.borrow().function.arity {
             let msg = format!(
                 "Expected {} arguments but got {}.",
@@ -599,12 +602,12 @@ impl Vm {
                 arg_count
             );
             self.runtime_error(msg.as_str());
-            return false;
+            return Err(VmError::TypeError);
         }
 
         if self.frames.len() == FRAMES_MAX {
             self.runtime_error("Stack overflow.");
-            return false;
+            return Err(VmError::IndexError);
         }
 
         self.frames.push(CallFrame {
@@ -612,7 +615,7 @@ impl Vm {
             ip: 0,
             slot_base: self.stack.len() - arg_count - 1,
         });
-        return true;
+        return Ok(());
     }
 
     fn reset_stack(&mut self) {
@@ -639,10 +642,36 @@ impl Vm {
     }
 
     fn define_native(&mut self, name: &str, function: object::NativeFn) {
-        self.stack.push(value::Value::from(function));
-        self.globals
-            .insert(String::from(name), *self.stack.last().unwrap());
-        self.stack.pop();
+        self.push(value::Value::from(function));
+        let value = *self.peek(0);
+        self.globals.insert(String::from(name), value);
+        self.pop().unwrap_or(value::Value::None);
+    }
+
+    fn frame(&self) -> Result<&CallFrame, VmError> {
+        self.frames.last().ok_or(VmError::IndexError)
+    }
+
+    fn frame_mut(&mut self) -> Result<&mut CallFrame, VmError> {
+        self.frames.last_mut().ok_or(VmError::IndexError)
+    }
+
+    fn peek(&self, depth: usize) -> &value::Value {
+        let stack_len = self.stack.len();
+        &self.stack[stack_len - depth - 1]
+    }
+
+    fn peek_mut(&mut self, depth: usize) -> &mut value::Value {
+        let stack_len = self.stack.len();
+        &mut self.stack[stack_len - depth - 1]
+    }
+
+    fn push(&mut self, value: value::Value) {
+        self.stack.push(value);
+    }
+
+    fn pop(&mut self) -> Result<value::Value, VmError> {
+        self.stack.pop().ok_or(VmError::IndexError)
     }
 }
 
@@ -678,8 +707,11 @@ fn close_upvalues(
     open_upvalues.retain(|u| u.borrow().is_open());
 }
 
-fn define_method(stack: &mut Vec<value::Value>, name: memory::Gc<object::ObjString>) {
-    let method = *stack.last().unwrap();
+fn define_method(
+    stack: &mut Vec<value::Value>,
+    name: memory::Gc<object::ObjString>,
+) -> Result<(), VmError> {
+    let method = *stack.last().ok_or(VmError::IndexError)?;
     let class_pos = stack.len() - 2;
     let class = match stack[class_pos] {
         value::Value::ObjClass(ptr) => ptr,
@@ -687,6 +719,8 @@ fn define_method(stack: &mut Vec<value::Value>, name: memory::Gc<object::ObjStri
     };
     class.borrow_mut().methods.insert(name.data.clone(), method);
     stack.pop();
+
+    Ok(())
 }
 
 fn bind_method(
@@ -704,7 +738,7 @@ fn bind_method(
         _ => unreachable!(),
     };
 
-    let instance = *stack.last().unwrap();
+    let instance = *stack.last().expect("Value stack empty.");
     let bound = memory::allocate(RefCell::new(object::ObjBoundMethod::new(instance, method)));
     stack.pop();
     stack.push(value::Value::ObjBoundMethod(bound.as_gc()));
