@@ -218,16 +218,15 @@ impl Vm {
 
                 chunk::OpCode::GetGlobal => {
                     let name = read_string!();
-                    match self.globals.get(&name.data) {
-                        Some(value) => {
-                            self.push(*value);
-                        }
+                    let value = match self.globals.get(&name.data) {
+                        Some(value) => *value,
                         None => {
                             let msg = format!("Undefined variable '{}'.", name.data);
                             self.runtime_error(msg.as_str());
                             return Err(VmError::RuntimeError);
                         }
-                    }
+                    };
+                    self.push(value);
                 }
 
                 chunk::OpCode::DefineGlobal => {
