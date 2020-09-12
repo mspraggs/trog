@@ -25,7 +25,6 @@ pub enum Value {
     Boolean(bool),
     Number(f64),
     ObjString(memory::Gc<object::ObjString>),
-    ObjUpvalue(memory::Gc<RefCell<object::ObjUpvalue>>),
     ObjFunction(memory::Gc<object::ObjFunction>),
     ObjNative(memory::Gc<object::ObjNative>),
     ObjClosure(memory::Gc<RefCell<object::ObjClosure>>),
@@ -49,7 +48,6 @@ impl memory::GcManaged for Value {
     fn mark(&self) {
         match self {
             Value::ObjString(inner) => inner.mark(),
-            Value::ObjUpvalue(inner) => inner.mark(),
             Value::ObjFunction(inner) => inner.mark(),
             Value::ObjNative(inner) => inner.mark(),
             Value::ObjClosure(inner) => inner.mark(),
@@ -63,7 +61,6 @@ impl memory::GcManaged for Value {
     fn blacken(&self) {
         match self {
             Value::ObjString(inner) => inner.blacken(),
-            Value::ObjUpvalue(inner) => inner.blacken(),
             Value::ObjFunction(inner) => inner.blacken(),
             Value::ObjNative(inner) => inner.blacken(),
             Value::ObjClosure(inner) => inner.blacken(),
@@ -127,7 +124,6 @@ impl fmt::Display for Value {
             }
             Value::Boolean(underlying) => write!(f, "{}", underlying),
             Value::ObjString(underlying) => write!(f, "{}", underlying.data),
-            Value::ObjUpvalue(_) => write!(f, "upvalue"),
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow().function),
@@ -151,7 +147,6 @@ impl cmp::PartialEq for Value {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
             (Value::ObjString(first), Value::ObjString(second)) => **first == **second,
-            (Value::ObjUpvalue(first), Value::ObjUpvalue(second)) => *first == *second,
             (Value::ObjFunction(first), Value::ObjFunction(second)) => *first == *second,
             (Value::ObjNative(first), Value::ObjNative(second)) => *first == *second,
             (Value::ObjClosure(first), Value::ObjClosure(second)) => *first == *second,
