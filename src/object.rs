@@ -29,7 +29,7 @@ pub struct ObjString {
 
 impl ObjString {
     pub fn new(data: String) -> Self {
-        ObjString { data: data }
+        ObjString { data }
     }
 }
 
@@ -108,7 +108,7 @@ impl ObjFunction {
             arity: 0,
             upvalue_count: 0,
             chunk: chunk::Chunk::new(),
-            name: name,
+            name,
         }
     }
 }
@@ -164,7 +164,7 @@ impl ObjClosure {
     pub fn new(function: memory::Gc<ObjFunction>) -> Self {
         let upvalue_count = function.upvalue_count as usize;
         ObjClosure {
-            function: function,
+            function,
             upvalues: vec![
                 memory::allocate(cell::RefCell::new(ObjUpvalue::new(0))).as_gc();
                 upvalue_count
@@ -193,7 +193,7 @@ pub struct ObjClass {
 impl ObjClass {
     pub fn new(name: memory::Gc<ObjString>) -> Self {
         ObjClass {
-            name: name,
+            name,
             methods: HashMap::new(),
         }
     }
@@ -219,7 +219,7 @@ pub struct ObjInstance {
 impl ObjInstance {
     pub fn new(class: memory::Gc<cell::RefCell<ObjClass>>) -> Self {
         ObjInstance {
-            class: class,
+            class,
             fields: HashMap::new(),
         }
     }
@@ -245,8 +245,8 @@ pub struct ObjBoundMethod {
 impl ObjBoundMethod {
     pub fn new(receiver: value::Value, method: memory::Gc<cell::RefCell<ObjClosure>>) -> Self {
         ObjBoundMethod {
-            receiver: receiver,
-            method: method,
+            receiver,
+            method,
         }
     }
 }
