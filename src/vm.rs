@@ -15,7 +15,6 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ops::DerefMut;
 use std::time;
 
 use crate::chunk;
@@ -175,7 +174,7 @@ impl Vm {
                 for v in self.stack.iter() {
                     print!("[ {} ]", v);
                 }
-                println!("");
+                println!();
                 let ip = self.frame()?.ip;
                 debug::disassemble_instruction(&self.frame()?.closure.borrow().function.chunk, ip);
             }
@@ -503,7 +502,7 @@ impl Vm {
         match value {
             value::Value::ObjBoundMethod(bound) => {
                 *self.peek_mut(arg_count) = bound.borrow().receiver;
-                return self.call(bound.borrow().method, arg_count);
+                self.call(bound.borrow().method, arg_count)
             }
 
             value::Value::ObjClass(class) => {
@@ -520,11 +519,11 @@ impl Vm {
                     return Err(VmError::TypeError);
                 }
 
-                return Ok(());
+                Ok(())
             }
 
             value::Value::ObjClosure(function) => {
-                return self.call(function, arg_count);
+                self.call(function, arg_count)
             }
 
             value::Value::ObjNative(wrapped) => {
@@ -533,12 +532,12 @@ impl Vm {
                 let result = function(arg_count, &mut self.stack[frame_begin..]);
                 self.stack.truncate(frame_begin);
                 self.push(result);
-                return Ok(());
+                Ok(())
             }
 
             _ => {
                 self.runtime_error("Can only call functions and classes.");
-                return Err(VmError::TypeError);
+                Err(VmError::TypeError)
             }
         }
     }
@@ -603,11 +602,11 @@ impl Vm {
         }
 
         self.frames.push(CallFrame {
-            closure: closure,
+            closure,
             ip: 0,
             slot_base: self.stack.len() - arg_count - 1,
         });
-        return Ok(());
+        Ok(())
     }
 
     fn reset_stack(&mut self) {
@@ -623,7 +622,7 @@ impl Vm {
 
             let instruction = frame.ip - 1;
             eprint!("[line {}] in ", function.chunk.lines[instruction]);
-            if function.name.data.len() == 0 {
+            if function.name.data.is_empty() {
                 eprintln!("script");
             } else {
                 eprintln!("{}()", function.name.data);
