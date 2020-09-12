@@ -77,7 +77,7 @@ pub fn disassemble_instruction(chunk: &chunk::Chunk, offset: usize) -> usize {
             );
 
             let function = match chunk.constants[constant] {
-                value::Value::ObjFunction(ref underlying) => underlying.clone(),
+                value::Value::ObjFunction(ref underlying) => underlying,
                 _ => panic!("Expected function object."),
             };
 
