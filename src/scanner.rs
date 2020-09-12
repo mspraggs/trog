@@ -103,7 +103,7 @@ pub struct Scanner {
 impl Scanner {
     pub fn from_source(source: String) -> Self {
         Scanner {
-            source: source,
+            source,
             start: 0,
             current: 0,
             line: 1,
@@ -150,27 +150,27 @@ impl Scanner {
             }
             "=" => {
                 let match_char = self.match_char("=");
-                return self.make_token(if match_char {
+                self.make_token(if match_char {
                     TokenKind::EqualEqual
                 } else {
                     TokenKind::Equal
-                });
+                })
             }
             "<" => {
                 let match_char = self.match_char("=");
-                return self.make_token(if match_char {
+                self.make_token(if match_char {
                     TokenKind::LessEqual
                 } else {
                     TokenKind::Less
-                });
+                })
             }
             ">" => {
                 let match_char = self.match_char("=");
-                return self.make_token(if match_char {
+                self.make_token(if match_char {
                     TokenKind::GreaterEqual
                 } else {
                     TokenKind::Greater
-                });
+                })
             }
             "\"" => self.string(),
             c => {
@@ -217,7 +217,7 @@ impl Scanner {
 
     fn make_token(&self, kind: TokenKind) -> Token {
         Token {
-            kind: kind,
+            kind,
             line: self.line,
             source: String::from(&self.source[self.start..self.current]),
         }
