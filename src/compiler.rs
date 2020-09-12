@@ -115,7 +115,7 @@ impl Compiler {
         let name = memory::allocate(object::ObjString::new(name));
         Compiler {
             function: memory::allocate(object::ObjFunction::new(name.as_gc())),
-            kind: kind,
+            kind,
             locals: vec![Local {
                 name: scanner::Token::from_string(if kind != FunctionKind::Function {
                     "this"
@@ -141,7 +141,7 @@ impl Compiler {
             is_captured: false,
         });
 
-        return true;
+        true
     }
 
     fn resolve_local(&self, name: &scanner::Token) -> Result<u8, CompilerError> {
@@ -171,15 +171,14 @@ impl Compiler {
         }
 
         self.upvalues.push(Upvalue {
-            index: index,
-            is_local: is_local,
+            index,
+            is_local,
         });
         Ok(upvalue_count as u8)
     }
 }
 
 struct ClassCompiler {
-    name: scanner::Token,
     has_superclass: bool,
 }
 
@@ -208,7 +207,7 @@ impl<'a> Parser<'a> {
             previous: scanner::Token::new(),
             had_error: false,
             panic_mode: false,
-            scanner: scanner,
+            scanner,
             compilers: vec![Compiler::new(FunctionKind::Script, String::from(""))],
             class_compilers: Vec::new(),
             rules: [
@@ -609,7 +608,6 @@ impl<'a> Parser<'a> {
         self.define_variable(name_constant);
 
         self.class_compilers.push(ClassCompiler {
-            name: self.previous.clone(),
             has_superclass: false,
         });
 
@@ -1003,13 +1001,10 @@ impl<'a> Parser<'a> {
         let mut error_locations: Vec<scanner::Token> = Vec::new();
 
         for local in self.compilers.last().unwrap().locals.iter().rev() {
-            match local.depth {
-                Some(value) => {
-                    if value < scope_depth {
-                        break;
-                    }
+            if let Some(value) = local.depth {
+                if value < scope_depth {
+                    break;
                 }
-                None => {}
             }
 
             if self.previous.source == local.name.source {
@@ -1170,11 +1165,11 @@ impl<'a> Parser<'a> {
             } else if let Some(result) = self.resolve_upvalue(&name) {
                 return (chunk::OpCode::GetUpvalue, chunk::OpCode::SetUpvalue, result);
             }
-            return (
+            (
                 chunk::OpCode::GetGlobal,
                 chunk::OpCode::SetGlobal,
                 self.identifier_constant(&name),
-            );
+            )
         })();
 
         if can_assign && self.match_token(scanner::TokenKind::Equal) {
