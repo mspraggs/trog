@@ -36,9 +36,9 @@ fn repl(vm: &mut vm::Vm) {
 
         match io::stdin().read_line(&mut buffer) {
             Ok(_) => {
-                vm::interpret(vm, buffer);
+                vm::interpret(vm, buffer).unwrap_or_default();
             }
-            Err(_) => {
+            _ => {
                 eprintln!("Failed to read from stdin.");
                 process::exit(74);
             }
@@ -46,11 +46,11 @@ fn repl(vm: &mut vm::Vm) {
     }
 }
 
-fn run_file(vm: &mut vm::Vm, path: &String) {
+fn run_file(vm: &mut vm::Vm, path: &str) {
     let source = fs::read_to_string(path);
     let result = match source {
         Ok(contents) => vm::interpret(vm, contents),
-        Err(_) => panic!("Unable to read from file."),
+        _ => panic!("Unable to read from file."),
     };
 
     match result {
