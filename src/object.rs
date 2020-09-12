@@ -13,14 +13,14 @@
  * limitations under the License.
  */
 
-use std::cell;
+use std::cell::RefCell;
 use std::cmp;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::chunk;
+use crate::chunk::Chunk;
 use crate::memory;
-use crate::value;
+use crate::value::Value;
 
 #[derive(Clone, Default)]
 pub struct ObjString {
@@ -46,7 +46,7 @@ impl cmp::PartialEq for ObjString {
 }
 
 pub enum ObjUpvalue {
-    Closed(value::Value),
+    Closed(Value),
     Open(usize),
 }
 
@@ -73,7 +73,7 @@ impl ObjUpvalue {
         }
     }
 
-    pub fn close(&mut self, value: value::Value) {
+    pub fn close(&mut self, value: Value) {
         *self = Self::Closed(value);
     }
 }
@@ -98,7 +98,7 @@ impl memory::GcManaged for ObjUpvalue {
 pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
-    pub chunk: chunk::Chunk,
+    pub chunk: Chunk,
     pub name: memory::Gc<ObjString>,
 }
 
@@ -107,7 +107,7 @@ impl ObjFunction {
         ObjFunction {
             arity: 0,
             upvalue_count: 0,
-            chunk: chunk::Chunk::new(),
+            chunk: Chunk::new(),
             name,
         }
     }
@@ -134,7 +134,7 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(usize, &mut [value::Value]) -> value::Value;
+pub type NativeFn = fn(usize, &mut [Value]) -> Value;
 
 #[derive(Clone, Default)]
 pub struct ObjNative {
@@ -157,7 +157,7 @@ impl memory::GcManaged for ObjNative {
 
 pub struct ObjClosure {
     pub function: memory::Gc<ObjFunction>,
-    pub upvalues: Vec<memory::Gc<cell::RefCell<ObjUpvalue>>>,
+    pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
 }
 
 impl ObjClosure {
@@ -166,7 +166,7 @@ impl ObjClosure {
         ObjClosure {
             function,
             upvalues: vec![
-                memory::allocate(cell::RefCell::new(ObjUpvalue::new(0))).as_gc();
+                memory::allocate(RefCell::new(ObjUpvalue::new(0))).as_gc();
                 upvalue_count
             ],
         }
@@ -187,7 +187,7 @@ impl memory::GcManaged for ObjClosure {
 
 pub struct ObjClass {
     pub name: memory::Gc<ObjString>,
-    pub methods: HashMap<String, value::Value>,
+    pub methods: HashMap<String, Value>,
 }
 
 impl ObjClass {
@@ -212,12 +212,12 @@ impl memory::GcManaged for ObjClass {
 }
 
 pub struct ObjInstance {
-    pub class: memory::Gc<cell::RefCell<ObjClass>>,
-    pub fields: HashMap<String, value::Value>,
+    pub class: memory::Gc<RefCell<ObjClass>>,
+    pub fields: HashMap<String, Value>,
 }
 
 impl ObjInstance {
-    pub fn new(class: memory::Gc<cell::RefCell<ObjClass>>) -> Self {
+    pub fn new(class: memory::Gc<RefCell<ObjClass>>) -> Self {
         ObjInstance {
             class,
             fields: HashMap::new(),
@@ -238,16 +238,13 @@ impl memory::GcManaged for ObjInstance {
 }
 
 pub struct ObjBoundMethod {
-    pub receiver: value::Value,
-    pub method: memory::Gc<cell::RefCell<ObjClosure>>,
+    pub receiver: Value,
+    pub method: memory::Gc<RefCell<ObjClosure>>,
 }
 
 impl ObjBoundMethod {
-    pub fn new(receiver: value::Value, method: memory::Gc<cell::RefCell<ObjClosure>>) -> Self {
-        ObjBoundMethod {
-            receiver,
-            method,
-        }
+    pub fn new(receiver: Value, method: memory::Gc<RefCell<ObjClosure>>) -> Self {
+        ObjBoundMethod { receiver, method }
     }
 }
 
