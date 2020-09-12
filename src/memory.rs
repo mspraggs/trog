@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
-use std::rc::Rc;
 
 use crate::common;
 
@@ -35,7 +34,7 @@ pub fn allocate<T: 'static + GcManaged>(data: T) -> Root<T> {
         }
         heap.borrow_mut().allocate(data)
     });
-    let root = Root { ptr: ptr };
+    let root = Root { ptr };
     root.gc_box().root();
     root
 }
@@ -49,7 +48,7 @@ pub fn allocate_unique<T: 'static + GcManaged>(data: T) -> UniqueRoot<T> {
         }
         heap.borrow_mut().allocate(data)
     });
-    let root = UniqueRoot { ptr: ptr };
+    let root = UniqueRoot { ptr };
     root.gc_box().root();
     root
 }
@@ -297,7 +296,7 @@ impl Heap {
         let mut obj = Box::new(GcBox {
             num_roots: Cell::new(0),
             colour: Cell::new(Colour::White),
-            data: data,
+            data,
         });
 
         let gc_box_ptr = unsafe { GcBoxPtr::new_unchecked(obj.as_mut()) };
@@ -428,13 +427,13 @@ impl<T: GcManaged> GcManaged for Vec<T> {
 
 impl<K, V: GcManaged> GcManaged for HashMap<K, V> {
     fn mark(&self) {
-        for (_, v) in self {
+        for v in self.values() {
             v.mark();
         }
     }
 
     fn blacken(&self) {
-        for (_, v) in self {
+        for v in self.values() {
             v.blacken();
         }
     }
