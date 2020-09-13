@@ -74,7 +74,7 @@ fn main() {
     } else if args.len() == 2 {
         run_file(&mut vm, &args[1]);
     } else {
-        eprintln!("Usage: ./oxyscript [path]");
+        eprintln!("Usage: ./ox [path]");
         process::exit(64);
     }
 }
