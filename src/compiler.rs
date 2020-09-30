@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+use std::cell::{Cell, RefCell};
+use std::fmt::Write;
 use std::mem;
 
 use crate::chunk::{Chunk, OpCode};
@@ -179,7 +181,7 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(source: String) -> Option<memory::Root<ObjFunction>> {
+pub fn compile(source: String) -> Result<memory::Root<ObjFunction>, Vec<String>> {
     let mut scanner = Scanner::from_source(source);
 
     let mut parser = Parser::new(&mut scanner);
@@ -189,11 +191,11 @@ pub fn compile(source: String) -> Option<memory::Root<ObjFunction>> {
 struct Parser<'a> {
     current: Token,
     previous: Token,
-    had_error: bool,
-    panic_mode: bool,
+    panic_mode: Cell<bool>,
     scanner: &'a mut Scanner,
     compilers: Vec<Compiler>,
     class_compilers: Vec<ClassCompiler>,
+    errors: RefCell<Vec<String>>,
     rules: [ParseRule; 40],
 }
 
@@ -202,11 +204,11 @@ impl<'a> Parser<'a> {
         Parser {
             current: Token::new(),
             previous: Token::new(),
-            had_error: false,
-            panic_mode: false,
+            panic_mode: Cell::new(false),
             scanner,
             compilers: vec![Compiler::new(FunctionKind::Script, String::from(""))],
             class_compilers: Vec::new(),
+            errors: RefCell::new(Vec::new()),
             rules: [
                 // LeftParen
                 ParseRule {
@@ -452,18 +454,21 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse(&mut self) -> Option<memory::Root<ObjFunction>> {
+    fn parse(&mut self) -> Result<memory::Root<ObjFunction>, Vec<String>> {
         self.advance();
 
         while !self.match_token(TokenKind::Eof) {
             self.declaration();
         }
 
-        if self.had_error {
-            return None;
+        let had_error = !self.errors.borrow().is_empty();
+        if had_error {
+            let mut errors = Vec::new();
+            mem::swap(&mut errors, &mut self.errors.borrow_mut());
+            return Err(errors);
         }
 
-        Some(self.finalise_compiler().0)
+        Ok(self.finalise_compiler().0)
     }
 
     fn advance(&mut self) {
@@ -520,7 +525,7 @@ impl<'a> Parser<'a> {
     fn finalise_compiler(&mut self) -> (memory::Root<ObjFunction>, Compiler) {
         self.emit_return();
 
-        if cfg!(feature = "debug_bytecode") && !self.had_error {
+        if cfg!(feature = "debug_bytecode") && !self.errors.borrow().is_empty() {
             let func_name = format!("{}", *self.compiler().function);
             debug::disassemble_chunk(&self.compiler().function.chunk, func_name.as_str());
         }
@@ -772,7 +777,7 @@ impl<'a> Parser<'a> {
     }
 
     fn synchronise(&mut self) {
-        self.panic_mode = false;
+        self.panic_mode.set(false);
 
         while self.current.kind != TokenKind::Eof {
             if self.previous.kind == TokenKind::SemiColon {
@@ -856,7 +861,7 @@ impl<'a> Parser<'a> {
             self.statement();
         }
 
-        if self.panic_mode {
+        if self.panic_mode.get() {
             self.synchronise();
         }
     }
@@ -958,8 +963,6 @@ impl<'a> Parser<'a> {
             return;
         }
 
-        let mut error_locations: Vec<Token> = Vec::new();
-
         for local in self.compilers.last().unwrap().locals.iter().rev() {
             if let Some(value) = local.depth {
                 if value < scope_depth {
@@ -968,15 +971,8 @@ impl<'a> Parser<'a> {
             }
 
             if self.previous.source == local.name.source {
-                error_locations.push(self.previous.clone());
+                self.error("Variable with this name already declared in this scope.");
             }
-        }
-
-        for token in error_locations {
-            self.error_at(
-                token,
-                "Variable with this name already declared in this scope.",
-            );
         }
 
         if !self.compilers.last_mut().unwrap().add_local(&self.previous) {
@@ -1036,30 +1032,32 @@ impl<'a> Parser<'a> {
         &self.rules[kind as usize]
     }
 
-    fn error_at_current(&mut self, message: &str) {
+    fn error_at_current(&self, message: &str) {
         self.error_at(self.current.clone(), message);
     }
 
-    fn error(&mut self, message: &str) {
+    fn error(&self, message: &str) {
         self.error_at(self.previous.clone(), message);
     }
 
-    fn error_at(&mut self, token: Token, message: &str) {
-        if self.panic_mode {
+    fn error_at(&self, token: Token, message: &str) {
+        if self.panic_mode.get() {
             return;
         }
-        self.panic_mode = true;
+        self.panic_mode.set(true);
 
-        eprint!("[line {}] Error", token.line);
+        let mut error_string = String::new();
+
+        write!(error_string, "[line {}] Error", token.line).unwrap();
 
         match token.kind {
-            TokenKind::Eof => eprint!(" at end"),
+            TokenKind::Eof => write!(error_string, " at end").unwrap(),
             TokenKind::Error => {}
-            _ => eprint!(" at '{}'", token.source),
+            _ => write!(error_string, " at '{}'", token.source).unwrap(),
         };
 
-        eprintln!(": {}", message);
-        self.had_error = true;
+        write!(error_string, ": {}", message).unwrap();
+        self.errors.borrow_mut().push(error_string);
     }
 
     fn compiler_error(&mut self, error: CompilerError) {

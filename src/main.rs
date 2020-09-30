@@ -54,7 +54,10 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
     };
 
     match result {
-        Err(vm::VmError::CompileError) => {
+        Err(vm::VmError::CompileError(errors)) => {
+            for error in errors {
+                eprintln!("{}", error);
+            }
             process::exit(65);
         }
         Err(_) => {

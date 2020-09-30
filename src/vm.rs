@@ -33,7 +33,7 @@ const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 #[derive(Debug)]
 pub enum VmError {
     AttributeError,
-    CompileError,
+    CompileError(Vec<String>),
     IndexError,
     RuntimeError,
     TypeError,
@@ -43,8 +43,8 @@ pub enum VmError {
 pub fn interpret(vm: &mut Vm, source: String) -> Result<(), VmError> {
     let compile_result = compiler::compile(source);
     match compile_result {
-        Some(function) => vm.interpret(function),
-        None => Err(VmError::CompileError),
+        Ok(function) => vm.interpret(function),
+        Err(errors) => Err(VmError::CompileError(errors)),
     }
 }
 
