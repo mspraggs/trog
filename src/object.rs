@@ -14,23 +14,18 @@
  */
 
 use std::cell::RefCell;
-use std::cmp;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::chunk::Chunk;
-use crate::memory;
+use crate::memory::{self, Gc};
 use crate::value::Value;
+use crate::vm::Vm;
 
-#[derive(Clone, Default)]
-pub struct ObjString {
-    pub data: String,
-}
+pub type ObjString = String;
 
-impl ObjString {
-    pub fn new(data: String) -> Self {
-        ObjString { data }
-    }
+pub fn new_gc_obj_string(vm: &mut Vm, data: &str) -> memory::Gc<ObjString> {
+    memory::allocate(vm, ObjString::from(data))
 }
 
 impl memory::GcManaged for ObjString {
@@ -39,19 +34,17 @@ impl memory::GcManaged for ObjString {
     fn blacken(&self) {}
 }
 
-impl cmp::PartialEq for ObjString {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-    }
-}
-
 pub enum ObjUpvalue {
     Closed(Value),
     Open(usize),
 }
 
+pub fn new_gc_obj_upvalue(vm: &mut Vm, index: usize) -> Gc<RefCell<ObjUpvalue>> {
+    memory::allocate(vm, RefCell::new(ObjUpvalue::new(index)))
+}
+
 impl ObjUpvalue {
-    pub fn new(index: usize) -> Self {
+    fn new(index: usize) -> Self {
         ObjUpvalue::Open(index)
     }
 
@@ -94,7 +87,7 @@ impl memory::GcManaged for ObjUpvalue {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
@@ -102,8 +95,12 @@ pub struct ObjFunction {
     pub name: memory::Gc<ObjString>,
 }
 
+pub fn new_gc_obj_function(vm: &mut Vm, name: Gc<ObjString>) -> Gc<ObjFunction> {
+    memory::allocate(vm, ObjFunction::new(name))
+}
+
 impl ObjFunction {
-    pub fn new(name: memory::Gc<ObjString>) -> Self {
+    fn new(name: memory::Gc<ObjString>) -> Self {
         ObjFunction {
             arity: 0,
             upvalue_count: 0,
@@ -127,22 +124,26 @@ impl memory::GcManaged for ObjFunction {
 
 impl fmt::Display for ObjFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.name.data.len() {
+        match self.name.len() {
             0 => write!(f, "<script>"),
-            _ => write!(f, "<fn {}>", self.name.data),
+            _ => write!(f, "<fn {}>", *self.name),
         }
     }
 }
 
 pub type NativeFn = fn(usize, &mut [Value]) -> Value;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct ObjNative {
     pub function: Option<NativeFn>,
 }
 
+pub fn new_gc_obj_native(vm: &mut Vm, function: NativeFn) -> Gc<ObjNative> {
+    memory::allocate(vm, ObjNative::new(function))
+}
+
 impl ObjNative {
-    pub fn new(function: NativeFn) -> Self {
+    fn new(function: NativeFn) -> Self {
         ObjNative {
             function: Some(function),
         }
@@ -160,15 +161,17 @@ pub struct ObjClosure {
     pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
 }
 
+pub fn new_gc_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
+    let closure = ObjClosure::new(vm, function);
+    memory::allocate(vm, RefCell::new(closure))
+}
+
 impl ObjClosure {
-    pub fn new(function: memory::Gc<ObjFunction>) -> Self {
+    fn new(vm: &mut Vm, function: memory::Gc<ObjFunction>) -> Self {
         let upvalue_count = function.upvalue_count as usize;
         ObjClosure {
             function,
-            upvalues: vec![
-                memory::allocate(RefCell::new(ObjUpvalue::new(0))).as_gc();
-                upvalue_count
-            ],
+            upvalues: vec![memory::allocate(vm, RefCell::new(ObjUpvalue::new(0))); upvalue_count],
         }
     }
 }
@@ -190,8 +193,12 @@ pub struct ObjClass {
     pub methods: HashMap<String, Value>,
 }
 
+pub fn new_gc_obj_class(vm: &mut Vm, name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
+    memory::allocate(vm, RefCell::new(ObjClass::new(name)))
+}
+
 impl ObjClass {
-    pub fn new(name: memory::Gc<ObjString>) -> Self {
+    fn new(name: memory::Gc<ObjString>) -> Self {
         ObjClass {
             name,
             methods: HashMap::new(),
@@ -216,8 +223,12 @@ pub struct ObjInstance {
     pub fields: HashMap<String, Value>,
 }
 
+pub fn new_gc_obj_instance(vm: &mut Vm, class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjInstance>> {
+    memory::allocate(vm, RefCell::new(ObjInstance::new(class)))
+}
+
 impl ObjInstance {
-    pub fn new(class: memory::Gc<RefCell<ObjClass>>) -> Self {
+    fn new(class: Gc<RefCell<ObjClass>>) -> Self {
         ObjInstance {
             class,
             fields: HashMap::new(),
@@ -242,8 +253,16 @@ pub struct ObjBoundMethod {
     pub method: memory::Gc<RefCell<ObjClosure>>,
 }
 
+pub fn new_gc_obj_bound_method(
+    vm: &mut Vm,
+    receiver: Value,
+    method: Gc<RefCell<ObjClosure>>,
+) -> Gc<RefCell<ObjBoundMethod>> {
+    memory::allocate(vm, RefCell::new(ObjBoundMethod::new(receiver, method)))
+}
+
 impl ObjBoundMethod {
-    pub fn new(receiver: Value, method: memory::Gc<RefCell<ObjClosure>>) -> Self {
+    fn new(receiver: Value, method: memory::Gc<RefCell<ObjClosure>>) -> Self {
         ObjBoundMethod { receiver, method }
     }
 }

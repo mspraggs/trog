@@ -78,39 +78,6 @@ impl From<f64> for Value {
     }
 }
 
-impl From<String> for Value {
-    fn from(value: String) -> Self {
-        let root = memory::allocate(object::ObjString::new(value));
-        Value::ObjString(root.as_gc())
-    }
-}
-
-impl From<&str> for Value {
-    fn from(value: &str) -> Self {
-        Value::from(String::from(value))
-    }
-}
-
-impl From<object::ObjFunction> for Value {
-    fn from(value: object::ObjFunction) -> Self {
-        let root = memory::allocate(value);
-        Value::ObjFunction(root.as_gc())
-    }
-}
-
-impl From<memory::Gc<object::ObjFunction>> for Value {
-    fn from(value: memory::Gc<object::ObjFunction>) -> Self {
-        Value::ObjFunction(value)
-    }
-}
-
-impl From<object::NativeFn> for Value {
-    fn from(value: object::NativeFn) -> Self {
-        let root = memory::allocate(object::ObjNative::new(value));
-        Value::ObjNative(root.as_gc())
-    }
-}
-
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -123,16 +90,14 @@ impl fmt::Display for Value {
                 }
             }
             Value::Boolean(underlying) => write!(f, "{}", underlying),
-            Value::ObjString(underlying) => write!(f, "{}", underlying.data),
+            Value::ObjString(underlying) => write!(f, "{}", **underlying),
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow().function),
-            Value::ObjClass(underlying) => write!(f, "{}", underlying.borrow().name.data),
-            Value::ObjInstance(underlying) => write!(
-                f,
-                "{} instance",
-                underlying.borrow().class.borrow().name.data
-            ),
+            Value::ObjClass(underlying) => write!(f, "{}", *underlying.borrow().name),
+            Value::ObjInstance(underlying) => {
+                write!(f, "{} instance", *underlying.borrow().class.borrow().name)
+            }
             Value::ObjBoundMethod(underlying) => {
                 write!(f, "{}", *underlying.borrow().method.borrow().function)
             }

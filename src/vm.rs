@@ -15,16 +15,15 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::time;
 
 use crate::chunk::OpCode;
 use crate::common;
 use crate::compiler;
 use crate::debug;
-use crate::memory::{self, Gc, Root, UniqueRoot};
-use crate::object::{
-    NativeFn, ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjString, ObjUpvalue,
-};
+use crate::memory::{self, Gc, GcManaged};
+use crate::object::{self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjString, ObjUpvalue};
 use crate::value::Value;
 
 const FRAMES_MAX: usize = 64;
@@ -41,14 +40,14 @@ pub enum VmError {
 }
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<(), VmError> {
-    let compile_result = compiler::compile(source);
+    let compile_result = compiler::compile(vm, source);
     match compile_result {
         Ok(function) => vm.interpret(function),
         Err(errors) => Err(VmError::CompileError(errors)),
     }
 }
 
-struct CallFrame {
+pub struct CallFrame {
     closure: Gc<RefCell<ObjClosure>>,
     ip: usize,
     slot_base: usize,
@@ -65,21 +64,23 @@ impl memory::GcManaged for CallFrame {
 }
 
 pub struct Vm {
-    frames: UniqueRoot<Vec<CallFrame>>,
-    stack: UniqueRoot<Vec<Value>>,
-    globals: UniqueRoot<HashMap<String, Value>>,
-    open_upvalues: UniqueRoot<Vec<Gc<RefCell<ObjUpvalue>>>>,
-    init_string: UniqueRoot<ObjString>,
+    frames: Vec<CallFrame>,
+    stack: Vec<Value>,
+    globals: HashMap<String, Value>,
+    open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
+    ephemeral_roots: Vec<Value>,
+    init_string: ObjString,
 }
 
 impl Default for Vm {
     fn default() -> Self {
         Vm {
-            frames: memory::allocate_unique(Vec::with_capacity(FRAMES_MAX)),
-            stack: memory::allocate_unique(Vec::with_capacity(STACK_MAX)),
-            globals: memory::allocate_unique(HashMap::new()),
-            open_upvalues: memory::allocate_unique(Vec::new()),
-            init_string: memory::allocate_unique(ObjString::new(String::from("init"))),
+            frames: Vec::with_capacity(FRAMES_MAX),
+            stack: Vec::with_capacity(STACK_MAX),
+            globals: HashMap::new(),
+            open_upvalues: Vec::new(),
+            ephemeral_roots: Vec::new(),
+            init_string: ObjString::from("init"),
         }
     }
 }
@@ -98,15 +99,27 @@ impl Vm {
         Default::default()
     }
 
-    pub fn interpret(&mut self, function: Root<ObjFunction>) -> Result<(), VmError> {
+    pub fn interpret(&mut self, function: Gc<ObjFunction>) -> Result<(), VmError> {
         self.define_native("clock", clock_native);
-        self.push(Value::ObjFunction(function.as_gc()));
+        self.push(Value::ObjFunction(function));
+        self.ephemeral_roots.clear();
 
-        let closure = memory::allocate(RefCell::new(ObjClosure::new(function.as_gc())));
+        let closure = object::new_gc_obj_closure(self, function);
         self.pop()?;
-        self.push(Value::ObjClosure(closure.as_gc()));
-        self.call_value(Value::ObjClosure(closure.as_gc()), 0)?;
+        self.push(Value::ObjClosure(closure));
+        self.call_value(Value::ObjClosure(closure), 0)?;
         self.run()
+    }
+
+    pub fn mark_roots(&mut self) {
+        self.stack.mark();
+        self.globals.mark();
+        self.frames.mark();
+        self.ephemeral_roots.mark();
+    }
+
+    pub fn push_ephemeral_root(&mut self, root: Value) {
+        self.ephemeral_roots.push(root);
     }
 
     fn run(&mut self) -> Result<(), VmError> {
@@ -216,10 +229,10 @@ impl Vm {
 
                 OpCode::GetGlobal => {
                     let name = read_string!();
-                    let value = match self.globals.get(&name.data) {
+                    let value = match self.globals.get(name.deref()) {
                         Some(value) => *value,
                         None => {
-                            let msg = format!("Undefined variable '{}'.", name.data);
+                            let msg = format!("Undefined variable '{}'.", *name);
                             self.runtime_error(msg.as_str());
                             return Err(VmError::RuntimeError);
                         }
@@ -230,19 +243,19 @@ impl Vm {
                 OpCode::DefineGlobal => {
                     let name = read_string!();
                     let value = *self.peek(0);
-                    self.globals.insert(name.data.clone(), value);
+                    self.globals.insert((*name).clone(), value);
                     self.pop()?;
                 }
 
                 OpCode::SetGlobal => {
                     let name = read_string!();
                     let value = *self.peek(0);
-                    let prev = self.globals.insert(name.data.clone(), value);
+                    let prev = self.globals.insert((*name).clone(), value);
                     match prev {
                         Some(_) => {}
                         None => {
-                            self.globals.remove(&name.data);
-                            let msg = format!("Undefined variable '{}'.", name.data);
+                            self.globals.remove(name.deref());
+                            let msg = format!("Undefined variable '{}'.", *name);
                             self.runtime_error(msg.as_str());
                             return Err(VmError::RuntimeError);
                         }
@@ -284,7 +297,7 @@ impl Vm {
                     let name = read_string!();
 
                     let borrowed_instance = instance.borrow();
-                    if let Some(property) = borrowed_instance.fields.get(&name.data) {
+                    if let Some(property) = borrowed_instance.fields.get(name.deref()) {
                         self.pop()?;
                         self.push(*property);
                     } else {
@@ -302,10 +315,7 @@ impl Vm {
                     };
                     let name = read_string!();
                     let value = *self.peek(0);
-                    instance
-                        .borrow_mut()
-                        .fields
-                        .insert(name.data.clone(), value);
+                    instance.borrow_mut().fields.insert((*name).clone(), value);
 
                     self.pop()?;
                     self.pop()?;
@@ -336,9 +346,13 @@ impl Vm {
                     let b = self.pop()?;
                     let a = self.pop()?;
                     match (a, b) {
-                        (Value::ObjString(a), Value::ObjString(b)) => self
-                            .stack
-                            .push(Value::from(format!("{}{}", a.data, b.data))),
+                        (Value::ObjString(a), Value::ObjString(b)) => {
+                            let value = Value::ObjString(object::new_gc_obj_string(
+                                self,
+                                format!("{}{}", *a, *b).as_str(),
+                            ));
+                            self.stack.push(value)
+                        }
 
                         (Value::Number(a), Value::Number(b)) => {
                             self.push(Value::Number(a + b));
@@ -427,8 +441,8 @@ impl Vm {
 
                     let upvalue_count = function.upvalue_count;
 
-                    let closure = memory::allocate(RefCell::new(ObjClosure::new(function)));
-                    self.push(Value::ObjClosure(closure.as_gc()));
+                    let closure = object::new_gc_obj_closure(self, function);
+                    self.push(Value::ObjClosure(closure));
 
                     for i in 0..upvalue_count {
                         let is_local = read_byte!() != 0;
@@ -465,8 +479,9 @@ impl Vm {
                 }
 
                 OpCode::Class => {
-                    let class = memory::allocate(RefCell::new(ObjClass::new(read_string!())));
-                    self.push(Value::ObjClass(class.as_gc()));
+                    let string = read_string!();
+                    let class = object::new_gc_obj_class(self, string);
+                    self.push(Value::ObjClass(class));
                 }
 
                 OpCode::Inherit => {
@@ -504,11 +519,12 @@ impl Vm {
             }
 
             Value::ObjClass(class) => {
-                let instance = memory::allocate(RefCell::new(ObjInstance::new(class)));
-                *self.peek_mut(arg_count) = Value::ObjInstance(instance.as_gc());
+                // let instance = memory::allocate(self, RefCell::new(ObjInstance::new(class)));
+                let instance = object::new_gc_obj_instance(self, class);
+                *self.peek_mut(arg_count) = Value::ObjInstance(instance);
 
                 if let Some(Value::ObjClosure(initialiser)) =
-                    class.borrow().methods.get(&self.init_string.data)
+                    class.borrow().methods.get(&self.init_string)
                 {
                     return self.call(*initialiser, arg_count);
                 } else if arg_count != 0 {
@@ -544,13 +560,13 @@ impl Vm {
         name: Gc<ObjString>,
         arg_count: usize,
     ) -> Result<(), VmError> {
-        if let Some(value) = class.borrow().methods.get(&name.data) {
+        if let Some(value) = class.borrow().methods.get(name.deref()) {
             return match value {
                 Value::ObjClosure(closure) => self.call(*closure, arg_count),
                 _ => unreachable!(),
             };
         }
-        let msg = format!("Undefined property '{}'.", name.data);
+        let msg = format!("Undefined property '{}'.", *name);
         self.runtime_error(msg.as_str());
         Err(VmError::AttributeError)
     }
@@ -559,7 +575,7 @@ impl Vm {
         let receiver = *self.peek(arg_count);
         match receiver {
             Value::ObjInstance(instance) => {
-                if let Some(value) = instance.borrow().fields.get(&name.data) {
+                if let Some(value) = instance.borrow().fields.get(name.deref()) {
                     *self.peek_mut(arg_count) = *value;
                     return self.call_value(*value, arg_count);
                 }
@@ -610,10 +626,10 @@ impl Vm {
 
             let instruction = frame.ip - 1;
             eprint!("[line {}] in ", function.chunk.lines[instruction]);
-            if function.name.data.is_empty() {
+            if function.name.is_empty() {
                 eprintln!("script");
             } else {
-                eprintln!("{}()", function.name.data);
+                eprintln!("{}()", *function.name);
             }
         }
 
@@ -621,7 +637,8 @@ impl Vm {
     }
 
     fn define_native(&mut self, name: &str, function: NativeFn) {
-        self.push(Value::from(function));
+        let value = Value::ObjNative(object::new_gc_obj_native(self, function));
+        self.push(value);
         let value = *self.peek(0);
         self.globals.insert(String::from(name), value);
         self.pop().unwrap_or(Value::None);
@@ -633,7 +650,7 @@ impl Vm {
             Value::ObjClass(ptr) => ptr,
             _ => unreachable!(),
         };
-        class.borrow_mut().methods.insert(name.data.clone(), method);
+        class.borrow_mut().methods.insert((*name).clone(), method);
         self.pop().unwrap_or(Value::None);
 
         Ok(())
@@ -645,10 +662,10 @@ impl Vm {
         name: Gc<ObjString>,
     ) -> Result<(), VmError> {
         let borrowed_class = class.borrow();
-        let method = match borrowed_class.methods.get(&name.data) {
+        let method = match borrowed_class.methods.get(name.deref()) {
             Some(Value::ObjClosure(ptr)) => *ptr,
             None => {
-                let msg = format!("Undefined property '{}'.", name.data);
+                let msg = format!("Undefined property '{}'.", *name);
                 self.runtime_error(msg.as_str());
                 return Err(VmError::AttributeError);
             }
@@ -656,9 +673,9 @@ impl Vm {
         };
 
         let instance = *self.peek(0);
-        let bound = memory::allocate(RefCell::new(ObjBoundMethod::new(instance, method)));
+        let bound = object::new_gc_obj_bound_method(self, instance, method);
         self.pop()?;
-        self.push(Value::ObjBoundMethod(bound.as_gc()));
+        self.push(Value::ObjBoundMethod(bound));
 
         Ok(())
     }
@@ -672,7 +689,7 @@ impl Vm {
         let upvalue = if let Some(upvalue) = result {
             *upvalue
         } else {
-            memory::allocate(RefCell::new(ObjUpvalue::new(location))).as_gc()
+            object::new_gc_obj_upvalue(self, location)
         };
 
         self.open_upvalues.push(upvalue);

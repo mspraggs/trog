@@ -24,37 +24,18 @@ use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
 
 use crate::common;
+use crate::vm::Vm;
 
-pub fn allocate<T: 'static + GcManaged>(data: T) -> Root<T> {
+pub fn allocate<T: 'static + GcManaged>(vm: &mut Vm, data: T) -> Gc<T> {
     let ptr = HEAP.with(|heap| {
         if cfg!(feature = "debug_stress_gc") {
-            heap.borrow_mut().collect();
+            heap.borrow_mut().collect(vm);
         } else {
-            heap.borrow_mut().collect_if_required();
+            heap.borrow_mut().collect_if_required(vm);
         }
         heap.borrow_mut().allocate(data)
     });
-    let root = Root { ptr };
-    root.gc_box().root();
-    root
-}
-
-pub fn allocate_unique<T: 'static + GcManaged>(data: T) -> UniqueRoot<T> {
-    let ptr = HEAP.with(|heap| {
-        if cfg!(feature = "debug_stress_gc") {
-            heap.borrow_mut().collect();
-        } else {
-            heap.borrow_mut().collect_if_required();
-        }
-        heap.borrow_mut().allocate(data)
-    });
-    let root = UniqueRoot { ptr };
-    root.gc_box().root();
-    root
-}
-
-pub fn get_root<T: 'static + GcManaged>(ptr: Gc<T>) -> Root<T> {
-    HEAP.with(|heap| heap.borrow_mut().get_root(ptr))
+    Gc { ptr }
 }
 
 thread_local!(static HEAP: RefCell<Heap> = RefCell::new(Heap::new()));
@@ -75,7 +56,6 @@ pub trait GcManaged {
 type GcBoxPtr<T> = NonNull<GcBox<T>>;
 
 struct GcBox<T: GcManaged + ?Sized> {
-    num_roots: Cell<usize>,
     colour: Cell<Colour>,
     data: T,
 }
@@ -83,14 +63,6 @@ struct GcBox<T: GcManaged + ?Sized> {
 impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
     fn unmark(&self) {
         self.colour.set(Colour::White);
-    }
-
-    fn root(&self) {
-        self.num_roots.replace(self.num_roots.get() + 1);
-    }
-
-    fn unroot(&self) {
-        self.num_roots.replace(self.num_roots.get() - 1);
     }
 }
 
@@ -124,6 +96,10 @@ impl<T: 'static + GcManaged> Gc<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }
     }
+
+    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
+        unsafe { self.ptr.as_mut() }
+    }
 }
 
 impl<T: 'static + GcManaged> GcManaged for Gc<T> {
@@ -144,13 +120,6 @@ impl<T: GcManaged> Clone for Gc<T> {
     }
 }
 
-impl<T: 'static + Default + GcManaged> Default for Gc<T> {
-    fn default() -> Self {
-        let root: Root<T> = Default::default();
-        root.as_gc()
-    }
-}
-
 impl<T: 'static + GcManaged> Deref for Gc<T> {
     type Target = T;
 
@@ -159,120 +128,15 @@ impl<T: 'static + GcManaged> Deref for Gc<T> {
     }
 }
 
+impl<T: 'static + GcManaged> DerefMut for Gc<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.gc_box_mut().data
+    }
+}
+
 impl<T: GcManaged> PartialEq for Gc<T> {
     fn eq(&self, other: &Self) -> bool {
         self.ptr.as_ptr() == other.ptr.as_ptr()
-    }
-}
-
-pub struct Root<T: 'static + GcManaged> {
-    ptr: GcBoxPtr<T>,
-}
-
-impl<T: GcManaged> Root<T> {
-    pub fn as_gc(&self) -> Gc<T> {
-        Gc { ptr: self.ptr }
-    }
-
-    fn gc_box(&self) -> &GcBox<T> {
-        unsafe { self.ptr.as_ref() }
-    }
-
-    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
-        unsafe { self.ptr.as_mut() }
-    }
-}
-
-impl<T: 'static + GcManaged> GcManaged for Root<T> {
-    fn mark(&self) {
-        self.gc_box().mark();
-    }
-
-    fn blacken(&self) {
-        self.gc_box().blacken();
-    }
-}
-
-impl<T: GcManaged> Clone for Root<T> {
-    fn clone(&self) -> Self {
-        self.gc_box().root();
-        Root { ptr: self.ptr }
-    }
-}
-
-impl<T: Default + GcManaged> Default for Root<T> {
-    fn default() -> Self {
-        allocate(Default::default())
-    }
-}
-
-impl<T: 'static + GcManaged> Deref for Root<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.gc_box().data
-    }
-}
-
-impl<T: 'static + GcManaged> DerefMut for Root<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.gc_box_mut().data
-    }
-}
-
-impl<T: 'static + GcManaged> Drop for Root<T> {
-    fn drop(&mut self) {
-        self.gc_box().unroot();
-    }
-}
-
-pub struct UniqueRoot<T: 'static + GcManaged> {
-    ptr: GcBoxPtr<T>,
-}
-
-impl<T: GcManaged> UniqueRoot<T> {
-    fn gc_box(&self) -> &GcBox<T> {
-        unsafe { self.ptr.as_ref() }
-    }
-
-    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
-        unsafe { self.ptr.as_mut() }
-    }
-}
-
-impl<T: 'static + GcManaged> GcManaged for UniqueRoot<T> {
-    fn mark(&self) {
-        self.gc_box().mark();
-    }
-
-    fn blacken(&self) {
-        self.gc_box().blacken();
-    }
-}
-
-impl<T: Default + GcManaged> Default for UniqueRoot<T> {
-    fn default() -> Self {
-        allocate_unique(Default::default())
-    }
-}
-
-impl<T: 'static + GcManaged> Deref for UniqueRoot<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.gc_box().data
-    }
-}
-
-impl<T: 'static + GcManaged> DerefMut for UniqueRoot<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.gc_box_mut().data
-    }
-}
-
-impl<T: 'static + GcManaged> Drop for UniqueRoot<T> {
-    fn drop(&mut self) {
-        self.gc_box().unroot();
     }
 }
 
@@ -294,7 +158,6 @@ impl Heap {
 
     fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
         let mut obj = Box::new(GcBox {
-            num_roots: Cell::new(0),
             colour: Cell::new(Colour::White),
             data,
         });
@@ -320,17 +183,12 @@ impl Heap {
         gc_box_ptr
     }
 
-    fn get_root<T: 'static + GcManaged>(&mut self, obj: Gc<T>) -> Root<T> {
-        obj.gc_box().root();
-        Root { ptr: obj.ptr }
-    }
-
-    fn collect(&mut self) {
+    fn collect(&mut self, vm: &mut Vm) {
         if cfg!(feature = "debug_trace_gc") {
             println!("-- gc begin")
         }
 
-        self.mark();
+        self.mark_roots(vm);
         self.trace_references();
         let bytes_freed = self.sweep();
 
@@ -352,18 +210,15 @@ impl Heap {
         }
     }
 
-    fn collect_if_required(&mut self) {
+    fn collect_if_required(&mut self, vm: &mut Vm) {
         if self.bytes_allocated.get() >= self.collection_threshold.get() {
-            self.collect();
+            self.collect(vm);
         }
     }
 
-    fn mark(&mut self) {
+    fn mark_roots(&mut self, vm: &mut Vm) {
         self.objects.iter_mut().for_each(|obj| obj.unmark());
-        self.objects
-            .iter_mut()
-            .filter(|obj| obj.num_roots.get() > 0)
-            .for_each(|obj| obj.mark());
+        vm.mark_roots();
     }
 
     fn trace_references(&mut self) {
