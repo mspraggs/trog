@@ -54,13 +54,12 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
     };
 
     match result {
-        Err(vm::VmError::CompileError(errors)) => {
-            for error in errors {
-                eprintln!("{}", error);
-            }
+        Err(vm::VmError::CompileError(msgs)) => {
+            eprint!("{}", vm::VmError::CompileError(msgs));
             process::exit(65);
         }
-        Err(_) => {
+        Err(error) => {
+            eprint!("{}", error);
             process::exit(70);
         }
         Ok(_) => {}

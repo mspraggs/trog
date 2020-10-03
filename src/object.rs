@@ -20,7 +20,7 @@ use std::fmt;
 use crate::chunk::Chunk;
 use crate::memory::{self, Gc};
 use crate::value::Value;
-use crate::vm::Vm;
+use crate::vm::{VmError, Vm};
 
 pub type ObjString = String;
 
@@ -131,7 +131,7 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(usize, &mut [Value]) -> Value;
+pub type NativeFn = fn(usize, &mut [Value]) -> Result<Value, VmError>;
 
 #[derive(Clone)]
 pub struct ObjNative {

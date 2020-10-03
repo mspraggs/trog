@@ -15,6 +15,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::time;
 
@@ -29,14 +30,50 @@ use crate::value::Value;
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum VmError {
-    AttributeError,
+    AttributeError(Vec<String>),
     CompileError(Vec<String>),
-    IndexError,
-    RuntimeError,
-    TypeError,
-    ValueError,
+    IndexError(Vec<String>),
+    RuntimeError(Vec<String>),
+    TypeError(Vec<String>),
+    ValueError(Vec<String>),
+}
+
+impl VmError {
+    pub fn add_message(&mut self, message: String) {
+        match self {
+            VmError::AttributeError(msgs) => msgs.push(message),
+            VmError::CompileError(msgs) => msgs.push(message),
+            VmError::IndexError(msgs) => msgs.push(message),
+            VmError::RuntimeError(msgs) => msgs.push(message),
+            VmError::TypeError(msgs) => msgs.push(message),
+            VmError::ValueError(msgs) => msgs.push(message),
+        }
+    }
+}
+
+impl fmt::Display for VmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        let messages = match self {
+            VmError::AttributeError(msgs) => msgs,
+            VmError::CompileError(msgs) => msgs,
+            VmError::IndexError(msgs) => msgs,
+            VmError::RuntimeError(msgs) => msgs,
+            VmError::TypeError(msgs) => msgs,
+            VmError::ValueError(msgs) => msgs,
+        };
+
+        for msg in messages {
+            match writeln!(f, "{}", msg) {
+                Ok(()) => {}
+                Err(error) => {
+                    return Err(error);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<(), VmError> {
@@ -85,13 +122,18 @@ impl Default for Vm {
     }
 }
 
-fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Value {
-    let duration = time::SystemTime::now()
-        .duration_since(time::SystemTime::UNIX_EPOCH)
-        .unwrap();
+fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, VmError> {
+    let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
+        Ok(value) => value,
+        Err(_) => {
+            return Err(VmError::RuntimeError(vec![
+                "Error calling native function.".to_owned(),
+            ]));
+        }
+    };
     let seconds = duration.as_secs_f64();
     let nanos = duration.subsec_nanos() as f64 / 1e9;
-    Value::Number(seconds + nanos)
+    Ok(Value::Number(seconds + nanos))
 }
 
 impl Vm {
@@ -106,7 +148,10 @@ impl Vm {
         self.pop_ephemeral_root();
         self.push(Value::ObjClosure(closure));
         self.call_value(Value::ObjClosure(closure), 0)?;
-        self.run()
+        match self.run() {
+            Ok(()) => Ok(()),
+            Err(mut error) => Err(self.runtime_error(&mut error)),
+        }
     }
 
     pub fn mark_roots(&mut self) {
@@ -137,8 +182,9 @@ impl Vm {
                             Value::Number(second)
                         ) => (first, second),
                         _ => {
-                            self.runtime_error("Binary operands must both be numbers.");
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(
+                                vec!["Binary operands must both be numbers.".to_owned()]
+                            ));
                         }
                     };
                     self.push($value_type(first $op second));
@@ -150,7 +196,10 @@ impl Vm {
             () => {{
                 let ip = self.frame()?.ip;
                 let ret = self.frame()?.closure.borrow().function.chunk.code[ip];
-                self.frames.last_mut().ok_or(VmError::IndexError)?.ip += 1;
+                self.frames
+                    .last_mut()
+                    .ok_or(VmError::IndexError(vec!["Call stack empty.".to_owned()]))?
+                    .ip += 1;
                 ret
             }};
         }
@@ -236,8 +285,7 @@ impl Vm {
                         Some(value) => *value,
                         None => {
                             let msg = format!("Undefined variable '{}'.", *name);
-                            self.runtime_error(msg.as_str());
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![msg]));
                         }
                     };
                     self.push(value);
@@ -259,8 +307,7 @@ impl Vm {
                         None => {
                             self.globals.remove(name.deref());
                             let msg = format!("Undefined variable '{}'.", *name);
-                            self.runtime_error(msg.as_str());
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![msg]));
                         }
                     }
                 }
@@ -293,8 +340,9 @@ impl Vm {
                     let instance = match *self.peek(0) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
-                            self.runtime_error("Only instances have properties.");
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![
+                                "Only instances have properties.".to_owned(),
+                            ]));
                         }
                     };
                     let name = read_string!();
@@ -312,8 +360,9 @@ impl Vm {
                     let instance = match *self.peek(1) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
-                            self.runtime_error("Only instances have fields.");
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![
+                                "Only instances have fields.".to_owned()
+                            ]));
                         }
                     };
                     let name = read_string!();
@@ -362,10 +411,9 @@ impl Vm {
                         }
 
                         _ => {
-                            self.runtime_error(
-                                "Binary operands must be two numbers or two strings.",
-                            );
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![
+                                "Binary operands must be two numbers or two strings.".to_owned(),
+                            ]));
                         }
                     }
                 }
@@ -388,8 +436,9 @@ impl Vm {
                             self.push(Value::Number(-underlying));
                         }
                         _ => {
-                            self.runtime_error("Unary operand must be a number.");
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![
+                                "Unary operand must be a number.".to_owned(),
+                            ]));
                         }
                     }
                 }
@@ -492,8 +541,9 @@ impl Vm {
                     let superclass = match self.stack[superclass_pos] {
                         Value::ObjClass(ptr) => ptr,
                         _ => {
-                            self.runtime_error("Superclass must be a class.");
-                            return Err(VmError::RuntimeError);
+                            return Err(VmError::RuntimeError(vec![
+                                "Superclass must be a class.".to_owned()
+                            ]));
                         }
                     };
                     let subclass = match self.peek(0) {
@@ -532,8 +582,7 @@ impl Vm {
                     return self.call(*initialiser, arg_count);
                 } else if arg_count != 0 {
                     let msg = format!("Expected 0 arguments but got {}.", arg_count);
-                    self.runtime_error(msg.as_str());
-                    return Err(VmError::TypeError);
+                    return Err(VmError::TypeError(vec![msg]));
                 }
 
                 Ok(())
@@ -542,18 +591,22 @@ impl Vm {
             Value::ObjClosure(function) => self.call(function, arg_count),
 
             Value::ObjNative(wrapped) => {
-                let function = wrapped.function.ok_or(VmError::ValueError)?;
+                let function = wrapped.function.ok_or(VmError::ValueError(vec![
+                    "Expected native function.".to_owned(),
+                ]))?;
                 let frame_begin = self.stack.len() - arg_count - 1;
-                let result = function(arg_count, &mut self.stack[frame_begin..]);
+                let result = function(
+                    arg_count,
+                    &mut self.stack[frame_begin..frame_begin + arg_count],
+                )?;
                 self.stack.truncate(frame_begin);
                 self.push(result);
                 Ok(())
             }
 
-            _ => {
-                self.runtime_error("Can only call functions and classes.");
-                Err(VmError::TypeError)
-            }
+            _ => Err(VmError::TypeError(vec![
+                "Can only call functions and classes.".to_owned(),
+            ])),
         }
     }
 
@@ -570,8 +623,7 @@ impl Vm {
             };
         }
         let msg = format!("Undefined property '{}'.", *name);
-        self.runtime_error(msg.as_str());
-        Err(VmError::AttributeError)
+        Err(VmError::AttributeError(vec![msg]))
     }
 
     fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), VmError> {
@@ -585,10 +637,9 @@ impl Vm {
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
             }
-            _ => {
-                self.runtime_error("Only instances have methods.");
-                Err(VmError::ValueError)
-            }
+            _ => Err(VmError::ValueError(vec![
+                "Only instances have methods.".to_owned()
+            ])),
         }
     }
 
@@ -599,13 +650,11 @@ impl Vm {
                 closure.borrow().function.arity,
                 arg_count
             );
-            self.runtime_error(msg.as_str());
-            return Err(VmError::TypeError);
+            return Err(VmError::TypeError(vec![msg]));
         }
 
         if self.frames.len() == FRAMES_MAX {
-            self.runtime_error("Stack overflow.");
-            return Err(VmError::IndexError);
+            return Err(VmError::IndexError(vec!["Stack overflow.".to_owned()]));
         }
 
         self.frames.push(CallFrame {
@@ -621,22 +670,25 @@ impl Vm {
         self.frames.clear();
     }
 
-    fn runtime_error(&mut self, message: &str) {
-        eprintln!("{}", message);
-
+    fn runtime_error(&mut self, error: &mut VmError) -> VmError {
         for frame in self.frames.iter().rev() {
             let function = frame.closure.borrow().function;
 
+            let mut new_msg = String::new();
             let instruction = frame.ip - 1;
-            eprint!("[line {}] in ", function.chunk.lines[instruction]);
+            write!(new_msg, "[line {}] in ", function.chunk.lines[instruction])
+                .expect("Unable to write error to buffer.");
             if function.name.is_empty() {
-                eprintln!("script");
+                write!(new_msg, "script").expect("Unable to write error to buffer.");
             } else {
-                eprintln!("{}()", *function.name);
+                write!(new_msg, "{}()", *function.name).expect("Unable to write error to buffer.");
             }
+            error.add_message(new_msg);
         }
 
         self.reset_stack();
+
+        error.clone()
     }
 
     fn define_native(&mut self, name: &str, function: NativeFn) {
@@ -669,8 +721,7 @@ impl Vm {
             Some(Value::ObjClosure(ptr)) => *ptr,
             None => {
                 let msg = format!("Undefined property '{}'.", *name);
-                self.runtime_error(msg.as_str());
-                return Err(VmError::AttributeError);
+                return Err(VmError::AttributeError(vec![msg]));
             }
             _ => unreachable!(),
         };
@@ -710,11 +761,15 @@ impl Vm {
     }
 
     fn frame(&self) -> Result<&CallFrame, VmError> {
-        self.frames.last().ok_or(VmError::IndexError)
+        self.frames
+            .last()
+            .ok_or(VmError::IndexError(vec!["Call stack empty.".to_owned()]))
     }
 
     fn frame_mut(&mut self) -> Result<&mut CallFrame, VmError> {
-        self.frames.last_mut().ok_or(VmError::IndexError)
+        self.frames
+            .last_mut()
+            .ok_or(VmError::IndexError(vec!["Call stack empty.".to_owned()]))
     }
 
     fn peek(&self, depth: usize) -> &Value {
@@ -732,6 +787,8 @@ impl Vm {
     }
 
     fn pop(&mut self) -> Result<Value, VmError> {
-        self.stack.pop().ok_or(VmError::IndexError)
+        self.stack
+            .pop()
+            .ok_or(VmError::IndexError(vec!["Stack empty.".to_owned()]))
     }
 }
