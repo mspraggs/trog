@@ -100,12 +100,10 @@ impl Vm {
     }
 
     pub fn interpret(&mut self, function: Gc<ObjFunction>) -> Result<(), VmError> {
+        self.push_ephemeral_root(Value::ObjFunction(function));
         self.define_native("clock", clock_native);
-        self.push(Value::ObjFunction(function));
-        self.ephemeral_roots.clear();
-
         let closure = object::new_gc_obj_closure(self, function);
-        self.pop()?;
+        self.pop_ephemeral_root();
         self.push(Value::ObjClosure(closure));
         self.call_value(Value::ObjClosure(closure), 0)?;
         self.run()
@@ -115,11 +113,16 @@ impl Vm {
         self.stack.mark();
         self.globals.mark();
         self.frames.mark();
+        self.open_upvalues.mark();
         self.ephemeral_roots.mark();
     }
 
     pub fn push_ephemeral_root(&mut self, root: Value) {
         self.ephemeral_roots.push(root);
+    }
+
+    pub fn pop_ephemeral_root(&mut self) -> Value {
+        self.ephemeral_roots.pop().expect("Ephemeral roots empty.")
     }
 
     fn run(&mut self) -> Result<(), VmError> {

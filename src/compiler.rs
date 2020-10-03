@@ -115,7 +115,6 @@ enum CompilerError {
 impl Compiler {
     fn new(vm: &mut Vm, kind: FunctionKind, name: &str) -> Self {
         let function = new_gc_obj_function_with_name(vm, name);
-        vm.push_ephemeral_root(Value::ObjFunction(function));
         Compiler {
             function: function,
             kind,
@@ -192,7 +191,9 @@ pub fn compile(vm: &mut Vm, source: String) -> Result<Gc<ObjFunction>, Vec<Strin
 fn new_gc_obj_function_with_name(vm: &mut Vm, name: &str) -> Gc<ObjFunction> {
     let name = object::new_gc_obj_string(vm, name);
     vm.push_ephemeral_root(Value::ObjString(name));
-    object::new_gc_obj_function(vm, name)
+    let function = object::new_gc_obj_function(vm, name);
+    vm.pop_ephemeral_root();
+    function
 }
 
 struct Parser<'a> {
@@ -209,7 +210,7 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
-        Parser {
+        let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
             panic_mode: Cell::new(false),
@@ -460,7 +461,9 @@ impl<'a> Parser<'a> {
                     precedence: Precedence::None,
                 },
             ],
-        }
+        };
+        ret.new_compiler(FunctionKind::Script, "");
+        ret
     }
 
     fn parse(&mut self) -> Result<Gc<ObjFunction>, Vec<String>> {
@@ -526,15 +529,16 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::RightBrace, "Expected '}' after block.");
     }
 
-    fn new_compiler(&mut self, kind: FunctionKind) {
-        self.compilers
-            .push(Compiler::new(self.vm, kind, self.previous.source.as_str()));
+    fn new_compiler(&mut self, kind: FunctionKind, name: &str) {
+        self.compilers.push(Compiler::new(self.vm, kind, name));
+        let function = self.compiler().function;
+        self.vm.push_ephemeral_root(Value::ObjFunction(function));
     }
 
     fn finalise_compiler(&mut self) -> (Gc<ObjFunction>, Compiler) {
         self.emit_return();
 
-        if cfg!(feature = "debug_bytecode") && !self.errors.borrow().is_empty() {
+        if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
             let func_name = format!("{}", *self.compiler().function);
             debug::disassemble_chunk(&self.compiler().function.chunk, func_name.as_str());
         }
@@ -543,15 +547,16 @@ impl<'a> Parser<'a> {
         self.compiler_mut().function.upvalue_count = upvalue_count;
 
         let mut function = new_gc_obj_function_with_name(self.vm, "");
-        self.vm.push_ephemeral_root(Value::ObjFunction(function));
         let mut compiler = self.compilers.pop().unwrap();
         mem::swap(&mut function, &mut compiler.function);
+        self.vm.pop_ephemeral_root();
 
         (function, compiler)
     }
 
     fn function(&mut self, kind: FunctionKind) {
-        self.new_compiler(kind);
+        let name = self.previous.source.clone();
+        self.new_compiler(kind, name.as_str());
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expected '(' after function name.");
