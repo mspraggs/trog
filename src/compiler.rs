@@ -546,9 +546,11 @@ impl<'a> Parser<'a> {
         let upvalue_count = self.compiler().upvalues.len();
         self.compiler_mut().function.upvalue_count = upvalue_count;
 
-        let mut function = new_gc_obj_function_with_name(self.vm, "");
-        let mut compiler = self.compilers.pop().unwrap();
-        mem::swap(&mut function, &mut compiler.function);
+        let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
+        let function = mem::replace(
+            &mut compiler.function,
+            new_gc_obj_function_with_name(self.vm, ""),
+        );
         self.vm.pop_ephemeral_root();
 
         (function, compiler)
