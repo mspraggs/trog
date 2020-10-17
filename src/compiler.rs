@@ -190,7 +190,7 @@ pub fn compile(vm: &mut Vm, source: String) -> Result<Gc<ObjFunction>, Vec<Strin
 
 fn new_gc_obj_function_with_name(vm: &mut Vm, name: &str) -> Gc<ObjFunction> {
     let name = object::new_gc_obj_string(vm, name);
-    vm.push_ephemeral_root(Value::ObjString(name));
+    vm.push_ephemeral_root(name.as_base());
     let function = object::new_gc_obj_function(vm, name);
     vm.pop_ephemeral_root();
     function
@@ -532,7 +532,7 @@ impl<'a> Parser<'a> {
     fn new_compiler(&mut self, kind: FunctionKind, name: &str) {
         self.compilers.push(Compiler::new(self.vm, kind, name));
         let function = self.compiler().function;
-        self.vm.push_ephemeral_root(Value::ObjFunction(function));
+        self.vm.push_ephemeral_root(function.as_base());
     }
 
     fn finalise_compiler(&mut self) -> (Gc<ObjFunction>, Compiler) {

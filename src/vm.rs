@@ -105,7 +105,7 @@ pub struct Vm {
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
-    ephemeral_roots: Vec<Value>,
+    ephemeral_roots: Vec<Gc<dyn GcManaged>>,
     init_string: ObjString,
 }
 
@@ -142,7 +142,7 @@ impl Vm {
     }
 
     pub fn interpret(&mut self, function: Gc<ObjFunction>) -> Result<(), VmError> {
-        self.push_ephemeral_root(Value::ObjFunction(function));
+        self.push_ephemeral_root(function.as_base());
         self.define_native("clock", clock_native);
         let closure = object::new_gc_obj_closure(self, function);
         self.pop_ephemeral_root();
@@ -162,11 +162,11 @@ impl Vm {
         self.ephemeral_roots.mark();
     }
 
-    pub fn push_ephemeral_root(&mut self, root: Value) {
+    pub fn push_ephemeral_root(&mut self, root: Gc<dyn GcManaged>) {
         self.ephemeral_roots.push(root);
     }
 
-    pub fn pop_ephemeral_root(&mut self) -> Value {
+    pub fn pop_ephemeral_root(&mut self) -> Gc<dyn GcManaged> {
         self.ephemeral_roots.pop().expect("Ephemeral roots empty.")
     }
 

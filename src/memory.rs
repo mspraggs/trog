@@ -64,9 +64,7 @@ impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
     fn unmark(&self) {
         self.colour.set(Colour::White);
     }
-}
 
-impl<T: 'static + GcManaged + ?Sized> GcManaged for GcBox<T> {
     fn mark(&self) {
         if self.colour.replace(Colour::Grey) == Colour::Grey {
             return;
@@ -88,11 +86,11 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for GcBox<T> {
     }
 }
 
-pub struct Gc<T: GcManaged> {
+pub struct Gc<T: GcManaged + ?Sized> {
     ptr: GcBoxPtr<T>,
 }
 
-impl<T: 'static + GcManaged> Gc<T> {
+impl<T: 'static + GcManaged + ?Sized> Gc<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }
     }
@@ -102,7 +100,13 @@ impl<T: 'static + GcManaged> Gc<T> {
     }
 }
 
-impl<T: 'static + GcManaged> GcManaged for Gc<T> {
+impl<T: 'static + GcManaged> Gc<T> {
+    pub fn as_base(&self) -> Gc<dyn GcManaged> {
+        Gc { ptr: self.ptr }
+    }
+}
+
+impl<T: 'static + GcManaged + ?Sized> GcManaged for Gc<T> {
     fn mark(&self) {
         self.gc_box().mark();
     }
