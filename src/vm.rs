@@ -174,8 +174,8 @@ impl Vm {
         macro_rules! binary_op {
             ($value_type:expr, $op:tt) => {
                 {
-                    let second_value = self.pop()?;
-                    let first_value = self.pop()?;
+                    let second_value = self.pop();
+                    let first_value = self.pop();
                     let (first, second) = match (first_value, second_value) {
                         (
                             Value::Number(first),
@@ -194,24 +194,20 @@ impl Vm {
 
         macro_rules! read_byte {
             () => {{
-                let ip = self.frame()?.ip;
-                let ret = self.frame()?.closure.borrow().function.chunk.code[ip];
-                self.frames
-                    .last_mut()
-                    .ok_or(VmError::IndexError(vec!["Call stack empty.".to_owned()]))?
-                    .ip += 1;
+                let ip = self.frame().ip;
+                let ret = self.frame().closure.borrow().function.chunk.code[ip];
+                self.frame_mut().ip += 1;
                 ret
             }};
         }
 
         macro_rules! read_short {
             () => {{
-                let ret = ((self.frame()?.closure.borrow().function.chunk.code[self.frame()?.ip]
+                let ret = ((self.frame().closure.borrow().function.chunk.code[self.frame().ip]
                     as u16)
                     << 8)
-                    | self.frame()?.closure.borrow().function.chunk.code[self.frame()?.ip + 1]
-                        as u16;
-                self.frame_mut()?.ip += 2;
+                    | self.frame().closure.borrow().function.chunk.code[self.frame().ip + 1] as u16;
+                self.frame_mut().ip += 2;
                 ret
             }};
         }
@@ -219,7 +215,7 @@ impl Vm {
         macro_rules! read_constant {
             () => {{
                 let index = read_byte!() as usize;
-                self.frame()?.closure.borrow().function.chunk.constants[index]
+                self.frame().closure.borrow().function.chunk.constants[index]
             }};
         }
 
@@ -239,8 +235,8 @@ impl Vm {
                     print!("[ {} ]", v);
                 }
                 println!();
-                let ip = self.frame()?.ip;
-                debug::disassemble_instruction(&self.frame()?.closure.borrow().function.chunk, ip);
+                let ip = self.frame().ip;
+                debug::disassemble_instruction(&self.frame().closure.borrow().function.chunk, ip);
             }
             let instruction = OpCode::from(read_byte!());
 
@@ -263,19 +259,19 @@ impl Vm {
                 }
 
                 OpCode::Pop => {
-                    self.pop()?;
+                    self.pop();
                 }
 
                 OpCode::GetLocal => {
                     let slot = read_byte!() as usize;
-                    let slot_base = self.frame()?.slot_base;
+                    let slot_base = self.frame().slot_base;
                     let value = self.stack[slot_base + slot];
                     self.push(value);
                 }
 
                 OpCode::SetLocal => {
                     let slot = read_byte!() as usize;
-                    let slot_base = self.frame()?.slot_base;
+                    let slot_base = self.frame().slot_base;
                     self.stack[slot_base + slot] = *self.peek(0);
                 }
 
@@ -295,7 +291,7 @@ impl Vm {
                     let name = read_string!();
                     let value = *self.peek(0);
                     self.globals.insert((*name).clone(), value);
-                    self.pop()?;
+                    self.pop();
                 }
 
                 OpCode::SetGlobal => {
@@ -315,7 +311,7 @@ impl Vm {
                 OpCode::GetUpvalue => {
                     let upvalue_index = read_byte!() as usize;
                     let upvalue =
-                        match *self.frame()?.closure.borrow().upvalues[upvalue_index].borrow() {
+                        match *self.frame().closure.borrow().upvalues[upvalue_index].borrow() {
                             ObjUpvalue::Open(slot) => self.stack[slot],
                             ObjUpvalue::Closed(value) => value,
                         };
@@ -325,7 +321,7 @@ impl Vm {
                 OpCode::SetUpvalue => {
                     let upvalue_index = read_byte!() as usize;
                     let stack_value = *self.peek(0);
-                    let closure = self.frame()?.closure;
+                    let closure = self.frame().closure;
                     match *closure.borrow_mut().upvalues[upvalue_index].borrow_mut() {
                         ObjUpvalue::Open(slot) => {
                             self.stack[slot] = stack_value;
@@ -349,7 +345,7 @@ impl Vm {
 
                     let borrowed_instance = instance.borrow();
                     if let Some(property) = borrowed_instance.fields.get(name.deref()) {
-                        self.pop()?;
+                        self.pop();
                         self.push(*property);
                     } else {
                         self.bind_method(borrowed_instance.class, name)?;
@@ -369,14 +365,14 @@ impl Vm {
                     let value = *self.peek(0);
                     instance.borrow_mut().fields.insert((*name).clone(), value);
 
-                    self.pop()?;
-                    self.pop()?;
+                    self.pop();
+                    self.pop();
                     self.push(value);
                 }
 
                 OpCode::GetSuper => {
                     let name = read_string!();
-                    let superclass = match self.pop()? {
+                    let superclass = match self.pop() {
                         Value::ObjClass(ptr) => ptr,
                         _ => unreachable!(),
                     };
@@ -385,8 +381,8 @@ impl Vm {
                 }
 
                 OpCode::Equal => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
+                    let b = self.pop();
+                    let a = self.pop();
                     self.push(Value::Boolean(a == b));
                 }
 
@@ -395,8 +391,8 @@ impl Vm {
                 OpCode::Less => binary_op!(Value::Boolean, <),
 
                 OpCode::Add => {
-                    let b = self.pop()?;
-                    let a = self.pop()?;
+                    let b = self.pop();
+                    let a = self.pop();
                     match (a, b) {
                         (Value::ObjString(a), Value::ObjString(b)) => {
                             let value = Value::ObjString(object::new_gc_obj_string(
@@ -425,12 +421,12 @@ impl Vm {
                 OpCode::Divide => binary_op!(Value::Number, /),
 
                 OpCode::Not => {
-                    let value = self.pop()?;
+                    let value = self.pop();
                     self.push(Value::Boolean(!value.as_bool()));
                 }
 
                 OpCode::Negate => {
-                    let value = self.pop()?;
+                    let value = self.pop();
                     match value {
                         Value::Number(underlying) => {
                             self.push(Value::Number(-underlying));
@@ -444,24 +440,24 @@ impl Vm {
                 }
 
                 OpCode::Print => {
-                    println!("{}", self.pop()?);
+                    println!("{}", self.pop());
                 }
 
                 OpCode::Jump => {
                     let offset = read_short!();
-                    self.frame_mut()?.ip += offset as usize;
+                    self.frame_mut().ip += offset as usize;
                 }
 
                 OpCode::JumpIfFalse => {
                     let offset = read_short!();
                     if !self.peek(0).as_bool() {
-                        self.frame_mut()?.ip += offset as usize;
+                        self.frame_mut().ip += offset as usize;
                     }
                 }
 
                 OpCode::Loop => {
                     let offset = read_short!();
-                    self.frame_mut()?.ip -= offset as usize;
+                    self.frame_mut().ip -= offset as usize;
                 }
 
                 OpCode::Call => {
@@ -478,7 +474,7 @@ impl Vm {
                 OpCode::SuperInvoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
-                    let superclass = match self.pop()? {
+                    let superclass = match self.pop() {
                         Value::ObjClass(ptr) => ptr,
                         _ => unreachable!(),
                     };
@@ -499,30 +495,30 @@ impl Vm {
                     for i in 0..upvalue_count {
                         let is_local = read_byte!() != 0;
                         let index = read_byte!() as usize;
-                        let slot_base = self.frame()?.slot_base;
+                        let slot_base = self.frame().slot_base;
                         closure.borrow_mut().upvalues[i] = if is_local {
                             self.capture_upvalue(slot_base + index)
                         } else {
-                            self.frame()?.closure.borrow().upvalues[index]
+                            self.frame().closure.borrow().upvalues[index]
                         };
                     }
                 }
 
                 OpCode::CloseUpvalue => {
                     self.close_upvalues(self.stack.len() - 1, *self.peek(0));
-                    self.pop()?;
+                    self.pop();
                 }
 
                 OpCode::Return => {
-                    let result = self.pop()?;
-                    for i in self.frame()?.slot_base..self.stack.len() {
+                    let result = self.pop();
+                    for i in self.frame().slot_base..self.stack.len() {
                         self.close_upvalues(i, self.stack[i])
                     }
 
-                    let prev_stack_size = self.frame()?.slot_base;
+                    let prev_stack_size = self.frame().slot_base;
                     self.frames.pop();
                     if self.frames.is_empty() {
-                        self.pop()?;
+                        self.pop();
                         return Ok(());
                     }
 
@@ -553,7 +549,7 @@ impl Vm {
                     for (name, value) in superclass.borrow().methods.iter() {
                         subclass.borrow_mut().methods.insert(name.clone(), *value);
                     }
-                    self.pop()?;
+                    self.pop();
                 }
 
                 OpCode::Method => {
@@ -696,7 +692,7 @@ impl Vm {
         self.push(value);
         let value = *self.peek(0);
         self.globals.insert(String::from(name), value);
-        self.pop().unwrap_or(Value::None);
+        self.pop();
     }
 
     fn define_method(&mut self, name: Gc<ObjString>) -> Result<(), VmError> {
@@ -706,7 +702,7 @@ impl Vm {
             _ => unreachable!(),
         };
         class.borrow_mut().methods.insert((*name).clone(), method);
-        self.pop().unwrap_or(Value::None);
+        self.pop();
 
         Ok(())
     }
@@ -728,7 +724,7 @@ impl Vm {
 
         let instance = *self.peek(0);
         let bound = object::new_gc_obj_bound_method(self, instance, method);
-        self.pop()?;
+        self.pop();
         self.push(Value::ObjBoundMethod(bound));
 
         Ok(())
@@ -760,16 +756,12 @@ impl Vm {
         self.open_upvalues.retain(|u| u.borrow().is_open());
     }
 
-    fn frame(&self) -> Result<&CallFrame, VmError> {
-        self.frames
-            .last()
-            .ok_or(VmError::IndexError(vec!["Call stack empty.".to_owned()]))
+    fn frame(&self) -> &CallFrame {
+        self.frames.last().expect("Call stack empty.")
     }
 
-    fn frame_mut(&mut self) -> Result<&mut CallFrame, VmError> {
-        self.frames
-            .last_mut()
-            .ok_or(VmError::IndexError(vec!["Call stack empty.".to_owned()]))
+    fn frame_mut(&mut self) -> &mut CallFrame {
+        self.frames.last_mut().expect("Call stack empty.")
     }
 
     fn peek(&self, depth: usize) -> &Value {
@@ -786,9 +778,7 @@ impl Vm {
         self.stack.push(value);
     }
 
-    fn pop(&mut self) -> Result<Value, VmError> {
-        self.stack
-            .pop()
-            .ok_or(VmError::IndexError(vec!["Stack empty.".to_owned()]))
+    fn pop(&mut self) -> Value {
+        self.stack.pop().expect("Stack empty.")
     }
 }
