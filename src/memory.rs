@@ -16,7 +16,7 @@
 // The code below is in part inspired by the mark-and-sweep GC implemented here:
 // https://github.com/Darksecond/lox
 
-use std::any::TypeId;
+use std::any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::mem;
@@ -180,7 +180,7 @@ impl Heap {
                 "{:?} allocate {} for {:?}",
                 new_ptr.as_ref() as *const _,
                 size,
-                TypeId::of::<T>(),
+                any::type_name::<T>(),
             )
         }
 
