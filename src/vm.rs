@@ -19,7 +19,7 @@ use std::fmt::{self, Write};
 use std::ops::Deref;
 use std::time;
 
-use crate::chunk::OpCode;
+use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::compiler;
 use crate::debug;
@@ -101,6 +101,8 @@ impl memory::GcManaged for CallFrame {
 }
 
 pub struct Vm {
+    active_chunk_index: usize,
+    chunks: Vec<Chunk>,
     frames: Vec<CallFrame>,
     stack: Vec<Value>,
     globals: HashMap<String, Value>,
@@ -112,6 +114,8 @@ pub struct Vm {
 impl Default for Vm {
     fn default() -> Self {
         Vm {
+            active_chunk_index: 0,
+            chunks: Vec::new(),
             frames: Vec::with_capacity(FRAMES_MAX),
             stack: Vec::with_capacity(STACK_MAX),
             globals: HashMap::new(),
@@ -155,6 +159,7 @@ impl Vm {
     }
 
     pub fn mark_roots(&mut self) {
+        self.chunks.mark();
         self.stack.mark();
         self.globals.mark();
         self.frames.mark();
@@ -168,6 +173,19 @@ impl Vm {
 
     pub fn pop_ephemeral_root(&mut self) -> Gc<dyn GcManaged> {
         self.ephemeral_roots.pop().expect("Ephemeral roots empty.")
+    }
+
+    pub fn new_chunk(&mut self) -> usize {
+        self.chunks.push(Chunk::new());
+        self.chunks.len() - 1
+    }
+
+    pub fn get_chunk(&self, index: usize) -> &Chunk {
+        &self.chunks[index]
+    }
+
+    pub fn get_chunk_mut(&mut self, index: usize) -> &mut Chunk {
+        &mut self.chunks[index]
     }
 
     fn run(&mut self) -> Result<(), VmError> {
@@ -195,7 +213,7 @@ impl Vm {
         macro_rules! read_byte {
             () => {{
                 let ip = self.frame().ip;
-                let ret = self.frame().closure.borrow().function.chunk.code[ip];
+                let ret = self.active_chunk().code[ip];
                 self.frame_mut().ip += 1;
                 ret
             }};
@@ -203,10 +221,8 @@ impl Vm {
 
         macro_rules! read_short {
             () => {{
-                let ret = ((self.frame().closure.borrow().function.chunk.code[self.frame().ip]
-                    as u16)
-                    << 8)
-                    | self.frame().closure.borrow().function.chunk.code[self.frame().ip + 1] as u16;
+                let ret = ((self.active_chunk().code[self.frame().ip] as u16) << 8)
+                    | self.active_chunk().code[self.frame().ip + 1] as u16;
                 self.frame_mut().ip += 2;
                 ret
             }};
@@ -215,7 +231,7 @@ impl Vm {
         macro_rules! read_constant {
             () => {{
                 let index = read_byte!() as usize;
-                self.frame().closure.borrow().function.chunk.constants[index]
+                self.active_chunk().constants[index]
             }};
         }
 
@@ -236,7 +252,7 @@ impl Vm {
                 }
                 println!();
                 let ip = self.frame().ip;
-                debug::disassemble_instruction(&self.frame().closure.borrow().function.chunk, ip);
+                debug::disassemble_instruction(self.active_chunk(), ip);
             }
             let instruction = OpCode::from(read_byte!());
 
@@ -521,6 +537,8 @@ impl Vm {
                         self.pop();
                         return Ok(());
                     }
+                    let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
+                    self.active_chunk_index = prev_chunk_index;
 
                     self.stack.truncate(prev_stack_size);
                     self.push(result);
@@ -568,7 +586,6 @@ impl Vm {
             }
 
             Value::ObjClass(class) => {
-                // let instance = memory::allocate(self, RefCell::new(ObjInstance::new(class)));
                 let instance = object::new_gc_obj_instance(self, class);
                 *self.peek_mut(arg_count) = Value::ObjInstance(instance);
 
@@ -653,6 +670,7 @@ impl Vm {
             return Err(VmError::IndexError(vec!["Stack overflow.".to_owned()]));
         }
 
+        self.active_chunk_index = closure.borrow().function.chunk_index;
         self.frames.push(CallFrame {
             closure,
             ip: 0,
@@ -672,8 +690,13 @@ impl Vm {
 
             let mut new_msg = String::new();
             let instruction = frame.ip - 1;
-            write!(new_msg, "[line {}] in ", function.chunk.lines[instruction])
-                .expect("Unable to write error to buffer.");
+            let chunk_index = frame.closure.borrow().function.chunk_index;
+            write!(
+                new_msg,
+                "[line {}] in ",
+                self.chunks[chunk_index].lines[instruction]
+            )
+            .expect("Unable to write error to buffer.");
             if function.name.is_empty() {
                 write!(new_msg, "script").expect("Unable to write error to buffer.");
             } else {
@@ -754,6 +777,10 @@ impl Vm {
         }
 
         self.open_upvalues.retain(|u| u.borrow().is_open());
+    }
+
+    fn active_chunk(&self) -> &Chunk {
+        &self.chunks[self.active_chunk_index]
     }
 
     fn frame(&self) -> &CallFrame {

@@ -17,10 +17,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::chunk::Chunk;
 use crate::memory::{self, Gc};
 use crate::value::Value;
-use crate::vm::{VmError, Vm};
+use crate::vm::{Vm, VmError};
 
 pub type ObjString = String;
 
@@ -88,23 +87,25 @@ impl memory::GcManaged for ObjUpvalue {
 }
 
 #[derive(Clone)]
+#[repr(align(16))]  // Figure out why this is necessary (prevents corruption/double-free)
 pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
-    pub chunk: Chunk,
+    pub chunk_index: usize,
     pub name: memory::Gc<ObjString>,
 }
 
 pub fn new_gc_obj_function(vm: &mut Vm, name: Gc<ObjString>) -> Gc<ObjFunction> {
-    memory::allocate(vm, ObjFunction::new(name))
+    let chunk_index = vm.new_chunk();
+    memory::allocate(vm, ObjFunction::new(name, chunk_index))
 }
 
 impl ObjFunction {
-    fn new(name: memory::Gc<ObjString>) -> Self {
+    fn new(name: memory::Gc<ObjString>, chunk_index: usize) -> Self {
         ObjFunction {
             arity: 0,
             upvalue_count: 0,
-            chunk: Chunk::new(),
+            chunk_index: chunk_index,
             name,
         }
     }
@@ -112,12 +113,10 @@ impl ObjFunction {
 
 impl memory::GcManaged for ObjFunction {
     fn mark(&self) {
-        self.chunk.mark();
         self.name.mark();
     }
 
     fn blacken(&self) {
-        self.chunk.blacken();
         self.name.blacken();
     }
 }

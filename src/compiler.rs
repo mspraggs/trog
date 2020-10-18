@@ -540,7 +540,8 @@ impl<'a> Parser<'a> {
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
             let func_name = format!("{}", *self.compiler().function);
-            debug::disassemble_chunk(&self.compiler().function.chunk, func_name.as_str());
+            let chunk_index = self.compiler().function.chunk_index;
+            debug::disassemble_chunk(self.vm.get_chunk(chunk_index), func_name.as_str());
         }
 
         let upvalue_count = self.compiler().upvalues.len();
@@ -1161,7 +1162,8 @@ impl<'a> Parser<'a> {
     }
 
     fn chunk(&mut self) -> &mut Chunk {
-        &mut self.compiler_mut().function.chunk
+        let index = self.compiler().function.chunk_index;
+        self.vm.get_chunk_mut(index)
     }
 
     fn grouping(s: &mut Parser, _can_assign: bool) {
