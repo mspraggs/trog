@@ -215,7 +215,7 @@ impl<'a> Parser<'a> {
             previous: Token::new(),
             panic_mode: Cell::new(false),
             scanner,
-            compilers: vec![Compiler::new(vm, FunctionKind::Script, "")],
+            compilers: Vec::new(),
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             vm: vm,
