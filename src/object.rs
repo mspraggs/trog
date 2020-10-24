@@ -87,7 +87,6 @@ impl memory::GcManaged for ObjUpvalue {
 }
 
 #[derive(Clone)]
-#[repr(align(16))]  // Figure out why this is necessary (prevents corruption/double-free)
 pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
@@ -161,17 +160,29 @@ pub struct ObjClosure {
 }
 
 pub fn new_gc_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
-    let closure = ObjClosure::new(vm, function);
-    memory::allocate(vm, RefCell::new(closure))
+    let upvalues = (0..function.upvalue_count)
+        .map(|_| {
+            let upvalue = memory::allocate(vm, RefCell::new(ObjUpvalue::new(0)));
+            vm.push_ephemeral_root(upvalue.as_base());
+            upvalue
+        })
+        .collect();
+
+    let ret = memory::allocate(vm, RefCell::new(ObjClosure::new(function, upvalues)));
+
+    (0..function.upvalue_count).for_each(|_| {
+        vm.pop_ephemeral_root();
+    });
+
+    ret
 }
 
 impl ObjClosure {
-    fn new(vm: &mut Vm, function: memory::Gc<ObjFunction>) -> Self {
-        let upvalue_count = function.upvalue_count as usize;
-        ObjClosure {
-            function,
-            upvalues: vec![memory::allocate(vm, RefCell::new(ObjUpvalue::new(0))); upvalue_count],
-        }
+    fn new(
+        function: memory::Gc<ObjFunction>,
+        upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+    ) -> Self {
+        ObjClosure { function, upvalues }
     }
 }
 
