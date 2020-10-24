@@ -86,7 +86,7 @@ pub fn interpret(vm: &mut Vm, source: String) -> Result<(), VmError> {
 
 pub struct CallFrame {
     closure: Gc<RefCell<ObjClosure>>,
-    ip: usize,
+    prev_ip: usize,
     slot_base: usize,
 }
 
@@ -101,6 +101,7 @@ impl memory::GcManaged for CallFrame {
 }
 
 pub struct Vm {
+    ip: usize,
     active_chunk_index: usize,
     chunks: Vec<Chunk>,
     frames: Vec<CallFrame>,
@@ -114,6 +115,7 @@ pub struct Vm {
 impl Default for Vm {
     fn default() -> Self {
         Vm {
+            ip: 0,
             active_chunk_index: 0,
             chunks: Vec::new(),
             frames: Vec::with_capacity(FRAMES_MAX),
@@ -212,18 +214,18 @@ impl Vm {
 
         macro_rules! read_byte {
             () => {{
-                let ip = self.frame().ip;
+                let ip = self.ip;
                 let ret = self.active_chunk().code[ip];
-                self.frame_mut().ip += 1;
+                self.ip += 1;
                 ret
             }};
         }
 
         macro_rules! read_short {
             () => {{
-                let ret = ((self.active_chunk().code[self.frame().ip] as u16) << 8)
-                    | self.active_chunk().code[self.frame().ip + 1] as u16;
-                self.frame_mut().ip += 2;
+                let ret = ((self.active_chunk().code[self.ip] as u16) << 8)
+                    | self.active_chunk().code[self.ip + 1] as u16;
+                self.ip += 2;
                 ret
             }};
         }
@@ -251,7 +253,7 @@ impl Vm {
                     print!("[ {} ]", v);
                 }
                 println!();
-                let ip = self.frame().ip;
+                let ip = self.ip;
                 debug::disassemble_instruction(self.active_chunk(), ip);
             }
             let instruction = OpCode::from(read_byte!());
@@ -461,19 +463,19 @@ impl Vm {
 
                 OpCode::Jump => {
                     let offset = read_short!();
-                    self.frame_mut().ip += offset as usize;
+                    self.ip += offset as usize;
                 }
 
                 OpCode::JumpIfFalse => {
                     let offset = read_short!();
                     if !self.peek(0).as_bool() {
-                        self.frame_mut().ip += offset as usize;
+                        self.ip += offset as usize;
                     }
                 }
 
                 OpCode::Loop => {
                     let offset = read_short!();
-                    self.frame_mut().ip -= offset as usize;
+                    self.ip -= offset as usize;
                 }
 
                 OpCode::Call => {
@@ -532,6 +534,7 @@ impl Vm {
                     }
 
                     let prev_stack_size = self.frame().slot_base;
+                    let prev_ip = self.frame().prev_ip;
                     self.frames.pop();
                     if self.frames.is_empty() {
                         self.pop();
@@ -539,6 +542,7 @@ impl Vm {
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
                     self.active_chunk_index = prev_chunk_index;
+                    self.ip = prev_ip;
 
                     self.stack.truncate(prev_stack_size);
                     self.push(result);
@@ -673,9 +677,10 @@ impl Vm {
         self.active_chunk_index = closure.borrow().function.chunk_index;
         self.frames.push(CallFrame {
             closure,
-            ip: 0,
+            prev_ip: self.ip,
             slot_base: self.stack.len() - arg_count - 1,
         });
+        self.ip = 0;
         Ok(())
     }
 
@@ -685,11 +690,14 @@ impl Vm {
     }
 
     fn runtime_error(&mut self, error: &mut VmError) -> VmError {
-        for frame in self.frames.iter().rev() {
+        let mut ips: Vec<usize> = self.frames.iter().skip(1).map(|f| f.prev_ip).collect();
+        ips.push(self.ip);
+
+        for (i, frame) in self.frames.iter().enumerate().rev() {
             let function = frame.closure.borrow().function;
 
             let mut new_msg = String::new();
-            let instruction = frame.ip - 1;
+            let instruction = ips[i] - 1;
             let chunk_index = frame.closure.borrow().function.chunk_index;
             write!(
                 new_msg,
@@ -785,10 +793,6 @@ impl Vm {
 
     fn frame(&self) -> &CallFrame {
         self.frames.last().expect("Call stack empty.")
-    }
-
-    fn frame_mut(&mut self) -> &mut CallFrame {
-        self.frames.last_mut().expect("Call stack empty.")
     }
 
     fn peek(&self, depth: usize) -> &Value {
