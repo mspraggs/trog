@@ -15,6 +15,7 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fmt::{self, Write};
 use std::time;
 
@@ -236,8 +237,11 @@ impl Vm {
 
         macro_rules! read_short {
             () => {{
-                let ret = ((self.active_chunk().code[self.ip] as u16) << 8)
-                    | self.active_chunk().code[self.ip + 1] as u16;
+                let ret = u16::from_ne_bytes(
+                    (&self.active_chunk().code[self.ip..self.ip + 2])
+                        .try_into()
+                        .unwrap(),
+                );
                 self.ip += 2;
                 ret
             }};

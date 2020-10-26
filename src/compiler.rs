@@ -901,8 +901,10 @@ impl<'a> Parser<'a> {
             self.error("Loop body too large.");
         }
 
-        self.emit_byte(((offset >> 8) & 0xff) as u8);
-        self.emit_byte((offset & 0xff) as u8);
+        let bytes = (offset as u16).to_ne_bytes();
+
+        self.emit_byte(bytes[0]);
+        self.emit_byte(bytes[1]);
     }
 
     fn emit_jump(&mut self, instruction: OpCode) -> usize {
@@ -941,8 +943,10 @@ impl<'a> Parser<'a> {
             self.error("Too much code to jump over.");
         }
 
-        self.chunk().code[offset] = ((jump >> 8) & 0xff) as u8;
-        self.chunk().code[offset + 1] = (jump & 0xff) as u8;
+        let bytes = (jump as u16).to_ne_bytes();
+
+        self.chunk().code[offset] = bytes[0];
+        self.chunk().code[offset + 1] = bytes[1];
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
