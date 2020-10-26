@@ -90,6 +90,14 @@ pub struct Gc<T: GcManaged + ?Sized> {
     ptr: GcBoxPtr<T>,
 }
 
+impl<T: GcManaged> Gc<T> {
+    pub fn dangling() -> Self {
+        Gc {
+            ptr: NonNull::dangling(),
+        }
+    }
+}
+
 impl<T: 'static + GcManaged + ?Sized> Gc<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }
@@ -284,7 +292,7 @@ impl<T: GcManaged> GcManaged for Vec<T> {
     }
 }
 
-impl<K, V: GcManaged> GcManaged for HashMap<K, V> {
+impl<K, V: GcManaged, S> GcManaged for HashMap<K, V, S> {
     fn mark(&self) {
         for v in self.values() {
             v.mark();

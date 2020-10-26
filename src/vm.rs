@@ -16,13 +16,13 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{self, Write};
-use std::ops::Deref;
 use std::time;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::compiler;
 use crate::debug;
+use crate::hash::BuildPassThroughHasher;
 use crate::memory::{self, Gc, GcManaged};
 use crate::object::{self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjString, ObjUpvalue};
 use crate::value::Value;
@@ -106,25 +106,29 @@ pub struct Vm {
     chunks: Vec<Chunk>,
     frames: Vec<CallFrame>,
     stack: Vec<Value>,
-    globals: HashMap<String, Value>,
+    globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     ephemeral_roots: Vec<Gc<dyn GcManaged>>,
-    init_string: ObjString,
+    strings: HashMap<String, Gc<ObjString>>,
+    init_string: Gc<ObjString>,
 }
 
 impl Default for Vm {
     fn default() -> Self {
-        Vm {
+        let mut vm = Vm {
             ip: 0,
             active_chunk_index: 0,
             chunks: Vec::new(),
             frames: Vec::with_capacity(FRAMES_MAX),
             stack: Vec::with_capacity(STACK_MAX),
-            globals: HashMap::new(),
+            globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
             ephemeral_roots: Vec::new(),
-            init_string: ObjString::from("init"),
-        }
+            strings: HashMap::new(),
+            init_string: Gc::dangling(),
+        };
+        vm.init_string = object::new_gc_obj_string(&mut vm, "init");
+        vm
     }
 }
 
@@ -167,6 +171,7 @@ impl Vm {
         self.frames.mark();
         self.open_upvalues.mark();
         self.ephemeral_roots.mark();
+        self.strings.mark();
     }
 
     pub fn push_ephemeral_root(&mut self, root: Gc<dyn GcManaged>) {
@@ -188,6 +193,14 @@ impl Vm {
 
     pub fn get_chunk_mut(&mut self, index: usize) -> &mut Chunk {
         &mut self.chunks[index]
+    }
+
+    pub fn get_string(&self, std_string: &String) -> Option<&Gc<ObjString>> {
+        self.strings.get(std_string)
+    }
+
+    pub fn add_string(&mut self, std_string: String, gc_string: Gc<ObjString>) {
+        self.strings.insert(std_string, gc_string);
     }
 
     fn run(&mut self) -> Result<(), VmError> {
@@ -295,7 +308,7 @@ impl Vm {
 
                 OpCode::GetGlobal => {
                     let name = read_string!();
-                    let value = match self.globals.get(name.deref()) {
+                    let value = match self.globals.get(&name) {
                         Some(value) => *value,
                         None => {
                             let msg = format!("Undefined variable '{}'.", *name);
@@ -308,18 +321,18 @@ impl Vm {
                 OpCode::DefineGlobal => {
                     let name = read_string!();
                     let value = *self.peek(0);
-                    self.globals.insert((*name).clone(), value);
+                    self.globals.insert(name, value);
                     self.pop();
                 }
 
                 OpCode::SetGlobal => {
                     let name = read_string!();
                     let value = *self.peek(0);
-                    let prev = self.globals.insert((*name).clone(), value);
+                    let prev = self.globals.insert(name, value);
                     match prev {
                         Some(_) => {}
                         None => {
-                            self.globals.remove(name.deref());
+                            self.globals.remove(&name);
                             let msg = format!("Undefined variable '{}'.", *name);
                             return Err(VmError::RuntimeError(vec![msg]));
                         }
@@ -362,7 +375,7 @@ impl Vm {
                     let name = read_string!();
 
                     let borrowed_instance = instance.borrow();
-                    if let Some(property) = borrowed_instance.fields.get(name.deref()) {
+                    if let Some(property) = borrowed_instance.fields.get(&name) {
                         self.pop();
                         self.push(*property);
                     } else {
@@ -381,7 +394,7 @@ impl Vm {
                     };
                     let name = read_string!();
                     let value = *self.peek(0);
-                    instance.borrow_mut().fields.insert((*name).clone(), value);
+                    instance.borrow_mut().fields.insert(name, value);
 
                     self.pop();
                     self.pop();
@@ -633,7 +646,7 @@ impl Vm {
         name: Gc<ObjString>,
         arg_count: usize,
     ) -> Result<(), VmError> {
-        if let Some(value) = class.borrow().methods.get(name.deref()) {
+        if let Some(value) = class.borrow().methods.get(&name) {
             return match value {
                 Value::ObjClosure(closure) => self.call(*closure, arg_count),
                 _ => unreachable!(),
@@ -647,7 +660,7 @@ impl Vm {
         let receiver = *self.peek(arg_count);
         match receiver {
             Value::ObjInstance(instance) => {
-                if let Some(value) = instance.borrow().fields.get(name.deref()) {
+                if let Some(value) = instance.borrow().fields.get(&name) {
                     *self.peek_mut(arg_count) = *value;
                     return self.call_value(*value, arg_count);
                 }
@@ -722,7 +735,8 @@ impl Vm {
         let value = Value::ObjNative(object::new_gc_obj_native(self, function));
         self.push(value);
         let value = *self.peek(0);
-        self.globals.insert(String::from(name), value);
+        let name = object::new_gc_obj_string(self, name);
+        self.globals.insert(name, value);
         self.pop();
     }
 
@@ -732,7 +746,7 @@ impl Vm {
             Value::ObjClass(ptr) => ptr,
             _ => unreachable!(),
         };
-        class.borrow_mut().methods.insert((*name).clone(), method);
+        class.borrow_mut().methods.insert(name, method);
         self.pop();
 
         Ok(())
@@ -744,7 +758,7 @@ impl Vm {
         name: Gc<ObjString>,
     ) -> Result<(), VmError> {
         let borrowed_class = class.borrow();
-        let method = match borrowed_class.methods.get(name.deref()) {
+        let method = match borrowed_class.methods.get(&name) {
             Some(Value::ObjClosure(ptr)) => *ptr,
             None => {
                 let msg = format!("Undefined property '{}'.", *name);

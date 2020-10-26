@@ -111,7 +111,7 @@ impl cmp::PartialEq for Value {
         match (self, other) {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
-            (Value::ObjString(first), Value::ObjString(second)) => **first == **second,
+            (Value::ObjString(first), Value::ObjString(second)) => *first == *second,
             (Value::ObjFunction(first), Value::ObjFunction(second)) => *first == *second,
             (Value::ObjNative(first), Value::ObjNative(second)) => *first == *second,
             (Value::ObjClosure(first), Value::ObjClosure(second)) => *first == *second,

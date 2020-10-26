@@ -14,18 +14,66 @@
  */
 
 use std::cell::RefCell;
+use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
+use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc};
 use crate::value::Value;
 use crate::vm::{Vm, VmError};
 
-pub type ObjString = String;
+pub struct ObjString {
+    string: String,
+    hash: u64,
+}
 
 pub fn new_gc_obj_string(vm: &mut Vm, data: &str) -> memory::Gc<ObjString> {
-    memory::allocate(vm, ObjString::from(data))
+    let string = String::from(data);
+    if let Some(gc_string) = vm.get_string(&string) {
+        return *gc_string;
+    }
+    let ret = memory::allocate(vm, ObjString::from(data));
+    vm.add_string(string, ret);
+    ret
 }
+
+impl ObjString {
+    pub fn is_empty(&self) -> bool {
+        self.string.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.string.len()
+    }
+}
+
+impl From<&str> for ObjString {
+    #[inline]
+    fn from(string: &str) -> ObjString {
+        let mut hasher = FnvHasher::new();
+        (*string).hash(&mut hasher);
+        ObjString {
+            string: String::from(string),
+            hash: hasher.finish(),
+        }
+    }
+}
+
+impl fmt::Display for ObjString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.string)
+    }
+}
+
+impl Hash for Gc<ObjString> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash);
+    }
+}
+
+impl Eq for Gc<ObjString> {}
 
 impl memory::GcManaged for ObjString {
     fn mark(&self) {}
@@ -200,7 +248,7 @@ impl memory::GcManaged for ObjClosure {
 
 pub struct ObjClass {
     pub name: memory::Gc<ObjString>,
-    pub methods: HashMap<String, Value>,
+    pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
 pub fn new_gc_obj_class(vm: &mut Vm, name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
@@ -211,7 +259,7 @@ impl ObjClass {
     fn new(name: memory::Gc<ObjString>) -> Self {
         ObjClass {
             name,
-            methods: HashMap::new(),
+            methods: HashMap::with_hasher(BuildPassThroughHasher::default()),
         }
     }
 }
@@ -230,7 +278,7 @@ impl memory::GcManaged for ObjClass {
 
 pub struct ObjInstance {
     pub class: memory::Gc<RefCell<ObjClass>>,
-    pub fields: HashMap<String, Value>,
+    pub fields: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
 pub fn new_gc_obj_instance(vm: &mut Vm, class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjInstance>> {
@@ -241,7 +289,7 @@ impl ObjInstance {
     fn new(class: Gc<RefCell<ObjClass>>) -> Self {
         ObjInstance {
             class,
-            fields: HashMap::new(),
+            fields: HashMap::with_hasher(BuildPassThroughHasher::default()),
         }
     }
 }
