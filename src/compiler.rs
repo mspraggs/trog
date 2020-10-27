@@ -123,7 +123,8 @@ impl Compiler {
                     "this"
                 } else {
                     ""
-                }.to_owned(),
+                }
+                .to_owned(),
                 depth: Some(0),
                 is_captured: false,
             }],
@@ -1136,18 +1137,17 @@ impl<'a> Parser<'a> {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
-        let (get_op, set_op, arg): (OpCode, OpCode, u8) = (|| {
-            if let Some(result) = self.resolve_local(&name) {
-                return (OpCode::GetLocal, OpCode::SetLocal, result);
-            } else if let Some(result) = self.resolve_upvalue(&name) {
-                return (OpCode::GetUpvalue, OpCode::SetUpvalue, result);
-            }
+        let (get_op, set_op, arg) = if let Some(result) = self.resolve_local(&name) {
+            (OpCode::GetLocal, OpCode::SetLocal, result)
+        } else if let Some(result) = self.resolve_upvalue(&name) {
+            (OpCode::GetUpvalue, OpCode::SetUpvalue, result)
+        } else {
             (
                 OpCode::GetGlobal,
                 OpCode::SetGlobal,
                 self.identifier_constant(&name),
             )
-        })();
+        };
 
         if can_assign && self.match_token(TokenKind::Equal) {
             self.expression();
