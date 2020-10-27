@@ -85,7 +85,7 @@ struct ParseRule {
 
 #[derive(Default)]
 struct Local {
-    name: Token,
+    name: String,
     depth: Option<usize>,
     is_captured: bool,
 }
@@ -119,11 +119,11 @@ impl Compiler {
             function: function,
             kind,
             locals: vec![Local {
-                name: Token::from_string(if kind != FunctionKind::Function {
+                name: if kind != FunctionKind::Function {
                     "this"
                 } else {
                     ""
-                }),
+                }.to_owned(),
                 depth: Some(0),
                 is_captured: false,
             }],
@@ -138,7 +138,7 @@ impl Compiler {
         }
 
         self.locals.push(Local {
-            name: name.clone(),
+            name: name.source.clone(),
             depth: None,
             is_captured: false,
         });
@@ -148,7 +148,7 @@ impl Compiler {
 
     fn resolve_local(&self, name: &Token) -> Result<u8, CompilerError> {
         for (i, local) in self.locals.iter().enumerate().rev() {
-            if local.name.source == name.source {
+            if local.name == name.source {
                 if local.depth.is_none() {
                     return Err(CompilerError::ReadVarInInitialiser);
                 }
@@ -992,7 +992,7 @@ impl<'a> Parser<'a> {
                 }
             }
 
-            if self.previous.source == local.name.source {
+            if self.previous.source == local.name {
                 self.error("Variable with this name already declared in this scope.");
             }
         }
