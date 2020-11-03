@@ -93,14 +93,10 @@ impl fmt::Display for Value {
             Value::ObjString(underlying) => write!(f, "{}", **underlying),
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
-            Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow().function),
-            Value::ObjClass(underlying) => write!(f, "{}", *underlying.borrow().name),
-            Value::ObjInstance(underlying) => {
-                write!(f, "{} instance", *underlying.borrow().class.borrow().name)
-            }
-            Value::ObjBoundMethod(underlying) => {
-                write!(f, "{}", *underlying.borrow().method.borrow().function)
-            }
+            Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjClass(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjInstance(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjBoundMethod(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::None => write!(f, "nil"),
         }
     }

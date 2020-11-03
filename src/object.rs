@@ -246,6 +246,12 @@ impl memory::GcManaged for ObjClosure {
     }
 }
 
+impl fmt::Display for ObjClosure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self.function)
+    }
+}
+
 pub struct ObjClass {
     pub name: memory::Gc<ObjString>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
@@ -273,6 +279,12 @@ impl memory::GcManaged for ObjClass {
     fn blacken(&self) {
         self.name.blacken();
         self.methods.blacken();
+    }
+}
+
+impl fmt::Display for ObjClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self.name)
     }
 }
 
@@ -306,6 +318,12 @@ impl memory::GcManaged for ObjInstance {
     }
 }
 
+impl fmt::Display for ObjInstance {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} instance", *self.class.borrow())
+    }
+}
+
 pub struct ObjBoundMethod {
     pub receiver: Value,
     pub method: memory::Gc<RefCell<ObjClosure>>,
@@ -334,5 +352,11 @@ impl memory::GcManaged for ObjBoundMethod {
     fn blacken(&self) {
         self.receiver.mark();
         self.method.blacken();
+    }
+}
+
+impl fmt::Display for ObjBoundMethod {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self.method.borrow())
     }
 }
