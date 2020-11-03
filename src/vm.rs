@@ -110,7 +110,7 @@ pub struct Vm {
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     ephemeral_roots: Vec<Gc<dyn GcManaged>>,
-    strings: HashMap<String, Gc<ObjString>>,
+    strings: HashMap<u64, Gc<ObjString>>,
     init_string: Gc<ObjString>,
 }
 
@@ -196,12 +196,12 @@ impl Vm {
         &mut self.chunks[index]
     }
 
-    pub fn get_string(&self, std_string: &String) -> Option<&Gc<ObjString>> {
-        self.strings.get(std_string)
+    pub fn get_string(&self, hash: u64) -> Option<&Gc<ObjString>> {
+        self.strings.get(&hash)
     }
 
-    pub fn add_string(&mut self, std_string: String, gc_string: Gc<ObjString>) {
-        self.strings.insert(std_string, gc_string);
+    pub fn add_string(&mut self, string: Gc<ObjString>) {
+        self.strings.insert(string.hash, string);
     }
 
     fn run(&mut self) -> Result<(), VmError> {

@@ -26,20 +26,31 @@ use crate::vm::{Vm, VmError};
 
 pub struct ObjString {
     string: String,
-    hash: u64,
+    pub(crate) hash: u64,
 }
 
 pub fn new_gc_obj_string(vm: &mut Vm, data: &str) -> memory::Gc<ObjString> {
-    let string = String::from(data);
-    if let Some(gc_string) = vm.get_string(&string) {
+    let hash = {
+        let mut hasher = FnvHasher::new();
+        (*data).hash(&mut hasher);
+        hasher.finish()
+    };
+    if let Some(gc_string) = vm.get_string(hash) {
         return *gc_string;
     }
-    let ret = memory::allocate(vm, ObjString::from(data));
-    vm.add_string(string, ret);
+    let ret = memory::allocate(vm, ObjString::new(data, hash));
+    vm.add_string(ret);
     ret
 }
 
 impl ObjString {
+    fn new(string: &str, hash: u64) -> Self {
+        ObjString {
+            string: String::from(string),
+            hash: hash,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.string.is_empty()
     }
