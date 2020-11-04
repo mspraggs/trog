@@ -70,7 +70,7 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut vm = vm::Vm::new();
+    let mut vm = memory::allocate_root(vm::Vm::new());
 
     if args.len() == 1 {
         repl(&mut vm);

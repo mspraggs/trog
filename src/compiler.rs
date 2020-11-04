@@ -20,7 +20,7 @@ use std::mem;
 use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
-use crate::memory::Gc;
+use crate::memory::Root;
 use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
@@ -97,7 +97,7 @@ struct Upvalue {
 }
 
 struct Compiler {
-    function: Gc<ObjFunction>,
+    function: Root<ObjFunction>,
     kind: FunctionKind,
 
     locals: Vec<Local>,
@@ -114,7 +114,7 @@ enum CompilerError {
 
 impl Compiler {
     fn new(vm: &mut Vm, kind: FunctionKind, name: &str) -> Self {
-        let function = new_gc_obj_function_with_name(vm, name);
+        let function = new_root_obj_function_with_name(vm, name);
         Compiler {
             function: function,
             kind,
@@ -182,18 +182,16 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(vm: &mut Vm, source: String) -> Result<Gc<ObjFunction>, Vec<String>> {
+pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Vec<String>> {
     let mut scanner = Scanner::from_source(source);
 
     let mut parser = Parser::new(vm, &mut scanner);
     parser.parse()
 }
 
-fn new_gc_obj_function_with_name(vm: &mut Vm, name: &str) -> Gc<ObjFunction> {
-    let name = object::new_gc_obj_string(vm, name);
-    vm.push_ephemeral_root(name.as_base());
-    let function = object::new_gc_obj_function(vm, name);
-    vm.pop_ephemeral_root();
+fn new_root_obj_function_with_name(vm: &mut Vm, name: &str) -> Root<ObjFunction> {
+    let name = object::new_root_obj_string(name);
+    let function = object::new_root_obj_function(name.as_gc(), vm.new_chunk());
     function
 }
 
@@ -467,7 +465,7 @@ impl<'a> Parser<'a> {
         ret
     }
 
-    fn parse(&mut self) -> Result<Gc<ObjFunction>, Vec<String>> {
+    fn parse(&mut self) -> Result<Root<ObjFunction>, Vec<String>> {
         self.advance();
 
         while !self.match_token(TokenKind::Eof) {
@@ -532,11 +530,9 @@ impl<'a> Parser<'a> {
 
     fn new_compiler(&mut self, kind: FunctionKind, name: &str) {
         self.compilers.push(Compiler::new(self.vm, kind, name));
-        let function = self.compiler().function;
-        self.vm.push_ephemeral_root(function.as_base());
     }
 
-    fn finalise_compiler(&mut self) -> (Gc<ObjFunction>, Compiler) {
+    fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Compiler) {
         self.emit_return();
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
@@ -551,9 +547,8 @@ impl<'a> Parser<'a> {
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
         let function = mem::replace(
             &mut compiler.function,
-            new_gc_obj_function_with_name(self.vm, ""),
+            new_root_obj_function_with_name(self.vm, ""),
         );
-        self.vm.pop_ephemeral_root();
 
         (function, compiler)
     }
@@ -586,7 +581,7 @@ impl<'a> Parser<'a> {
 
         let (function, compiler) = self.finalise_compiler();
 
-        let constant = self.make_constant(value::Value::ObjFunction(function));
+        let constant = self.make_constant(value::Value::ObjFunction(function.as_gc()));
         self.emit_bytes([OpCode::Closure as u8, constant]);
 
         for upvalue in compiler.upvalues.iter() {
@@ -976,7 +971,7 @@ impl<'a> Parser<'a> {
     }
 
     fn identifier_constant(&mut self, token: &Token) -> u8 {
-        let value = Value::ObjString(object::new_gc_obj_string(self.vm, token.source.as_str()));
+        let value = Value::ObjString(object::new_gc_obj_string(token.source.as_str()));
         self.make_constant(value)
     }
 
@@ -1250,7 +1245,6 @@ impl<'a> Parser<'a> {
 
     fn string(s: &mut Parser, _can_assign: bool) {
         let value = Value::ObjString(object::new_gc_obj_string(
-            s.vm,
             &s.previous.source[1..s.previous.source.len() - 1],
         ));
         s.emit_constant(value);

@@ -17,30 +17,44 @@ use std::cell::RefCell;
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::hash::{Hash, Hasher};
 
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
-use crate::memory::{self, Gc};
+use crate::memory::{self, Gc, Root};
 use crate::value::Value;
-use crate::vm::{Vm, VmError};
+use crate::vm::VmError;
+
+type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
+
+// The use of ManuallyDrop here is sadly necessary, otherwise the Root may try
+// to read memory that's been free'd when the Root is dropped.
+thread_local!(
+    static OBJ_STRING_CACHE: ManuallyDrop<ObjStringCache> =
+        ManuallyDrop::new(memory::allocate_root(RefCell::new(HashMap::new())))
+);
 
 pub struct ObjString {
     string: String,
     pub(crate) hash: u64,
 }
 
-pub fn new_gc_obj_string(vm: &mut Vm, data: &str) -> memory::Gc<ObjString> {
+pub fn new_gc_obj_string(data: &str) -> Gc<ObjString> {
     let hash = {
         let mut hasher = FnvHasher::new();
         (*data).hash(&mut hasher);
         hasher.finish()
     };
-    if let Some(gc_string) = vm.get_string(hash) {
-        return *gc_string;
+    if let Some(gc_string) = OBJ_STRING_CACHE.with(|cache| cache.borrow().get(&hash).map(|v| *v)) {
+        return gc_string;
     }
-    let ret = memory::allocate(vm, ObjString::new(data, hash));
-    vm.add_string(ret);
+    let ret = memory::allocate(ObjString::new(data, hash));
+    OBJ_STRING_CACHE.with(|cache| cache.borrow_mut().insert(hash, ret));
     ret
+}
+
+pub fn new_root_obj_string(data: &str) -> Root<ObjString> {
+    new_gc_obj_string(data).as_root()
 }
 
 impl ObjString {
@@ -97,8 +111,12 @@ pub enum ObjUpvalue {
     Open(usize),
 }
 
-pub fn new_gc_obj_upvalue(vm: &mut Vm, index: usize) -> Gc<RefCell<ObjUpvalue>> {
-    memory::allocate(vm, RefCell::new(ObjUpvalue::new(index)))
+pub fn new_gc_obj_upvalue(index: usize) -> Gc<RefCell<ObjUpvalue>> {
+    memory::allocate(RefCell::new(ObjUpvalue::new(index)))
+}
+
+pub fn new_root_obj_upvalue(index: usize) -> Root<RefCell<ObjUpvalue>> {
+    new_gc_obj_upvalue(index).as_root()
 }
 
 impl ObjUpvalue {
@@ -153,9 +171,12 @@ pub struct ObjFunction {
     pub name: memory::Gc<ObjString>,
 }
 
-pub fn new_gc_obj_function(vm: &mut Vm, name: Gc<ObjString>) -> Gc<ObjFunction> {
-    let chunk_index = vm.new_chunk();
-    memory::allocate(vm, ObjFunction::new(name, chunk_index))
+pub fn new_gc_obj_function(name: Gc<ObjString>, chunk_index: usize) -> Gc<ObjFunction> {
+    memory::allocate(ObjFunction::new(name, chunk_index))
+}
+
+pub fn new_root_obj_function(name: Gc<ObjString>, chunk_index: usize) -> Root<ObjFunction> {
+    new_gc_obj_function(name, chunk_index).as_root()
 }
 
 impl ObjFunction {
@@ -195,8 +216,12 @@ pub struct ObjNative {
     pub function: Option<NativeFn>,
 }
 
-pub fn new_gc_obj_native(vm: &mut Vm, function: NativeFn) -> Gc<ObjNative> {
-    memory::allocate(vm, ObjNative::new(function))
+pub fn new_gc_obj_native(function: NativeFn) -> Gc<ObjNative> {
+    memory::allocate(ObjNative::new(function))
+}
+
+pub fn new_root_obj_native(function: NativeFn) -> Root<ObjNative> {
+    new_gc_obj_native(function).as_root()
 }
 
 impl ObjNative {
@@ -218,22 +243,17 @@ pub struct ObjClosure {
     pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
 }
 
-pub fn new_gc_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
-    let upvalues = (0..function.upvalue_count)
-        .map(|_| {
-            let upvalue = memory::allocate(vm, RefCell::new(ObjUpvalue::new(0)));
-            vm.push_ephemeral_root(upvalue.as_base());
-            upvalue
-        })
+pub fn new_gc_obj_closure(function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
+    let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
+        .map(|_| memory::allocate_root(RefCell::new(ObjUpvalue::new(0))))
         .collect();
+    let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
 
-    let ret = memory::allocate(vm, RefCell::new(ObjClosure::new(function, upvalues)));
+    memory::allocate(RefCell::new(ObjClosure::new(function, upvalues)))
+}
 
-    (0..function.upvalue_count).for_each(|_| {
-        vm.pop_ephemeral_root();
-    });
-
-    ret
+pub fn new_root_obj_closure(function: Gc<ObjFunction>) -> Root<RefCell<ObjClosure>> {
+    new_gc_obj_closure(function).as_root()
 }
 
 impl ObjClosure {
@@ -268,8 +288,12 @@ pub struct ObjClass {
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_class(vm: &mut Vm, name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
-    memory::allocate(vm, RefCell::new(ObjClass::new(name)))
+pub fn new_gc_obj_class(name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
+    memory::allocate(RefCell::new(ObjClass::new(name)))
+}
+
+pub fn new_root_obj_class(name: Gc<ObjString>) -> Root<RefCell<ObjClass>> {
+    new_gc_obj_class(name).as_root()
 }
 
 impl ObjClass {
@@ -304,8 +328,12 @@ pub struct ObjInstance {
     pub fields: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_instance(vm: &mut Vm, class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjInstance>> {
-    memory::allocate(vm, RefCell::new(ObjInstance::new(class)))
+pub fn new_gc_obj_instance(class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjInstance>> {
+    memory::allocate(RefCell::new(ObjInstance::new(class)))
+}
+
+pub fn new_root_obj_instance(class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjInstance>> {
+    new_gc_obj_instance(class).as_root()
 }
 
 impl ObjInstance {
@@ -341,11 +369,17 @@ pub struct ObjBoundMethod {
 }
 
 pub fn new_gc_obj_bound_method(
-    vm: &mut Vm,
     receiver: Value,
     method: Gc<RefCell<ObjClosure>>,
 ) -> Gc<RefCell<ObjBoundMethod>> {
-    memory::allocate(vm, RefCell::new(ObjBoundMethod::new(receiver, method)))
+    memory::allocate(RefCell::new(ObjBoundMethod::new(receiver, method)))
+}
+
+pub fn new_root_obj_bound_method(
+    receiver: Value,
+    method: Gc<RefCell<ObjClosure>>,
+) -> Root<RefCell<ObjBoundMethod>> {
+    new_gc_obj_bound_method(receiver, method).as_root()
 }
 
 impl ObjBoundMethod {

@@ -24,7 +24,7 @@ use crate::common;
 use crate::compiler;
 use crate::debug;
 use crate::hash::BuildPassThroughHasher;
-use crate::memory::{self, Gc, GcManaged};
+use crate::memory::{Gc, GcManaged, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjString, ObjUpvalue};
 use crate::value::Value;
 
@@ -91,7 +91,7 @@ pub struct CallFrame {
     slot_base: usize,
 }
 
-impl memory::GcManaged for CallFrame {
+impl GcManaged for CallFrame {
     fn mark(&self) {
         self.closure.mark();
     }
@@ -109,14 +109,12 @@ pub struct Vm {
     stack: Vec<Value>,
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
-    ephemeral_roots: Vec<Gc<dyn GcManaged>>,
-    strings: HashMap<u64, Gc<ObjString>>,
     init_string: Gc<ObjString>,
 }
 
 impl Default for Vm {
     fn default() -> Self {
-        let mut vm = Vm {
+        Vm {
             ip: 0,
             active_chunk_index: 0,
             chunks: Vec::new(),
@@ -124,12 +122,8 @@ impl Default for Vm {
             stack: Vec::with_capacity(STACK_MAX),
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
-            ephemeral_roots: Vec::new(),
-            strings: HashMap::new(),
-            init_string: Gc::dangling(),
-        };
-        vm.init_string = object::new_gc_obj_string(&mut vm, "init");
-        vm
+            init_string: object::new_gc_obj_string("init"),
+        }
     }
 }
 
@@ -152,35 +146,15 @@ impl Vm {
         Default::default()
     }
 
-    pub fn interpret(&mut self, function: Gc<ObjFunction>) -> Result<(), VmError> {
-        self.push_ephemeral_root(function.as_base());
+    pub fn interpret(&mut self, function: Root<ObjFunction>) -> Result<(), VmError> {
         self.define_native("clock", clock_native);
-        let closure = object::new_gc_obj_closure(self, function);
-        self.pop_ephemeral_root();
+        let closure = object::new_gc_obj_closure(function.as_gc());
         self.push(Value::ObjClosure(closure));
         self.call_value(Value::ObjClosure(closure), 0)?;
         match self.run() {
             Ok(()) => Ok(()),
             Err(mut error) => Err(self.runtime_error(&mut error)),
         }
-    }
-
-    pub fn mark_roots(&mut self) {
-        self.chunks.mark();
-        self.stack.mark();
-        self.globals.mark();
-        self.frames.mark();
-        self.open_upvalues.mark();
-        self.ephemeral_roots.mark();
-        self.strings.mark();
-    }
-
-    pub fn push_ephemeral_root(&mut self, root: Gc<dyn GcManaged>) {
-        self.ephemeral_roots.push(root);
-    }
-
-    pub fn pop_ephemeral_root(&mut self) -> Gc<dyn GcManaged> {
-        self.ephemeral_roots.pop().expect("Ephemeral roots empty.")
     }
 
     pub fn new_chunk(&mut self) -> usize {
@@ -194,14 +168,6 @@ impl Vm {
 
     pub fn get_chunk_mut(&mut self, index: usize) -> &mut Chunk {
         &mut self.chunks[index]
-    }
-
-    pub fn get_string(&self, hash: u64) -> Option<&Gc<ObjString>> {
-        self.strings.get(&hash)
-    }
-
-    pub fn add_string(&mut self, string: Gc<ObjString>) {
-        self.strings.insert(string.hash, string);
     }
 
     fn run(&mut self) -> Result<(), VmError> {
@@ -431,7 +397,6 @@ impl Vm {
                     match (a, b) {
                         (Value::ObjString(a), Value::ObjString(b)) => {
                             let value = Value::ObjString(object::new_gc_obj_string(
-                                self,
                                 format!("{}{}", *a, *b).as_str(),
                             ));
                             self.stack.push(value)
@@ -524,7 +489,7 @@ impl Vm {
 
                     let upvalue_count = function.upvalue_count;
 
-                    let closure = object::new_gc_obj_closure(self, function);
+                    let closure = object::new_gc_obj_closure(function);
                     self.push(Value::ObjClosure(closure));
 
                     for i in 0..upvalue_count {
@@ -567,7 +532,7 @@ impl Vm {
 
                 OpCode::Class => {
                     let string = read_string!();
-                    let class = object::new_gc_obj_class(self, string);
+                    let class = object::new_gc_obj_class(string);
                     self.push(Value::ObjClass(class));
                 }
 
@@ -607,7 +572,7 @@ impl Vm {
             }
 
             Value::ObjClass(class) => {
-                let instance = object::new_gc_obj_instance(self, class);
+                let instance = object::new_gc_obj_instance(class);
                 *self.peek_mut(arg_count) = Value::ObjInstance(instance);
 
                 if let Some(Value::ObjClosure(initialiser)) =
@@ -736,12 +701,9 @@ impl Vm {
     }
 
     fn define_native(&mut self, name: &str, function: NativeFn) {
-        let value = Value::ObjNative(object::new_gc_obj_native(self, function));
-        self.push(value);
-        let value = *self.peek(0);
-        let name = object::new_gc_obj_string(self, name);
-        self.globals.insert(name, value);
-        self.pop();
+        let native = object::new_root_obj_native(function);
+        let name = object::new_gc_obj_string(name);
+        self.globals.insert(name, Value::ObjNative(native.as_gc()));
     }
 
     fn define_method(&mut self, name: Gc<ObjString>) -> Result<(), VmError> {
@@ -772,7 +734,7 @@ impl Vm {
         };
 
         let instance = *self.peek(0);
-        let bound = object::new_gc_obj_bound_method(self, instance, method);
+        let bound = object::new_gc_obj_bound_method(instance, method);
         self.pop();
         self.push(Value::ObjBoundMethod(bound));
 
@@ -788,7 +750,7 @@ impl Vm {
         let upvalue = if let Some(upvalue) = result {
             *upvalue
         } else {
-            object::new_gc_obj_upvalue(self, location)
+            object::new_gc_obj_upvalue(location)
         };
 
         self.open_upvalues.push(upvalue);
@@ -829,5 +791,23 @@ impl Vm {
 
     fn pop(&mut self) -> Value {
         self.stack.pop().expect("Stack empty.")
+    }
+}
+
+impl GcManaged for Vm {
+    fn mark(&self) {
+        self.chunks.mark();
+        self.stack.mark();
+        self.globals.mark();
+        self.frames.mark();
+        self.open_upvalues.mark();
+    }
+
+    fn blacken(&self) {
+        self.chunks.blacken();
+        self.stack.blacken();
+        self.globals.blacken();
+        self.frames.blacken();
+        self.open_upvalues.blacken();
     }
 }
