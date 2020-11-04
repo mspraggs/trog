@@ -8,12 +8,12 @@ import sys
 
 
 def gather_files(test_regex, exclude=False):
-    """Collect files with name test_*.ox in test directory"""
+    """Collect files with name test_*.drw in test directory"""
 
     directory = os.path.dirname(os.path.abspath(__file__))
     filepaths = [os.path.join(dirpath, fname)
                  for dirpath, dirnames, fnames in os.walk(directory)
-                 for fname in fnames if fname.endswith(".ox")]
+                 for fname in fnames if fname.endswith(".drw")]
 
     modifier = lambda r: (not r if exclude else r)
 

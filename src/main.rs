@@ -77,7 +77,7 @@ fn main() {
     } else if args.len() == 2 {
         run_file(&mut vm, &args[1]);
     } else {
-        eprintln!("Usage: ./ox [path]");
+        eprintln!("Usage: ./dryw [path]");
         process::exit(64);
     }
 }
