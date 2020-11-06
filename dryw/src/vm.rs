@@ -16,13 +16,14 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fmt::{self, Write};
+use std::fmt::Write;
 use std::time;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::compiler;
 use crate::debug;
+use crate::error::{Error, ErrorKind};
 use crate::hash::BuildPassThroughHasher;
 use crate::memory::{Gc, GcManaged, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjString, ObjUpvalue};
@@ -31,57 +32,14 @@ use crate::value::Value;
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 
-#[derive(Clone, Debug)]
-pub enum VmError {
-    AttributeError(Vec<String>),
-    CompileError(Vec<String>),
-    IndexError(Vec<String>),
-    RuntimeError(Vec<String>),
-    TypeError(Vec<String>),
-    ValueError(Vec<String>),
-}
-
-impl VmError {
-    pub fn add_message(&mut self, message: String) {
-        match self {
-            VmError::AttributeError(msgs) => msgs.push(message),
-            VmError::CompileError(msgs) => msgs.push(message),
-            VmError::IndexError(msgs) => msgs.push(message),
-            VmError::RuntimeError(msgs) => msgs.push(message),
-            VmError::TypeError(msgs) => msgs.push(message),
-            VmError::ValueError(msgs) => msgs.push(message),
-        }
-    }
-}
-
-impl fmt::Display for VmError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
-        let messages = match self {
-            VmError::AttributeError(msgs) => msgs,
-            VmError::CompileError(msgs) => msgs,
-            VmError::IndexError(msgs) => msgs,
-            VmError::RuntimeError(msgs) => msgs,
-            VmError::TypeError(msgs) => msgs,
-            VmError::ValueError(msgs) => msgs,
-        };
-
-        for msg in messages {
-            match writeln!(f, "{}", msg) {
-                Ok(()) => {}
-                Err(error) => {
-                    return Err(error);
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-pub fn interpret(vm: &mut Vm, source: String) -> Result<(), VmError> {
+pub fn interpret(vm: &mut Vm, source: String) -> Result<(), Error> {
     let compile_result = compiler::compile(vm, source);
     match compile_result {
         Ok(function) => vm.interpret(function),
-        Err(errors) => Err(VmError::CompileError(errors)),
+        Err(errors) => {
+            let errors_slice: Vec<_> = errors.iter().map(String::as_str).collect();
+            Err(Error::with_messages(ErrorKind::CompileError, &errors_slice))
+        }
     }
 }
 
@@ -127,13 +85,14 @@ impl Default for Vm {
     }
 }
 
-fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, VmError> {
+fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
-            return Err(VmError::RuntimeError(vec![
-                "Error calling native function.".to_owned(),
-            ]));
+            return Err(Error::with_message(
+                ErrorKind::RuntimeError,
+                "Error calling native function.",
+            ));
         }
     };
     let seconds = duration.as_secs_f64();
@@ -146,7 +105,7 @@ impl Vm {
         Default::default()
     }
 
-    pub fn interpret(&mut self, function: Root<ObjFunction>) -> Result<(), VmError> {
+    pub fn interpret(&mut self, function: Root<ObjFunction>) -> Result<(), Error> {
         self.define_native("clock", clock_native);
         let closure = object::new_gc_obj_closure(function.as_gc());
         self.push(Value::ObjClosure(closure));
@@ -170,7 +129,7 @@ impl Vm {
         &mut self.chunks[index]
     }
 
-    fn run(&mut self) -> Result<(), VmError> {
+    fn run(&mut self) -> Result<(), Error> {
         macro_rules! binary_op {
             ($value_type:expr, $op:tt) => {
                 {
@@ -182,9 +141,9 @@ impl Vm {
                             Value::Number(second)
                         ) => (first, second),
                         _ => {
-                            return Err(VmError::RuntimeError(
-                                vec!["Binary operands must both be numbers.".to_owned()]
-                            ));
+                            return Err(
+                                Error::with_message(ErrorKind::RuntimeError, "Binary operands must both be numbers.")
+                            );
                         }
                     };
                     self.push($value_type(first $op second));
@@ -282,7 +241,7 @@ impl Vm {
                         Some(value) => *value,
                         None => {
                             let msg = format!("Undefined variable '{}'.", *name);
-                            return Err(VmError::RuntimeError(vec![msg]));
+                            return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
                         }
                     };
                     self.push(value);
@@ -304,7 +263,7 @@ impl Vm {
                         None => {
                             self.globals.remove(&name);
                             let msg = format!("Undefined variable '{}'.", *name);
-                            return Err(VmError::RuntimeError(vec![msg]));
+                            return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
                         }
                     }
                 }
@@ -337,9 +296,10 @@ impl Vm {
                     let instance = match *self.peek(0) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
-                            return Err(VmError::RuntimeError(vec![
-                                "Only instances have properties.".to_owned(),
-                            ]));
+                            return Err(Error::with_message(
+                                ErrorKind::RuntimeError,
+                                "Only instances have properties.",
+                            ));
                         }
                     };
                     let name = read_string!();
@@ -357,9 +317,10 @@ impl Vm {
                     let instance = match *self.peek(1) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
-                            return Err(VmError::RuntimeError(vec![
-                                "Only instances have fields.".to_owned()
-                            ]));
+                            return Err(Error::with_message(
+                                ErrorKind::RuntimeError,
+                                "Only instances have fields.",
+                            ));
                         }
                     };
                     let name = read_string!();
@@ -407,9 +368,10 @@ impl Vm {
                         }
 
                         _ => {
-                            return Err(VmError::RuntimeError(vec![
-                                "Binary operands must be two numbers or two strings.".to_owned(),
-                            ]));
+                            return Err(Error::with_message(
+                                ErrorKind::RuntimeError,
+                                "Binary operands must be two numbers or two strings.",
+                            ));
                         }
                     }
                 }
@@ -432,9 +394,10 @@ impl Vm {
                             self.push(Value::Number(-underlying));
                         }
                         _ => {
-                            return Err(VmError::RuntimeError(vec![
-                                "Unary operand must be a number.".to_owned(),
-                            ]));
+                            return Err(Error::with_message(
+                                ErrorKind::RuntimeError,
+                                "Unary operand must be a number.",
+                            ));
                         }
                     }
                 }
@@ -541,9 +504,10 @@ impl Vm {
                     let superclass = match self.stack[superclass_pos] {
                         Value::ObjClass(ptr) => ptr,
                         _ => {
-                            return Err(VmError::RuntimeError(vec![
-                                "Superclass must be a class.".to_owned()
-                            ]));
+                            return Err(Error::with_message(
+                                ErrorKind::RuntimeError,
+                                "Superclass must be a class.",
+                            ));
                         }
                     };
                     let subclass = match self.peek(0) {
@@ -564,7 +528,7 @@ impl Vm {
         }
     }
 
-    fn call_value(&mut self, value: Value, arg_count: usize) -> Result<(), VmError> {
+    fn call_value(&mut self, value: Value, arg_count: usize) -> Result<(), Error> {
         match value {
             Value::ObjBoundMethod(bound) => {
                 *self.peek_mut(arg_count) = bound.borrow().receiver;
@@ -581,7 +545,7 @@ impl Vm {
                     return self.call(*initialiser, arg_count);
                 } else if arg_count != 0 {
                     let msg = format!("Expected 0 arguments but got {}.", arg_count);
-                    return Err(VmError::TypeError(vec![msg]));
+                    return Err(Error::with_message(ErrorKind::TypeError, msg.as_str()));
                 }
 
                 Ok(())
@@ -590,9 +554,10 @@ impl Vm {
             Value::ObjClosure(function) => self.call(function, arg_count),
 
             Value::ObjNative(wrapped) => {
-                let function = wrapped.function.ok_or(VmError::ValueError(vec![
-                    "Expected native function.".to_owned(),
-                ]))?;
+                let function = wrapped.function.ok_or(Error::with_message(
+                    ErrorKind::ValueError,
+                    "Expected native function.",
+                ))?;
                 let frame_begin = self.stack.len() - arg_count - 1;
                 let result = function(
                     arg_count,
@@ -603,9 +568,10 @@ impl Vm {
                 Ok(())
             }
 
-            _ => Err(VmError::TypeError(vec![
-                "Can only call functions and classes.".to_owned(),
-            ])),
+            _ => Err(Error::with_message(
+                ErrorKind::TypeError,
+                "Can only call functions and classes.",
+            )),
         }
     }
 
@@ -614,7 +580,7 @@ impl Vm {
         class: Gc<RefCell<ObjClass>>,
         name: Gc<ObjString>,
         arg_count: usize,
-    ) -> Result<(), VmError> {
+    ) -> Result<(), Error> {
         if let Some(value) = class.borrow().methods.get(&name) {
             return match value {
                 Value::ObjClosure(closure) => self.call(*closure, arg_count),
@@ -622,10 +588,10 @@ impl Vm {
             };
         }
         let msg = format!("Undefined property '{}'.", *name);
-        Err(VmError::AttributeError(vec![msg]))
+        Err(Error::with_message(ErrorKind::AttributeError, msg.as_str()))
     }
 
-    fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), VmError> {
+    fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), Error> {
         let receiver = *self.peek(arg_count);
         match receiver {
             Value::ObjInstance(instance) => {
@@ -636,24 +602,22 @@ impl Vm {
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
             }
-            _ => Err(VmError::ValueError(vec![
-                "Only instances have methods.".to_owned()
-            ])),
+            _ => Err(Error::with_message(ErrorKind::ValueError, "Only instances have methods.")),
         }
     }
 
-    fn call(&mut self, closure: Gc<RefCell<ObjClosure>>, arg_count: usize) -> Result<(), VmError> {
+    fn call(&mut self, closure: Gc<RefCell<ObjClosure>>, arg_count: usize) -> Result<(), Error> {
         if arg_count as u32 != closure.borrow().function.arity {
             let msg = format!(
                 "Expected {} arguments but got {}.",
                 closure.borrow().function.arity,
                 arg_count
             );
-            return Err(VmError::TypeError(vec![msg]));
+            return Err(Error::with_message(ErrorKind::TypeError, msg.as_str()));
         }
 
         if self.frames.len() == FRAMES_MAX {
-            return Err(VmError::IndexError(vec!["Stack overflow.".to_owned()]));
+            return Err(Error::with_message(ErrorKind::IndexError, "Stack overflow."));
         }
 
         self.active_chunk_index = closure.borrow().function.chunk_index;
@@ -671,7 +635,7 @@ impl Vm {
         self.frames.clear();
     }
 
-    fn runtime_error(&mut self, error: &mut VmError) -> VmError {
+    fn runtime_error(&mut self, error: &mut Error) -> Error {
         let mut ips: Vec<usize> = self.frames.iter().skip(1).map(|f| f.prev_ip).collect();
         ips.push(self.ip);
 
@@ -692,7 +656,7 @@ impl Vm {
             } else {
                 write!(new_msg, "{}()", *function.name).expect("Unable to write error to buffer.");
             }
-            error.add_message(new_msg);
+            error.add_message(new_msg.as_str());
         }
 
         self.reset_stack();
@@ -706,7 +670,7 @@ impl Vm {
         self.globals.insert(name, Value::ObjNative(native.as_gc()));
     }
 
-    fn define_method(&mut self, name: Gc<ObjString>) -> Result<(), VmError> {
+    fn define_method(&mut self, name: Gc<ObjString>) -> Result<(), Error> {
         let method = *self.peek(0);
         let class = match *self.peek(1) {
             Value::ObjClass(ptr) => ptr,
@@ -722,13 +686,13 @@ impl Vm {
         &mut self,
         class: Gc<RefCell<ObjClass>>,
         name: Gc<ObjString>,
-    ) -> Result<(), VmError> {
+    ) -> Result<(), Error> {
         let borrowed_class = class.borrow();
         let method = match borrowed_class.methods.get(&name) {
             Some(Value::ObjClosure(ptr)) => *ptr,
             None => {
                 let msg = format!("Undefined property '{}'.", *name);
-                return Err(VmError::AttributeError(vec![msg]));
+                return Err(Error::with_message(ErrorKind::AttributeError, msg.as_str()));
             }
             _ => unreachable!(),
         };

@@ -17,6 +17,7 @@ mod chunk;
 mod common;
 mod compiler;
 mod debug;
+pub mod error;
 mod hash;
 pub mod memory;
 pub mod object;

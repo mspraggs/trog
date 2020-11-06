@@ -23,7 +23,7 @@ use std::hash::{Hash, Hasher};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Root};
 use crate::value::Value;
-use crate::vm::VmError;
+use crate::error::Error;
 
 type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
 
@@ -209,7 +209,7 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(usize, &mut [Value]) -> Result<Value, VmError>;
+pub type NativeFn = fn(usize, &mut [Value]) -> Result<Value, Error>;
 
 #[derive(Clone)]
 pub struct ObjNative {

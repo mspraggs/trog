@@ -18,6 +18,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
+use dryw::error::ErrorKind;
 use dryw::memory;
 use dryw::vm;
 
@@ -47,13 +48,10 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
     };
 
     match result {
-        Err(vm::VmError::CompileError(msgs)) => {
-            eprint!("{}", vm::VmError::CompileError(msgs));
-            process::exit(65);
-        }
         Err(error) => {
+            let exit_code = if error.get_kind() == ErrorKind::CompileError { 65 } else { 70 };
             eprint!("{}", error);
-            process::exit(70);
+            process::exit(exit_code);
         }
         Ok(_) => {}
     };
