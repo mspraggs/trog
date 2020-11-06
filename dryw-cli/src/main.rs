@@ -18,16 +18,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
-mod chunk;
-mod common;
-mod compiler;
-mod debug;
-mod hash;
-mod memory;
-mod object;
-mod scanner;
-mod value;
-mod vm;
+use dryw::memory;
+use dryw::vm;
 
 fn repl(vm: &mut vm::Vm) {
     loop {

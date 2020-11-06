@@ -4,3 +4,9 @@
 name = "dryw"
 version = "0.1.0"
 
+[[package]]
+name = "dryw-cli"
+version = "0.1.0"
+dependencies = [
+ "dryw",
+]
