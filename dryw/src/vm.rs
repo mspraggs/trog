@@ -35,11 +35,8 @@ const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
     let compile_result = compiler::compile(vm, source);
     match compile_result {
-        Ok(function) => vm.interpret(function),
-        Err(errors) => {
-            let errors_slice: Vec<_> = errors.iter().map(String::as_str).collect();
-            Err(Error::with_messages(ErrorKind::CompileError, &errors_slice))
-        }
+        Ok(function) => vm.execute(function, &[]),
+        Err(error) => Err(error),
     }
 }
 

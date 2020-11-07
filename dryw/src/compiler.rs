@@ -20,6 +20,7 @@ use std::mem;
 use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
+use crate::error::{Error, ErrorKind};
 use crate::memory::Root;
 use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
@@ -182,7 +183,7 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Vec<String>> {
+pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
 
     let mut parser = Parser::new(vm, &mut scanner);
@@ -465,7 +466,7 @@ impl<'a> Parser<'a> {
         ret
     }
 
-    fn parse(&mut self) -> Result<Root<ObjFunction>, Vec<String>> {
+    fn parse(&mut self) -> Result<Root<ObjFunction>, Error> {
         self.advance();
 
         while !self.match_token(TokenKind::Eof) {
@@ -474,9 +475,15 @@ impl<'a> Parser<'a> {
 
         let had_error = !self.errors.borrow().is_empty();
         if had_error {
-            let mut errors = Vec::new();
-            mem::swap(&mut errors, &mut self.errors.borrow_mut());
-            return Err(errors);
+            return Err(Error::with_messages(
+                ErrorKind::CompileError,
+                &self
+                    .errors
+                    .borrow_mut()
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>(),
+            ));
         }
 
         Ok(self.finalise_compiler().0)
