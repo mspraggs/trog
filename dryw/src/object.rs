@@ -17,13 +17,13 @@ use std::cell::RefCell;
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::fmt;
-use std::mem::ManuallyDrop;
 use std::hash::{Hash, Hasher};
+use std::mem::ManuallyDrop;
 
+use crate::error::Error;
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Root};
 use crate::value::Value;
-use crate::error::Error;
 
 type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
 

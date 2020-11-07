@@ -49,7 +49,11 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 
     match result {
         Err(error) => {
-            let exit_code = if error.get_kind() == ErrorKind::CompileError { 65 } else { 70 };
+            let exit_code = if error.get_kind() == ErrorKind::CompileError {
+                65
+            } else {
+                70
+            };
             eprint!("{}", error);
             process::exit(exit_code);
         }

@@ -32,7 +32,7 @@ use crate::value::Value;
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 
-pub fn interpret(vm: &mut Vm, source: String) -> Result<(), Error> {
+pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
     let compile_result = compiler::compile(vm, source);
     match compile_result {
         Ok(function) => vm.interpret(function),
@@ -72,7 +72,7 @@ pub struct Vm {
 
 impl Default for Vm {
     fn default() -> Self {
-        Vm {
+        let mut vm = Vm {
             ip: 0,
             active_chunk_index: 0,
             chunks: Vec::new(),
@@ -81,7 +81,9 @@ impl Default for Vm {
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
             init_string: object::new_gc_obj_string("init"),
-        }
+        };
+        vm.define_native("clock", clock_native);
+        vm
     }
 }
 
@@ -105,13 +107,13 @@ impl Vm {
         Default::default()
     }
 
-    pub fn interpret(&mut self, function: Root<ObjFunction>) -> Result<(), Error> {
-        self.define_native("clock", clock_native);
+    pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
         let closure = object::new_gc_obj_closure(function.as_gc());
         self.push(Value::ObjClosure(closure));
-        self.call_value(Value::ObjClosure(closure), 0)?;
+        self.stack.extend_from_slice(args);
+        self.call_value(Value::ObjClosure(closure), args.len())?;
         match self.run() {
-            Ok(()) => Ok(()),
+            Ok(value) => Ok(value),
             Err(mut error) => Err(self.runtime_error(&mut error)),
         }
     }
@@ -129,7 +131,13 @@ impl Vm {
         &mut self.chunks[index]
     }
 
-    fn run(&mut self) -> Result<(), Error> {
+    pub fn define_native(&mut self, name: &str, function: NativeFn) {
+        let native = object::new_root_obj_native(function);
+        let name = object::new_gc_obj_string(name);
+        self.globals.insert(name, Value::ObjNative(native.as_gc()));
+    }
+
+    fn run(&mut self) -> Result<Value, Error> {
         macro_rules! binary_op {
             ($value_type:expr, $op:tt) => {
                 {
@@ -482,8 +490,7 @@ impl Vm {
                     let prev_ip = self.frame().prev_ip;
                     self.frames.pop();
                     if self.frames.is_empty() {
-                        self.pop();
-                        return Ok(());
+                        return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
                     self.active_chunk_index = prev_chunk_index;
@@ -602,7 +609,10 @@ impl Vm {
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
             }
-            _ => Err(Error::with_message(ErrorKind::ValueError, "Only instances have methods.")),
+            _ => Err(Error::with_message(
+                ErrorKind::ValueError,
+                "Only instances have methods.",
+            )),
         }
     }
 
@@ -617,7 +627,10 @@ impl Vm {
         }
 
         if self.frames.len() == FRAMES_MAX {
-            return Err(Error::with_message(ErrorKind::IndexError, "Stack overflow."));
+            return Err(Error::with_message(
+                ErrorKind::IndexError,
+                "Stack overflow.",
+            ));
         }
 
         self.active_chunk_index = closure.borrow().function.chunk_index;
@@ -662,12 +675,6 @@ impl Vm {
         self.reset_stack();
 
         error.clone()
-    }
-
-    fn define_native(&mut self, name: &str, function: NativeFn) {
-        let native = object::new_root_obj_native(function);
-        let name = object::new_gc_obj_string(name);
-        self.globals.insert(name, Value::ObjNative(native.as_gc()));
     }
 
     fn define_method(&mut self, name: Gc<ObjString>) -> Result<(), Error> {

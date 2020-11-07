@@ -44,6 +44,12 @@ impl Value {
     }
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Value::None
+    }
+}
+
 impl memory::GcManaged for Value {
     fn mark(&self) {
         match self {

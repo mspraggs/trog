@@ -20,6 +20,7 @@ pub enum ErrorKind {
     AttributeError,
     CompileError,
     IndexError,
+    NameError,
     RuntimeError,
     TypeError,
     ValueError,
