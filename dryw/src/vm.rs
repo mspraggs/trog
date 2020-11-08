@@ -82,7 +82,7 @@ impl Default for Vm {
     }
 }
 
-fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, Error> {
+fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
@@ -97,7 +97,7 @@ fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, Error> 
     Ok(Value::Number(seconds + nanos))
 }
 
-fn default_print(_arg_count: usize, args: &mut [Value]) -> Result<Value, Error> {
+fn default_print(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 1 {
         return Err(Error::with_message(ErrorKind::RuntimeError, "Expected one argument to 'print'."));
     }
@@ -107,8 +107,8 @@ fn default_print(_arg_count: usize, args: &mut [Value]) -> Result<Value, Error> 
 
 pub fn new_root_vm() -> Root<Vm> {
     let mut vm = memory::allocate_root(Vm::new());
-    vm.define_native("clock", clock_native);
-    vm.define_native("print", default_print);
+    vm.define_native("clock", Box::new(clock_native));
+    vm.define_native("print", Box::new(default_print));
     vm
 }
 
@@ -576,14 +576,10 @@ impl Vm {
 
             Value::ObjClosure(function) => self.call(function, arg_count),
 
-            Value::ObjNative(wrapped) => {
-                let function = wrapped.function.ok_or(Error::with_message(
-                    ErrorKind::ValueError,
-                    "Expected native function.",
-                ))?;
+            Value::ObjNative(mut wrapped) => {
+                let function = wrapped.function.as_mut();
                 let frame_begin = self.stack.len() - arg_count;
                 let result = function(
-                    arg_count,
                     &mut self.stack[frame_begin..frame_begin + arg_count],
                 )?;
                 self.stack.truncate(frame_begin - 1);

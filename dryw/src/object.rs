@@ -209,14 +209,13 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(usize, &mut [Value]) -> Result<Value, Error>;
+pub type NativeFn = Box<dyn FnMut(&mut [Value]) -> Result<Value, Error>>;
 
-#[derive(Clone)]
 pub struct ObjNative {
-    pub function: Option<NativeFn>,
+    pub function: NativeFn,
 }
 
-pub fn new_gc_obj_native(function: NativeFn) -> Gc<ObjNative> {
+pub fn new_gc_obj_native(function: NativeFn)-> Gc<ObjNative> {
     memory::allocate(ObjNative::new(function))
 }
 
@@ -226,9 +225,7 @@ pub fn new_root_obj_native(function: NativeFn) -> Root<ObjNative> {
 
 impl ObjNative {
     fn new(function: NativeFn) -> Self {
-        ObjNative {
-            function: Some(function),
-        }
+        ObjNative { function }
     }
 }
 
