@@ -3,10 +3,10 @@
 // 0
 class Foo {
   init() {
-    print "init";
+    print("init");
     return;
-    print "nope";
+    print("nope");
   }
 }
 var foo = Foo();
-print foo;
+print(foo);

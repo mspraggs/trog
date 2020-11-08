@@ -16,4 +16,4 @@ class Foo {
   toString() { return "Foo"; }
 }
 var closure = Foo().getClosure();
-print closure()()();
+print(closure()()());

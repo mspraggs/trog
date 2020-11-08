@@ -1,4 +1,4 @@
 // Foo
 // 0
 class Foo {}
-print Foo;
+print(Foo);

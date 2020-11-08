@@ -3,10 +3,10 @@
 // 0
 class Foo {
   method() {
-    print "method";
+    print("method");
   }
   other() {
-    print "other";
+    print("other");
   }
 }
 var foo = Foo();

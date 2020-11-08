@@ -3,5 +3,5 @@
 // 0
 var a = "before";
 var c = a = "var";
-print a;
-print c;
+print(a);
+print(c);

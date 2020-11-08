@@ -3,9 +3,9 @@
 // 0
 {
   var a = "first";
-  print a;
+  print(a);
 }
 {
   var a = "second";
-  print a;
+  print(a);
 }

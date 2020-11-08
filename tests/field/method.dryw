@@ -3,9 +3,9 @@
 // 0
 class Foo {
   bar(arg) {
-    print arg;
+    print(arg);
   }
 }
 var bar = Foo().bar;
-print "got method";
+print("got method");
 bar("arg");

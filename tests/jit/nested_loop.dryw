@@ -7,5 +7,5 @@
       sum = sum + j;
     }
   }
-  print sum;
+  print(sum);
 }

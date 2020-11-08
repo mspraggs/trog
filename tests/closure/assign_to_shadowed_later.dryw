@@ -8,6 +8,6 @@ var a = "global";
   }
   var a = "inner";
   assign();
-  print a;
+  print(a);
 }
-print a;
+print(a);

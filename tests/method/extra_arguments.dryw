@@ -3,8 +3,8 @@
 // 70
 class Foo {
   method(a, b) {
-    print a;
-    print b;
+    print(a);
+    print(b);
   }
 }
 Foo().method(1, 2, 3, 4);

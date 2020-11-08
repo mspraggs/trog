@@ -4,12 +4,12 @@
 // 0
 class Outer {
   method() {
-    print this;
+    print(this);
     fun f() {
-      print this;
+      print(this);
       class Inner {
         method() {
-          print this;
+          print(this);
         }
       }
       Inner().method();

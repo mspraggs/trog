@@ -5,7 +5,7 @@
   var a = "local";
   {
     var a = "shadow";
-    print a;
+    print(a);
   }
-  print a;
+  print(a);
 }

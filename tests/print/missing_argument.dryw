@@ -1,3 +1,4 @@
-// [line 3] Error at ';': Expected expression.
-// 65
-print;
+// Expected one argument to 'print'.
+// [line 4] in script
+// 70
+print();

@@ -1,5 +1,5 @@
 // 579
 // string
 // 0
-print 123 + 456;
-print "str" + "ing";
+print(123 + 456);
+print("str" + "ing");

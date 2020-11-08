@@ -2,6 +2,6 @@
 // 0
 fun f() {
   return;
-  print "bad";
+  print("bad");
 }
-print f();
+print(f());

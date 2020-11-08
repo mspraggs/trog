@@ -6,4 +6,4 @@ fun f() {
     return i;
   }
 }
-print f();
+print(f());

@@ -13,5 +13,5 @@ class Derived < Base {
   }
 }
 var derived = Derived("a", "b");
-print derived.a;
-print derived.b;
+print(derived.a);
+print(derived.b);

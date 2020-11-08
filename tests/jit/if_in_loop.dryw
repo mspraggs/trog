@@ -10,6 +10,6 @@
     }
     sum = sum + i;
   }
-  print string;
-  print sum;    
+  print(string);
+  print(sum);    
 }

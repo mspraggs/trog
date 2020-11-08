@@ -15,5 +15,5 @@ var closure;
       }
     }
   }
-  print closure();
+  print(closure());
 }

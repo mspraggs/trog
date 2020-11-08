@@ -2,5 +2,5 @@
 // [line 5] in script
 // 70
 {
-  print notDefined;
+  print(notDefined);
 }

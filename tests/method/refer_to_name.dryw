@@ -4,7 +4,7 @@
 // 70
 class Foo {
   method() {
-    print method;
+    print(method);
   }
 }
 Foo().method();

@@ -6,11 +6,11 @@
   var foo = "closure";
   fun f() {
     {
-      print foo;
+      print(foo);
       var foo = "shadow";
-      print foo;
+      print(foo);
     }
-    print foo;
+    print(foo);
   }
   f();
 }

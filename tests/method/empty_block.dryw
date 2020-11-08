@@ -3,4 +3,4 @@
 class Foo {
   bar() {}
 }
-print Foo().bar();
+print(Foo().bar());

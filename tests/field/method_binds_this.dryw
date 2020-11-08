@@ -2,7 +2,7 @@
 // 0
 class Foo {
   sayName() {
-    print this.name;
+    print(this.name);
   }
 }
 var foo1 = Foo();

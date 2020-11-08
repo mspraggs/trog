@@ -6,10 +6,10 @@
 // 2
 // 0
 var c = 0;
-while (c < 3) print c = c + 1;
+while (c < 3) print(c = c + 1);
 var a = 0;
 while (a < 3) {
-  print a;
+  print(a);
   a = a + 1;
 }
 while (false) if (true) 1; else 2;

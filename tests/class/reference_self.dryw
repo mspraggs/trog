@@ -6,5 +6,5 @@
       return Foo;
     }
   }
-  print Foo().returnSelf();
+  print(Foo().returnSelf());
 }

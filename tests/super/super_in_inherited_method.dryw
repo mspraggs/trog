@@ -2,7 +2,7 @@
 // 0
 class A {
   say() {
-    print "A";
+    print("A");
   }
 }
 class B < A {
@@ -10,12 +10,12 @@ class B < A {
     super.say();
   }
   say() {
-    print "B";
+    print("B");
   }
 }
 class C < B {
   say() {
-    print "C";
+    print("C");
   }
 }
 C().test();

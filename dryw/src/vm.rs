@@ -97,6 +97,14 @@ fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, Error> 
     Ok(Value::Number(seconds + nanos))
 }
 
+fn default_print(_arg_count: usize, args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        return Err(Error::with_message(ErrorKind::RuntimeError, "Expected one argument to 'print'."));
+    }
+    println!("{}", args[0]);
+    Ok(Value::None)
+}
+
 pub fn new_root_vm() -> Root<Vm> {
     let mut vm = memory::allocate_root(Vm::new());
     vm.define_native("clock", clock_native);
@@ -412,10 +420,6 @@ impl Vm {
                     }
                 }
 
-                OpCode::Print => {
-                    println!("{}", self.pop());
-                }
-
                 OpCode::Jump => {
                     let offset = read_short!();
                     self.ip += offset as usize;
@@ -567,12 +571,12 @@ impl Vm {
                     ErrorKind::ValueError,
                     "Expected native function.",
                 ))?;
-                let frame_begin = self.stack.len() - arg_count - 1;
+                let frame_begin = self.stack.len() - arg_count;
                 let result = function(
                     arg_count,
                     &mut self.stack[frame_begin..frame_begin + arg_count],
                 )?;
-                self.stack.truncate(frame_begin);
+                self.stack.truncate(frame_begin - 1);
                 self.push(result);
                 Ok(())
             }

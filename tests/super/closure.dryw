@@ -13,4 +13,4 @@ class Derived < Base {
   toString() { return "Derived"; }
 }
 var closure = Derived().getClosure();
-print closure();
+print(closure());

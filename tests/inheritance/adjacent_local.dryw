@@ -5,5 +5,5 @@ class Baz < Foo {}
 
 {
   var foo = "foo";
-  print foo;
+  print(foo);
 }

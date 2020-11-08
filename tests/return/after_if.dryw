@@ -3,4 +3,4 @@
 fun f() {
   if (true) return "ok";
 }
-print f();
+print(f());

@@ -3,4 +3,4 @@
 {}
 if (true) {}
 if (false) {} else {}
-print "ok";
+print("ok");

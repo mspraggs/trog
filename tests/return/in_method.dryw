@@ -3,7 +3,7 @@
 class Foo {
   method() {
     return "ok";
-    print "bad";
+    print("bad");
   }
 }
-print Foo().method();
+print(Foo().method());

@@ -207,7 +207,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 40] = [
+const RULES: [ParseRule; 39] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -393,12 +393,6 @@ const RULES: [ParseRule; 40] = [
         prefix: None,
         infix: Some(Parser::or),
         precedence: Precedence::Or,
-    },
-    // Print
-    ParseRule {
-        prefix: None,
-        infix: None,
-        precedence: Precedence::None,
     },
     // Return
     ParseRule {
@@ -756,12 +750,6 @@ impl<'a> Parser<'a> {
         self.patch_jump(else_jump);
     }
 
-    fn print_statement(&mut self) {
-        self.expression();
-        self.consume(TokenKind::SemiColon, "Expected ';' after value.");
-        self.emit_byte(OpCode::Print as u8);
-    }
-
     fn return_statement(&mut self) {
         if self.compiler().kind == FunctionKind::Script {
             self.error("Cannot return from top-level code.");
@@ -811,7 +799,6 @@ impl<'a> Parser<'a> {
                 TokenKind::For => return,
                 TokenKind::If => return,
                 TokenKind::While => return,
-                TokenKind::Print => return,
                 TokenKind::Return => return,
                 _ => {}
             }
@@ -851,9 +838,7 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) {
-        if self.match_token(TokenKind::Print) {
-            self.print_statement();
-        } else if self.match_token(TokenKind::For) {
+        if self.match_token(TokenKind::For) {
             self.for_statement();
         } else if self.match_token(TokenKind::If) {
             self.if_statement();

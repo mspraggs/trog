@@ -8,5 +8,5 @@ fun isEven(n) {
 fun isOdd(n) {
   return isEven(n - 1);
 }
-print isEven(4);
-print isOdd(3);
+print(isEven(4));
+print(isOdd(3));

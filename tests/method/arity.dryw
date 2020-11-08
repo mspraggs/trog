@@ -20,12 +20,12 @@ class Foo {
   method8(a, b, c, d, e, f, g, h) { return a + b + c + d + e + f + g + h; }
 }
 var foo = Foo();
-print foo.method0();
-print foo.method1(1);
-print foo.method2(1, 2);
-print foo.method3(1, 2, 3);
-print foo.method4(1, 2, 3, 4);
-print foo.method5(1, 2, 3, 4, 5);
-print foo.method6(1, 2, 3, 4, 5, 6);
-print foo.method7(1, 2, 3, 4, 5, 6, 7);
-print foo.method8(1, 2, 3, 4, 5, 6, 7, 8);
+print(foo.method0());
+print(foo.method1(1));
+print(foo.method2(1, 2));
+print(foo.method3(1, 2, 3));
+print(foo.method4(1, 2, 3, 4));
+print(foo.method5(1, 2, 3, 4, 5));
+print(foo.method6(1, 2, 3, 4, 5, 6));
+print(foo.method7(1, 2, 3, 4, 5, 6, 7));
+print(foo.method8(1, 2, 3, 4, 5, 6, 7, 8));

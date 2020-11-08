@@ -47,7 +47,6 @@ pub enum TokenKind {
     If,
     Nil,
     Or,
-    Print,
     Return,
     Super,
     This,
@@ -300,7 +299,6 @@ impl Scanner {
             "i" => self.check_keyword(1, "f", TokenKind::If),
             "n" => self.check_keyword(1, "il", TokenKind::Nil),
             "o" => self.check_keyword(1, "r", TokenKind::Or),
-            "p" => self.check_keyword(1, "rint", TokenKind::Print),
             "r" => self.check_keyword(1, "eturn", TokenKind::Return),
             "s" => self.check_keyword(1, "uper", TokenKind::Super),
             "t" => {

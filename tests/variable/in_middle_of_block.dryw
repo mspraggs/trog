@@ -5,11 +5,11 @@
 // 0
 {
   var a = "a";
-  print a;
+  print(a);
   var b = a + " b";
-  print b;
+  print(b);
   var c = a + " c";
-  print c;
+  print(c);
   var d = b + " d";
-  print d;
+  print(d);
 }
