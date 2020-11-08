@@ -68,7 +68,7 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut vm = memory::allocate_root(vm::Vm::new());
+    let mut vm = vm::new_root_vm();
 
     if args.len() == 1 {
         repl(&mut vm);

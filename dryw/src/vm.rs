@@ -25,7 +25,7 @@ use crate::compiler;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::hash::BuildPassThroughHasher;
-use crate::memory::{Gc, GcManaged, Root};
+use crate::memory::{self, Gc, GcManaged, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjString, ObjUpvalue};
 use crate::value::Value;
 
@@ -69,7 +69,7 @@ pub struct Vm {
 
 impl Default for Vm {
     fn default() -> Self {
-        let mut vm = Vm {
+        Vm {
             ip: 0,
             active_chunk_index: 0,
             chunks: Vec::new(),
@@ -78,9 +78,7 @@ impl Default for Vm {
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
             init_string: object::new_gc_obj_string("init"),
-        };
-        vm.define_native("clock", clock_native);
-        vm
+        }
     }
 }
 
@@ -99,8 +97,15 @@ fn clock_native(_arg_count: usize, _args: &mut [Value]) -> Result<Value, Error> 
     Ok(Value::Number(seconds + nanos))
 }
 
+pub fn new_root_vm() -> Root<Vm> {
+    let mut vm = memory::allocate_root(Vm::new());
+    vm.define_native("clock", clock_native);
+    vm.define_native("print", default_print);
+    vm
+}
+
 impl Vm {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Default::default()
     }
 
