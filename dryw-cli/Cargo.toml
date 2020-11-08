@@ -8,9 +8,3 @@ edition = "2018"
 
 [dependencies]
 dryw = { path = "../dryw" }
-
-[features]
-debug_bytecode = []
-debug_trace = []
-debug_stress_gc = []
-debug_trace_gc = []
