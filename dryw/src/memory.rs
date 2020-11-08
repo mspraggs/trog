@@ -27,7 +27,7 @@ use crate::common;
 
 pub fn allocate<T: 'static + GcManaged>(data: T) -> Gc<T> {
     let ptr = HEAP.with(|heap| {
-        if cfg!(feature = "debug_stress_gc") {
+        if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
             heap.borrow_mut().collect();
         } else {
             heap.borrow_mut().collect_if_required();
