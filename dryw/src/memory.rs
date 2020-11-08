@@ -302,8 +302,8 @@ impl Heap {
     }
 
     fn mark_roots(&mut self) {
+        self.objects.iter_mut().for_each(|obj| obj.unmark());
         self.objects.iter_mut().for_each(|obj| {
-            obj.unmark();
             if obj.num_roots.get() > 0 {
                 obj.mark();
             }
