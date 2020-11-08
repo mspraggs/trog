@@ -141,6 +141,16 @@ impl Vm {
         &mut self.chunks[index]
     }
 
+    pub fn get_global(&self, name: &str) -> Option<Value> {
+        let name = object::new_gc_obj_string(name);
+        self.globals.get(&name).map(|v| *v)
+    }
+
+    pub fn set_global(&mut self, name: &str, value: Value) {
+        let name = object::new_gc_obj_string(name);
+        self.globals.insert(name, value);
+    }
+
     pub fn define_native(&mut self, name: &str, function: NativeFn) {
         let native = object::new_root_obj_native(function);
         let name = object::new_gc_obj_string(name);
