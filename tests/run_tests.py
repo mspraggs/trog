@@ -13,7 +13,7 @@ def gather_files(test_regex, exclude=False):
     directory = os.path.dirname(os.path.abspath(__file__))
     filepaths = [os.path.join(dirpath, fname)
                  for dirpath, dirnames, fnames in os.walk(directory)
-                 for fname in fnames if fname.endswith(".drw")]
+                 for fname in fnames if fname.endswith(".dryw")]
 
     modifier = lambda r: (not r if exclude else r)
 
