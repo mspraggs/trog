@@ -29,7 +29,11 @@ fn repl(vm: &mut vm::Vm) {
         let mut buffer = String::new();
 
         match io::stdin().read_line(&mut buffer) {
-            Ok(_) => {
+            Ok(bytes) => {
+                if bytes == 0 {
+                    println!();
+                    process::exit(0);
+                }
                 vm::interpret(vm, buffer).unwrap_or_default();
             }
             _ => {
