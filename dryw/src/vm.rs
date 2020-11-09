@@ -99,7 +99,10 @@ fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
 
 fn default_print(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 1 {
-        return Err(Error::with_message(ErrorKind::RuntimeError, "Expected one argument to 'print'."));
+        return Err(Error::with_message(
+            ErrorKind::RuntimeError,
+            "Expected one argument to 'print'.",
+        ));
     }
     println!("{}", args[0]);
     Ok(Value::None)
@@ -579,9 +582,7 @@ impl Vm {
             Value::ObjNative(mut wrapped) => {
                 let function = wrapped.function.as_mut();
                 let frame_begin = self.stack.len() - arg_count;
-                let result = function(
-                    &mut self.stack[frame_begin..frame_begin + arg_count],
-                )?;
+                let result = function(&mut self.stack[frame_begin..frame_begin + arg_count])?;
                 self.stack.truncate(frame_begin - 1);
                 self.push(result);
                 Ok(())
