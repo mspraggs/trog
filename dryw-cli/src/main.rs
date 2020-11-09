@@ -50,18 +50,15 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
         _ => panic!("Unable to read from file."),
     };
 
-    match result {
-        Err(error) => {
-            let exit_code = if error.get_kind() == ErrorKind::CompileError {
-                65
-            } else {
-                70
-            };
-            eprint!("{}", error);
-            process::exit(exit_code);
-        }
-        Ok(_) => {}
-    };
+    if let Err(error) = result {
+        let exit_code = if error.get_kind() == ErrorKind::CompileError {
+            65
+        } else {
+            70
+        };
+        eprint!("{}", error);
+        process::exit(exit_code);
+    }
 }
 
 fn main() {
