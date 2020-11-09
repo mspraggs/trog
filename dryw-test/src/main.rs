@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-use std::io;
+use std::{io, process};
 
 mod test;
 mod utils;
@@ -56,12 +56,18 @@ fn main() {
         .collect();
     println!();
 
-    if !failures.is_empty() {
+    let tests_failed = !failures.is_empty();
+
+    if tests_failed {
         println!();
         println!("Failing tests:");
     }
 
     for fail in failures {
         println!("{}", fail);
+    }
+
+    if tests_failed {
+        process::exit(1);
     }
 }
