@@ -19,7 +19,6 @@ use std::io::{self, Write};
 use std::process;
 
 use dryw::error::ErrorKind;
-use dryw::memory;
 use dryw::vm;
 
 fn repl(vm: &mut vm::Vm) {

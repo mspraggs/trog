@@ -59,6 +59,10 @@ impl Error {
     pub fn get_kind(&self) -> ErrorKind {
         self.kind
     }
+
+    pub fn get_messages(&self) -> &Vec<String> {
+        &self.messages
+    }
 }
 
 impl fmt::Display for Error {

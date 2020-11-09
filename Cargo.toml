@@ -2,4 +2,5 @@
 members = [
     "dryw",
     "dryw-cli",
+    "dryw-test",
 ]
