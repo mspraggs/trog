@@ -200,6 +200,7 @@ struct Parser<'a> {
     current: Token,
     previous: Token,
     panic_mode: Cell<bool>,
+    single_target_mode: bool,
     scanner: &'a mut Scanner,
     compilers: Vec<Compiler>,
     class_compilers: Vec<ClassCompiler>,
@@ -207,7 +208,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 39] = [
+const RULES: [ParseRule; 43] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -250,11 +251,23 @@ const RULES: [ParseRule; 39] = [
         infix: Some(Parser::binary),
         precedence: Precedence::Term,
     },
+    // MinusEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
     // Plus
     ParseRule {
         prefix: None,
         infix: Some(Parser::binary),
         precedence: Precedence::Term,
+    },
+    // PlusEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
     },
     // SemiColon
     ParseRule {
@@ -268,11 +281,23 @@ const RULES: [ParseRule; 39] = [
         infix: Some(Parser::binary),
         precedence: Precedence::Factor,
     },
+    // SlashEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
     // Star
     ParseRule {
         prefix: None,
         infix: Some(Parser::binary),
         precedence: Precedence::Factor,
+    },
+    // StarEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
     },
     // Bang
     ParseRule {
@@ -450,6 +475,7 @@ impl<'a> Parser<'a> {
             current: Token::new(),
             previous: Token::new(),
             panic_mode: Cell::new(false),
+            single_target_mode: false,
             scanner,
             compilers: Vec::new(),
             class_compilers: Vec::new(),
@@ -517,8 +543,20 @@ impl<'a> Parser<'a> {
         true
     }
 
+    fn match_binary_assignment(&mut self) -> bool {
+        self.match_token(TokenKind::MinusEqual)
+            || self.match_token(TokenKind::PlusEqual)
+            || self.match_token(TokenKind::SlashEqual)
+            || self.match_token(TokenKind::StarEqual)
+    }
+
     fn expression(&mut self) {
-        self.parse_precedence(Precedence::Assignment);
+        let precedence = if self.single_target_mode {
+            Precedence::Term
+        } else {
+            Precedence::Assignment
+        };
+        self.parse_precedence(precedence);
     }
 
     fn block(&mut self) {
@@ -1123,6 +1161,21 @@ impl<'a> Parser<'a> {
         None
     }
 
+    fn binary_assign(&mut self, get_op: OpCode, variable: u8) {
+        self.single_target_mode = true;
+        let op_kind = self.previous.kind;
+        self.emit_bytes([get_op as u8, variable]);
+        self.expression();
+        match op_kind {
+            TokenKind::MinusEqual => self.emit_byte(OpCode::Subtract as u8),
+            TokenKind::PlusEqual => self.emit_byte(OpCode::Add as u8),
+            TokenKind::SlashEqual => self.emit_byte(OpCode::Divide as u8),
+            TokenKind::StarEqual => self.emit_byte(OpCode::Multiply as u8),
+            _ => unreachable!(),
+        }
+        self.single_target_mode = false;
+    }
+
     fn named_variable(&mut self, name: Token, can_assign: bool) {
         let (get_op, set_op, arg) = if let Some(result) = self.resolve_local(&name) {
             (OpCode::GetLocal, OpCode::SetLocal, result)
@@ -1138,6 +1191,9 @@ impl<'a> Parser<'a> {
 
         if can_assign && self.match_token(TokenKind::Equal) {
             self.expression();
+            self.emit_bytes([set_op as u8, arg]);
+        } else if can_assign && self.match_binary_assignment() {
+            self.binary_assign(get_op, arg);
             self.emit_bytes([set_op as u8, arg]);
         } else {
             self.emit_bytes([get_op as u8, arg]);

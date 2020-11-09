@@ -23,10 +23,14 @@ pub enum TokenKind {
     Comma,
     Dot,
     Minus,
+    MinusEqual,
     Plus,
+    PlusEqual,
     SemiColon,
     Slash,
+    SlashEqual,
     Star,
+    StarEqual,
     Bang,
     BangEqual,
     Equal,
@@ -135,10 +139,38 @@ impl Scanner {
             ";" => self.make_token(TokenKind::SemiColon),
             "," => self.make_token(TokenKind::Comma),
             "." => self.make_token(TokenKind::Dot),
-            "-" => self.make_token(TokenKind::Minus),
-            "+" => self.make_token(TokenKind::Plus),
-            "/" => self.make_token(TokenKind::Slash),
-            "*" => self.make_token(TokenKind::Star),
+            "-" => {
+                let match_char = self.match_char("=");
+                self.make_token(if match_char {
+                    TokenKind::MinusEqual
+                } else {
+                    TokenKind::Minus
+                })
+            }
+            "+" => {
+                let match_char = self.match_char("=");
+                self.make_token(if match_char {
+                    TokenKind::PlusEqual
+                } else {
+                    TokenKind::Plus
+                })
+            }
+            "/" => {
+                let match_char = self.match_char("=");
+                self.make_token(if match_char {
+                    TokenKind::SlashEqual
+                } else {
+                    TokenKind::Slash
+                })
+            }
+            "*" => {
+                let match_char = self.match_char("=");
+                self.make_token(if match_char {
+                    TokenKind::StarEqual
+                } else {
+                    TokenKind::Star
+                })
+            }
             "!" => {
                 let match_char = self.match_char("=");
                 self.make_token(if match_char {
