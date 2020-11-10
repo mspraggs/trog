@@ -2,7 +2,7 @@
 // Foo instance
 // 0
 class Foo {
-  init() {
+  init(self) {
     fn init() {
       return "bar";
     }

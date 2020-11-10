@@ -2,12 +2,12 @@
 // Base.foo()
 // 0
 class Base {
-  foo() {
+  foo(self) {
     print("Base.foo()");
   }
 }
 class Derived < Base {
-  foo() {
+  foo(self) {
     print("Derived.foo()");
     super.foo();
   }

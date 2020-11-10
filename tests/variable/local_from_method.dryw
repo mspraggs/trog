@@ -2,7 +2,7 @@
 // 0
 var foo = "variable";
 class Foo {
-  method() {
+  method(self) {
     print(foo);
   }
 }

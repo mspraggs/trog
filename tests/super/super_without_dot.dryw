@@ -2,7 +2,7 @@
 // 65
 class A {}
 class B < A {
-  method() {
+  method(self) {
     super;
   }
 }

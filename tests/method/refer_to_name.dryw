@@ -3,7 +3,7 @@
 // [line 10] in script
 // 70
 class Foo {
-  method() {
+  method(self) {
     print(method);
   }
 }

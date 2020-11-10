@@ -2,6 +2,6 @@
 // [line 7] in script
 // 70
 class Foo {
-  method(a, b) {}
+  method(self, a, b) {}
 }
 Foo().method(1);

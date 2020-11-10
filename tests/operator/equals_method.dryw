@@ -2,7 +2,7 @@
 // false
 // 0
 class Foo {
-  method() {}
+  method(self) {}
 }
 var foo = Foo();
 var fooMethod = foo.method;

@@ -6,23 +6,23 @@
 // bar 2
 // 0
 class Foo {
-  foo(a, b) {
-    this.field1 = a;
-    this.field2 = b;
+  foo(self, a, b) {
+    self.field1 = a;
+    self.field2 = b;
   }
-  fooPrint() {
-    print(this.field1);
-    print(this.field2);
+  fooPrint(self) {
+    print(self.field1);
+    print(self.field2);
   }
 }
 class Bar < Foo {
-  bar(a, b) {
-    this.field1 = a;
-    this.field2 = b;
+  bar(self, a, b) {
+    self.field1 = a;
+    self.field2 = b;
   }
-  barPrint() {
-    print(this.field1);
-    print(this.field2);
+  barPrint(self) {
+    print(self.field1);
+    print(self.field2);
   }
 }
 var bar = Bar();

@@ -1,8 +1,8 @@
 // foo1
 // 0
 class Foo {
-  sayName() {
-    print(this.name);
+  sayName(self) {
+    print(self.name);
   }
 }
 var foo1 = Foo();

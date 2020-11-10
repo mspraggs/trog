@@ -2,12 +2,12 @@
 // Base.init(a, b)
 // 0
 class Base {
-  init(a, b) {
+  init(self, a, b) {
     print("Base.init(" + a + ", " + b + ")");
   }
 }
 class Derived < Base {
-  init() {
+  init(self) {
     print("Derived.init()");
     super.init("a", "b");
   }

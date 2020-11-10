@@ -1,13 +1,13 @@
 // Foo
 // 0
 class Foo {
-  getClosure() {
+  getClosure(self) {
     fn closure() {
-      return this.toString();
+      return self.toString();
     }
     return closure;
   }
-  toString() { return "Foo"; }
+  toString(self) { return "Foo"; }
 }
 var closure = Foo().getClosure();
 print(closure());

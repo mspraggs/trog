@@ -53,7 +53,6 @@ pub enum TokenKind {
     Or,
     Return,
     Super,
-    This,
     True,
     Var,
     While,
@@ -333,17 +332,7 @@ impl Scanner {
             "o" => self.check_keyword(1, "r", TokenKind::Or),
             "r" => self.check_keyword(1, "eturn", TokenKind::Return),
             "s" => self.check_keyword(1, "uper", TokenKind::Super),
-            "t" => {
-                if self.current - self.start > 1 {
-                    let next = &self.source[self.start + 1..self.start + 2];
-                    return match next {
-                        "h" => self.check_keyword(2, "is", TokenKind::This),
-                        "r" => self.check_keyword(2, "ue", TokenKind::True),
-                        _ => TokenKind::Identifier,
-                    };
-                }
-                TokenKind::Identifier
-            }
+            "t" => self.check_keyword(1, "rue", TokenKind::True),
             "v" => self.check_keyword(1, "ar", TokenKind::Var),
             "w" => self.check_keyword(1, "hile", TokenKind::While),
             _ => TokenKind::Identifier,

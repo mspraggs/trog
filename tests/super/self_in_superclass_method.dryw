@@ -2,14 +2,14 @@
 // b
 // 0
 class Base {
-  init(a) {
-    this.a = a;
+  init(self, a) {
+    self.a = a;
   }
 }
 class Derived < Base {
-  init(a, b) {
+  init(self, a, b) {
     super.init(a);
-    this.b = b;
+    self.b = b;
   }
 }
 var derived = Derived("a", "b");

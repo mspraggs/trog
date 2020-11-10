@@ -3,12 +3,12 @@
 // [line 15] in script
 // 70
 class Base {
-  foo(a, b) {
+  foo(self, a, b) {
     print("Base.foo(" + a + ", " + b + ")");
   }
 }
 class Derived < Base {
-  foo() {
+  foo(self) {
     super.foo(1);
   }
 }

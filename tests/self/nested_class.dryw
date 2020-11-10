@@ -3,13 +3,13 @@
 // Inner instance
 // 0
 class Outer {
-  method() {
-    print(this);
+  method(self) {
+    print(self);
     fn f() {
-      print(this);
+      print(self);
       class Inner {
-        method() {
-          print(this);
+        method(self) {
+          print(self);
         }
       }
       Inner().method();

@@ -3,17 +3,17 @@
 // in baz
 // 0
 class Foo {
-  inFoo() {
+  inFoo(self) {
     print("in foo");
   }
 }
 class Bar < Foo {
-  inBar() {
+  inBar(self) {
     print("in bar");
   }
 }
 class Baz < Bar {
-  inBaz() {
+  inBaz(self) {
     print("in baz");
   }
 }

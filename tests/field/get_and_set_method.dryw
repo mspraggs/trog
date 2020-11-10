@@ -2,10 +2,10 @@
 // method
 // 0
 class Foo {
-  method() {
+  method(self) {
     print("method");
   }
-  other() {
+  other(self) {
     print("other");
   }
 }

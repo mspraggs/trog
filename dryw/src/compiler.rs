@@ -88,6 +88,7 @@ struct ParseRule {
 struct Local {
     name: String,
     depth: Option<usize>,
+    can_assign: bool,
     is_captured: bool,
 }
 
@@ -119,16 +120,16 @@ impl Compiler {
         Compiler {
             function: function,
             kind,
-            locals: vec![Local {
-                name: if kind != FunctionKind::Function {
-                    "this"
-                } else {
-                    ""
-                }
-                .to_owned(),
-                depth: Some(0),
-                is_captured: false,
-            }],
+            locals: if kind == FunctionKind::Function || kind == FunctionKind::Script {
+                vec![Local {
+                    name: String::new(),
+                    depth: Some(0),
+                    can_assign: true,
+                    is_captured: false,
+                }]
+            } else {
+                Vec::new()
+            },
             upvalues: Vec::new(),
             scope_depth: 0,
         }
@@ -142,19 +143,20 @@ impl Compiler {
         self.locals.push(Local {
             name: name.source.clone(),
             depth: None,
+            can_assign: true,
             is_captured: false,
         });
 
         true
     }
 
-    fn resolve_local(&self, name: &Token) -> Result<u8, CompilerError> {
+    fn resolve_local(&self, name: &Token) -> Result<(u8, bool), CompilerError> {
         for (i, local) in self.locals.iter().enumerate().rev() {
             if local.name == name.source {
                 if local.depth.is_none() {
                     return Err(CompilerError::ReadVarInInitialiser);
                 }
-                return Ok(i as u8);
+                return Ok((i as u8, local.can_assign));
             }
         }
 
@@ -208,7 +210,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 43] = [
+const RULES: [ParseRule; 42] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -431,12 +433,6 @@ const RULES: [ParseRule; 43] = [
         infix: None,
         precedence: Precedence::None,
     },
-    // This
-    ParseRule {
-        prefix: Some(Parser::this),
-        infix: None,
-        precedence: Precedence::None,
-    },
     // True
     ParseRule {
         prefix: Some(Parser::literal),
@@ -611,6 +607,14 @@ impl<'a> Parser<'a> {
                 if !self.match_token(TokenKind::Comma) {
                     break;
                 }
+            }
+        }
+        if kind != FunctionKind::Function {
+            if self.compiler().function.arity == 0 {
+                self.error("Methods and initialisers must have at least one parameter.");
+            } else {
+                self.compiler_mut().function.arity -= 1;
+                self.compiler_mut().locals[0].can_assign = false;
             }
         }
         self.consume(TokenKind::RightParen, "Expected ')' after parameters.");
@@ -1120,9 +1124,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_local(&mut self, name: &Token) -> Option<u8> {
+    fn resolve_local(&mut self, name: &Token) -> Option<(u8, bool)> {
         match self.compiler_mut().resolve_local(name) {
-            Ok(index) => Some(index),
+            Ok((index, can_assign)) => Some((index, can_assign)),
             Err(error) => {
                 self.compiler_error(error);
                 None
@@ -1130,7 +1134,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_upvalue(&mut self, name: &Token) -> Option<u8> {
+    fn resolve_upvalue(&mut self, name: &Token) -> Option<(u8, bool)> {
         if self.compilers.len() < 2 {
             // If there's only one scope then we're not going to find an upvalue.
             self.compiler_error(CompilerError::InvalidCompilerKind);
@@ -1141,7 +1145,7 @@ impl<'a> Parser<'a> {
         for enclosing in (0..self.compilers.len() - 1).rev() {
             let current = enclosing + 1;
             // Try and resolve the local in the enclosing compiler's scope.
-            if let Ok(index) = self.compilers[enclosing].resolve_local(name) {
+            if let Ok((index, can_assign)) = self.compilers[enclosing].resolve_local(name) {
                 // If we found it, mark as captured and propagate the upvalue to the compilers that
                 // are enclosed by the current one.
                 self.compilers[enclosing].locals[index as usize].is_captured = true;
@@ -1155,7 +1159,7 @@ impl<'a> Parser<'a> {
                         }
                     };
                 }
-                return Some(index);
+                return Some((index, can_assign));
             }
         }
         None
@@ -1177,15 +1181,16 @@ impl<'a> Parser<'a> {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
-        let (get_op, set_op, arg) = if let Some(result) = self.resolve_local(&name) {
-            (OpCode::GetLocal, OpCode::SetLocal, result)
+        let (get_op, set_op, arg, can_assign) = if let Some(result) = self.resolve_local(&name) {
+            (OpCode::GetLocal, OpCode::SetLocal, result.0, can_assign && result.1)
         } else if let Some(result) = self.resolve_upvalue(&name) {
-            (OpCode::GetUpvalue, OpCode::SetUpvalue, result)
+            (OpCode::GetUpvalue, OpCode::SetUpvalue, result.0, can_assign && result.1)
         } else {
             (
                 OpCode::GetGlobal,
                 OpCode::SetGlobal,
                 self.identifier_constant(&name),
+                can_assign,
             )
         };
 
@@ -1314,7 +1319,8 @@ impl<'a> Parser<'a> {
         let previous = s.previous.clone();
         let name = s.identifier_constant(&previous);
 
-        s.named_variable(Token::from_string("this"), false);
+        let instance_local_name = s.compiler().locals[0].name.clone();
+        s.named_variable(Token::from_string(instance_local_name.as_str()), false);
         if s.match_token(TokenKind::LeftParen) {
             let arg_count = s.argument_list();
             s.named_variable(Token::from_string("super"), false);
@@ -1324,14 +1330,6 @@ impl<'a> Parser<'a> {
             s.named_variable(Token::from_string("super"), false);
             s.emit_bytes([OpCode::GetSuper as u8, name]);
         }
-    }
-
-    fn this(s: &mut Parser, _can_assign: bool) {
-        if s.class_compilers.is_empty() {
-            s.error("Cannot use 'this' outside of a class.");
-            return;
-        }
-        Parser::variable(s, false);
     }
 
     fn and(s: &mut Parser, _can_assign: bool) {

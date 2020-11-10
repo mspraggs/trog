@@ -1,16 +1,16 @@
 // Base
 // 0
 class Base {
-  toString() { return "Base"; }
+  toString(self) { return "Base"; }
 }
 class Derived < Base {
-  getClosure() {
+  getClosure(self) {
     fn closure() {
       return super.toString();
     }
     return closure;
   }
-  toString() { return "Derived"; }
+  toString(self) { return "Derived"; }
 }
 var closure = Derived().getClosure();
 print(closure());
