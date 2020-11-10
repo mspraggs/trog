@@ -6,7 +6,7 @@ class Foo {
     this.field = "init";
   }
 }
-fun init() {
+fn init() {
   print("not initializer");
 }
 init();

@@ -395,7 +395,7 @@ const RULES: [ParseRule; 43] = [
         infix: None,
         precedence: Precedence::None,
     },
-    // Fun
+    // Fn
     ParseRule {
         prefix: None,
         infix: None,
@@ -688,7 +688,7 @@ impl<'a> Parser<'a> {
         self.class_compilers.pop();
     }
 
-    fn fun_declaration(&mut self) {
+    fn fn_declaration(&mut self) {
         let global = self.parse_variable("Expected function name.");
         self.mark_initialised();
         self.function(FunctionKind::Function);
@@ -832,7 +832,7 @@ impl<'a> Parser<'a> {
 
             match self.current.kind {
                 TokenKind::Class => return,
-                TokenKind::Fun => return,
+                TokenKind::Fn => return,
                 TokenKind::Var => return,
                 TokenKind::For => return,
                 TokenKind::If => return,
@@ -896,8 +896,8 @@ impl<'a> Parser<'a> {
     fn declaration(&mut self) {
         if self.match_token(TokenKind::Class) {
             self.class_declaration();
-        } else if self.match_token(TokenKind::Fun) {
-            self.fun_declaration();
+        } else if self.match_token(TokenKind::Fn) {
+            self.fn_declaration();
         } else if self.match_token(TokenKind::Var) {
             self.var_declaration();
         } else {

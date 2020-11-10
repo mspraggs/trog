@@ -1,10 +1,10 @@
 // b
 // a
 // 0
-fun f() {
+fn f() {
   var a = "a";
   var b = "b";
-  fun g() {
+  fn g() {
     print(b);
     print(a);
   }

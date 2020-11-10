@@ -1,9 +1,9 @@
 // i
 // 0
-fun f() {
+fn f() {
   while (true) {
     var i = "i";
-    fun g() { print(i); }
+    fn g() { print(i); }
     return g;
   }
 }

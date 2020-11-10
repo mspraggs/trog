@@ -3,7 +3,7 @@
 // 0
 var a = "outer";
 {
-  fun foo() {
+  fn foo() {
     print(a);
   }
   foo();

@@ -4,7 +4,7 @@
 // 0
 {
   var foo = "closure";
-  fun f() {
+  fn f() {
     {
       print(foo);
       var foo = "shadow";

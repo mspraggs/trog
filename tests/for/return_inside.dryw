@@ -1,6 +1,6 @@
 // i
 // 0
-fun f() {
+fn f() {
   for (;;) {
     var i = "i";
     return i;

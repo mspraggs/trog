@@ -5,7 +5,7 @@
 class Outer {
   method() {
     print(this);
-    fun f() {
+    fn f() {
       print(this);
       class Inner {
         method() {

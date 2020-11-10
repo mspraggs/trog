@@ -3,7 +3,7 @@
 {
   var a = "a";
   if (false) {
-    fun foo() { a; }
+    fn foo() { a; }
   }
 }
 print("ok");

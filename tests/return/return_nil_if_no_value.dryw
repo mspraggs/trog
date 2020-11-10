@@ -1,6 +1,6 @@
 // nil
 // 0
-fun f() {
+fn f() {
   return;
   print("bad");
 }

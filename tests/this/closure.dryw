@@ -2,7 +2,7 @@
 // 0
 class Foo {
   getClosure() {
-    fun closure() {
+    fn closure() {
       return this.toString();
     }
     return closure;

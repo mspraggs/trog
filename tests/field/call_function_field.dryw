@@ -1,7 +1,7 @@
 // bar
 // 0
 class Foo {}
-fun bar() {
+fn bar() {
   print("bar");
 }
 var foo = Foo();

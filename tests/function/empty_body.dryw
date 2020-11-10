@@ -1,4 +1,4 @@
 // nil
 // 0
-fun f() {}
+fn f() {}
 print(f());

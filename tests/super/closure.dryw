@@ -5,7 +5,7 @@ class Base {
 }
 class Derived < Base {
   getClosure() {
-    fun closure() {
+    fn closure() {
       return super.toString();
     }
     return closure;

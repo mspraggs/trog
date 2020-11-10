@@ -1,4 +1,4 @@
 // <fn foo>
 // 0
-fun foo() {}
+fn foo() {}
 print(foo);

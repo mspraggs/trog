@@ -1,6 +1,6 @@
 // [line 258] Error at 'a': Cannot have more than 255 parameters.
 // 65
-fun f(
+fn f(
     a1,
     a2,
     a3,

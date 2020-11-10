@@ -47,7 +47,7 @@ pub enum TokenKind {
     Else,
     False,
     For,
-    Fun,
+    Fn,
     If,
     Nil,
     Or,
@@ -322,7 +322,7 @@ impl Scanner {
                     return match next {
                         "a" => self.check_keyword(2, "lse", TokenKind::False),
                         "o" => self.check_keyword(2, "r", TokenKind::For),
-                        "u" => self.check_keyword(2, "n", TokenKind::Fun),
+                        "n" => self.check_keyword(2, "", TokenKind::Fn),
                         _ => TokenKind::Identifier,
                     };
                 }
