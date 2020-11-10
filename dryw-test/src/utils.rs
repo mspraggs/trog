@@ -39,12 +39,7 @@ pub fn get_paths(root: &str, suffix: Option<&str>) -> Result<Vec<String>, ()> {
     Ok(paths)
 }
 
-pub fn print_stats(
-    s: &mut io::Stdout,
-    num_passed: usize,
-    num_skipped: usize,
-    num_failed: usize,
-) {
+pub fn print_stats(s: &mut io::Stdout, num_passed: usize, num_skipped: usize, num_failed: usize) {
     queue!(
         s,
         ResetColor,

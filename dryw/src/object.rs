@@ -215,7 +215,7 @@ pub struct ObjNative {
     pub function: NativeFn,
 }
 
-pub fn new_gc_obj_native(function: NativeFn)-> Gc<ObjNative> {
+pub fn new_gc_obj_native(function: NativeFn) -> Gc<ObjNative> {
     memory::allocate(ObjNative::new(function))
 }
 
