@@ -1,7 +1,7 @@
 // Foo
 // 0
 class Foo {
-  fn getClosure(self) {
+fn getClosure(self) {
     fn f() {
       fn g() {
         fn h() {
@@ -13,7 +13,7 @@ class Foo {
     }
     return f;
   }
-  fn toString(self) { return "Foo"; }
+fn toString(self) { return "Foo"; }
 }
 var closure = Foo().getClosure();
 print(closure()()());

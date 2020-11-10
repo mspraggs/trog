@@ -3,12 +3,12 @@
 // bar
 // 0
 class Foo {
-  methodOnFoo(self) { print("foo"); }
-  override(self) { print("foo"); }
+  fn methodOnFoo(self) { print("foo"); }
+  fn override(self) { print("foo"); }
 }
 class Bar < Foo {
-  methodOnBar(self) { print("bar"); }
-  override(self) { print("bar"); }
+  fn methodOnBar(self) { print("bar"); }
+  fn override(self) { print("bar"); }
 }
 var bar = Bar();
 bar.methodOnFoo();

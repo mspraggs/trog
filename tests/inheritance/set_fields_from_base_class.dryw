@@ -6,21 +6,21 @@
 // bar 2
 // 0
 class Foo {
-  foo(self, a, b) {
+fn foo(self, a, b) {
     self.field1 = a;
     self.field2 = b;
   }
-  fooPrint(self) {
+fn fooPrint(self) {
     print(self.field1);
     print(self.field2);
   }
 }
 class Bar < Foo {
-  bar(self, a, b) {
+  fn bar(self, a, b) {
     self.field1 = a;
     self.field2 = b;
   }
-  barPrint(self) {
+  fn barPrint(self) {
     print(self.field1);
     print(self.field2);
   }

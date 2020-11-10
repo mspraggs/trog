@@ -1,7 +1,7 @@
 // Foo
 // 0
 class Foo {
-  returnSelf(self) {
+  fn returnSelf(self) {
     return Foo;
   }
 }

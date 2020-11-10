@@ -1,15 +1,15 @@
 // A.method(arg)
 // 0
 class A {
-  method(self, arg) {
+  fn method(self, arg) {
     print("A.method(" + arg + ")");
   }
 }
 class B < A {
-  getClosure(self) {
+  fn getClosure(self) {
     return super.method;
   }
-  method(self, arg) {
+  fn method(self, arg) {
     print("B.method(" + arg + ")");
   }
 }

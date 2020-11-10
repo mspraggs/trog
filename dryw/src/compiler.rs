@@ -634,6 +634,7 @@ impl<'a> Parser<'a> {
     }
 
     fn method(&mut self) {
+        self.consume(TokenKind::Fn, "Expected 'fn' before method name.");
         self.consume(TokenKind::Identifier, "Expected method name.");
         let previous = self.previous.clone();
         let constant = self.identifier_constant(&previous);

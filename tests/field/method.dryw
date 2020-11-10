@@ -2,7 +2,7 @@
 // arg
 // 0
 class Foo {
-  bar(self, arg) {
+  fn bar(self, arg) {
     print(arg);
   }
 }

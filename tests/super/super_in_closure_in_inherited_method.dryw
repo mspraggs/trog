@@ -1,23 +1,23 @@
 // A
 // 0
 class A {
-  say(self) {
+  fn say(self) {
     print("A");
   }
 }
 class B < A {
-  getClosure(self) {
+  fn getClosure(self) {
     fn closure() {
       super.say();
     }
     return closure;
   }
-  say(self) {
+  fn say(self) {
     print("B");
   }
 }
 class C < B {
-  say(self) {
+  fn say(self) {
     print("C");
   }
 }

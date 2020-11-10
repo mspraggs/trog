@@ -1,10 +1,10 @@
 // [line 8] Error at ')': Expected '.' after 'super'.
 // 65
 class A {
-  method(self) {}
+  fn method(self) {}
 }
 class B < A {
-  method(self) {
+  fn method(self) {
     (super).method();
   }
 }

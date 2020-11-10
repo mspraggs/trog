@@ -2,7 +2,7 @@
 // [line 10] in script
 // 70
 class Foo {
-  method(self, a, b) {
+  fn method(self, a, b) {
     print(a);
     print(b);
   }

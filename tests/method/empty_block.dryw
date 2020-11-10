@@ -1,6 +1,6 @@
 // nil
 // 0
 class Foo {
-  bar(self) {}
+  fn bar(self) {}
 }
 print(Foo().bar());

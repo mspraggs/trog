@@ -2,7 +2,7 @@
 // Foo instance
 // 0
 class Foo {
-  init(self) {
+  fn init(self) {
     print("init");
     return;
     print("nope");

@@ -1,7 +1,7 @@
 // [line 259] Error at 'a': Cannot have more than 255 parameters.
 // 65
 class Foo {
-  method(
+  fn method(
     a1,
     a2,
     a3,

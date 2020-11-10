@@ -4,7 +4,7 @@
 // init
 // 0
 class Foo {
-  init(self, arg) {
+  fn init(self, arg) {
     print("Foo.init(" + arg + ")");
     self.field = "init";
   }

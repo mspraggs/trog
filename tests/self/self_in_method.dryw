@@ -1,7 +1,7 @@
 // baz
 // 0
 class Foo {
-  bar(self) { return self; }
-  baz(self) { return "baz"; }
+  fn bar(self) { return self; }
+  fn baz(self) { return "baz"; }
 }
 print(Foo().bar().baz());

@@ -2,13 +2,13 @@
 // A.foo()
 // 0
 class A {
-  foo(self) {
+  fn foo(self) {
     print("A.foo()");
   }
 }
 class B < A {}
 class C < B {
-  foo(self) {
+  fn foo(self) {
     print("C.foo()");
     super.foo();
   }
