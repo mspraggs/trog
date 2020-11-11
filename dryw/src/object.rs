@@ -182,7 +182,7 @@ pub fn new_root_obj_function(name: Gc<ObjString>, chunk_index: usize) -> Root<Ob
 impl ObjFunction {
     fn new(name: memory::Gc<ObjString>, chunk_index: usize) -> Self {
         ObjFunction {
-            arity: 0,
+            arity: 1,
             upvalue_count: 0,
             chunk_index: chunk_index,
             name,

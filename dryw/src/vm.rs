@@ -98,13 +98,13 @@ fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
 }
 
 fn default_print(args: &mut [Value]) -> Result<Value, Error> {
-    if args.len() != 1 {
+    if args.len() != 2 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
             "Expected one argument to 'print'.",
         ));
     }
-    println!("{}", args[0]);
+    println!("{}", args[1]);
     Ok(Value::None)
 }
 
@@ -581,9 +581,9 @@ impl Vm {
 
             Value::ObjNative(mut wrapped) => {
                 let function = wrapped.function.as_mut();
-                let frame_begin = self.stack.len() - arg_count;
-                let result = function(&mut self.stack[frame_begin..frame_begin + arg_count])?;
-                self.stack.truncate(frame_begin - 1);
+                let frame_begin = self.stack.len() - arg_count - 1;
+                let result = function(&mut self.stack[frame_begin..frame_begin + arg_count + 1])?;
+                self.stack.truncate(frame_begin);
                 self.push(result);
                 Ok(())
             }
@@ -630,10 +630,10 @@ impl Vm {
     }
 
     fn call(&mut self, closure: Gc<RefCell<ObjClosure>>, arg_count: usize) -> Result<(), Error> {
-        if arg_count as u32 != closure.borrow().function.arity {
+        if arg_count as u32 + 1 != closure.borrow().function.arity {
             let msg = format!(
                 "Expected {} arguments but got {}.",
-                closure.borrow().function.arity,
+                closure.borrow().function.arity - 1,
                 arg_count
             );
             return Err(Error::with_message(ErrorKind::TypeError, msg.as_str()));

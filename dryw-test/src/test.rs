@@ -87,13 +87,13 @@ pub fn run_test(path: &str) -> Result<Success, Failure> {
     thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
 
     let local_print = |args: &mut [Value]| -> Result<Value, Error> {
-        if args.len() != 1 {
+        if args.len() != 2 {
             return Err(Error::with_message(
                 ErrorKind::RuntimeError,
                 "Expected one argument to 'print'.",
             ));
         }
-        let lines = format!("{}", args[0]);
+        let lines = format!("{}", args[1]);
         for line in lines.as_str().lines() {
             OUTPUT.with(|output| output.borrow_mut().push(format!("{}", line)));
         }

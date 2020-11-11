@@ -597,7 +597,7 @@ impl<'a> Parser<'a> {
         if !self.check(TokenKind::RightParen) {
             loop {
                 self.compiler_mut().function.arity += 1;
-                if self.compiler().function.arity > 255 {
+                if self.compiler().function.arity > 256 {
                     self.error_at_current("Cannot have more than 255 parameters.");
                 }
 
@@ -610,12 +610,8 @@ impl<'a> Parser<'a> {
             }
         }
         if kind != FunctionKind::Function {
-            if self.compiler().function.arity == 0 {
-                self.error("Methods and initialisers must have at least one parameter.");
-            } else {
-                self.compiler_mut().function.arity -= 1;
-                self.compiler_mut().locals[0].can_assign = false;
-            }
+            self.compiler_mut().function.arity -= 1;
+            self.compiler_mut().locals[0].can_assign = false;
         }
         self.consume(TokenKind::RightParen, "Expected ')' after parameters.");
 
