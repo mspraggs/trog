@@ -112,6 +112,8 @@ pub fn new_root_vm() -> Root<Vm> {
     let mut vm = memory::allocate_root(Vm::new());
     vm.define_native("clock", Box::new(clock_native));
     vm.define_native("print", Box::new(default_print));
+    let obj_vec_class = object::new_root_obj_vec_class();
+    vm.set_global("Vec", Value::ObjClass(obj_vec_class.as_gc()));
     vm
 }
 
@@ -324,6 +326,11 @@ impl Vm {
                 }
 
                 OpCode::GetProperty => {
+                    if let Value::ObjVec(vec) = *self.peek(0) {
+                        let name = read_string!();
+                        self.bind_method(vec.borrow().class, name)?;
+                        continue;
+                    }
                     let instance = match *self.peek(0) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
@@ -561,14 +568,21 @@ impl Vm {
                 self.call(bound.borrow().method, arg_count)
             }
 
+            Value::ObjBoundNative(bound) => {
+                *self.peek_mut(arg_count) = bound.borrow().receiver;
+                self.call_value(Value::ObjNative(bound.borrow().method), arg_count)
+            }
+
             Value::ObjClass(class) => {
                 let instance = object::new_gc_obj_instance(class);
                 *self.peek_mut(arg_count) = Value::ObjInstance(instance);
 
-                if let Some(Value::ObjClosure(initialiser)) =
-                    class.borrow().methods.get(&self.init_string)
-                {
+                let borrowed_class = class.borrow();
+                let init = borrowed_class.methods.get(&self.init_string);
+                if let Some(Value::ObjClosure(initialiser)) = init {
                     return self.call(*initialiser, arg_count);
+                } else if let Some(Value::ObjNative(initialiser)) = init {
+                    return self.call_value(Value::ObjNative(*initialiser), arg_count);
                 } else if arg_count != 0 {
                     let msg = format!("Expected 0 arguments but got {}.", arg_count);
                     return Err(Error::with_message(ErrorKind::TypeError, msg.as_str()));
@@ -604,6 +618,7 @@ impl Vm {
         if let Some(value) = class.borrow().methods.get(&name) {
             return match value {
                 Value::ObjClosure(closure) => self.call(*closure, arg_count),
+                Value::ObjNative(native) => self.call_value(Value::ObjNative(*native), arg_count),
                 _ => unreachable!(),
             };
         }
@@ -621,6 +636,10 @@ impl Vm {
                 }
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
+            }
+            Value::ObjVec(vec) => {
+                let class = { vec.borrow().class };
+                self.invoke_from_class(class, name, arg_count)
             }
             _ => Err(Error::with_message(
                 ErrorKind::ValueError,
@@ -708,20 +727,22 @@ impl Vm {
         name: Gc<ObjString>,
     ) -> Result<(), Error> {
         let borrowed_class = class.borrow();
-        let method = match borrowed_class.methods.get(&name) {
-            Some(Value::ObjClosure(ptr)) => *ptr,
+        let instance = *self.peek(0);
+        let bound = match borrowed_class.methods.get(&name) {
+            Some(Value::ObjClosure(ptr)) => {
+                Value::ObjBoundMethod(object::new_gc_obj_bound_method(instance, *ptr))
+            }
+            Some(Value::ObjNative(ptr)) => {
+                Value::ObjBoundNative(object::new_gc_obj_bound_method(instance, *ptr))
+            }
             None => {
                 let msg = format!("Undefined property '{}'.", *name);
                 return Err(Error::with_message(ErrorKind::AttributeError, msg.as_str()));
             }
             _ => unreachable!(),
         };
-
-        let instance = *self.peek(0);
-        let bound = object::new_gc_obj_bound_method(instance, method);
         self.pop();
-        self.push(Value::ObjBoundMethod(bound));
-
+        self.push(bound);
         Ok(())
     }
 

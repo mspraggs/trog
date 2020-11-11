@@ -17,20 +17,24 @@ use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
 
-use crate::memory;
-use crate::object;
+use crate::memory::{self, Gc};
+use crate::object::{
+    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjString, ObjVec,
+};
 
 #[derive(Clone, Copy)]
 pub enum Value {
     Boolean(bool),
     Number(f64),
-    ObjString(memory::Gc<object::ObjString>),
-    ObjFunction(memory::Gc<object::ObjFunction>),
-    ObjNative(memory::Gc<object::ObjNative>),
-    ObjClosure(memory::Gc<RefCell<object::ObjClosure>>),
-    ObjClass(memory::Gc<RefCell<object::ObjClass>>),
-    ObjInstance(memory::Gc<RefCell<object::ObjInstance>>),
-    ObjBoundMethod(memory::Gc<RefCell<object::ObjBoundMethod>>),
+    ObjString(Gc<ObjString>),
+    ObjFunction(Gc<ObjFunction>),
+    ObjNative(Gc<ObjNative>),
+    ObjClosure(Gc<RefCell<ObjClosure>>),
+    ObjClass(Gc<RefCell<ObjClass>>),
+    ObjInstance(Gc<RefCell<ObjInstance>>),
+    ObjBoundMethod(Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>),
+    ObjBoundNative(Gc<RefCell<ObjBoundMethod<ObjNative>>>),
+    ObjVec(Gc<RefCell<ObjVec>>),
     None,
 }
 
@@ -60,6 +64,8 @@ impl memory::GcManaged for Value {
             Value::ObjClass(inner) => inner.mark(),
             Value::ObjInstance(inner) => inner.mark(),
             Value::ObjBoundMethod(inner) => inner.mark(),
+            Value::ObjBoundNative(inner) => inner.mark(),
+            Value::ObjVec(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -73,6 +79,8 @@ impl memory::GcManaged for Value {
             Value::ObjClass(inner) => inner.blacken(),
             Value::ObjInstance(inner) => inner.blacken(),
             Value::ObjBoundMethod(inner) => inner.blacken(),
+            Value::ObjBoundNative(inner) => inner.blacken(),
+            Value::ObjVec(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -103,6 +111,8 @@ impl fmt::Display for Value {
             Value::ObjClass(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjInstance(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjBoundMethod(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjBoundNative(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjVec(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::None => write!(f, "nil"),
         }
     }
@@ -120,6 +130,7 @@ impl cmp::PartialEq for Value {
             (Value::ObjClass(first), Value::ObjClass(second)) => *first == *second,
             (Value::ObjInstance(first), Value::ObjInstance(second)) => *first == *second,
             (Value::ObjBoundMethod(first), Value::ObjBoundMethod(second)) => *first == *second,
+            (Value::ObjVec(first), Value::ObjVec(second)) => *first.borrow() == *second.borrow(),
             (Value::None, Value::None) => true,
             _ => false,
         }

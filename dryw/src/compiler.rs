@@ -210,7 +210,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 42] = [
+const RULES: [ParseRule; 44] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -230,6 +230,18 @@ const RULES: [ParseRule; 42] = [
         precedence: Precedence::None,
     },
     // RightBrace
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // LeftBracket
+    ParseRule {
+        prefix: Some(Parser::vector),
+        infix: Some(Parser::index),
+        precedence: Precedence::Call,
+    },
+    // RightBracket
     ParseRule {
         prefix: None,
         infix: None,
@@ -1057,13 +1069,13 @@ impl<'a> Parser<'a> {
         self.emit_bytes([OpCode::DefineGlobal as u8, global]);
     }
 
-    fn argument_list(&mut self) -> u8 {
+    fn argument_list(&mut self, right_delim: TokenKind, count_msg: &str, delim_msg: &str) -> u8 {
         let mut arg_count: usize = 0;
-        if !self.check(TokenKind::RightParen) {
+        if !self.check(right_delim) {
             loop {
                 self.expression();
                 if arg_count == 255 {
-                    self.error("Cannot have more than 255 arguments.");
+                    self.error(count_msg);
                 }
                 arg_count += 1;
 
@@ -1073,7 +1085,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        self.consume(TokenKind::RightParen, "Expected ')' after arguments.");
+        self.consume(right_delim, delim_msg);
         arg_count as u8
     }
 
@@ -1179,9 +1191,19 @@ impl<'a> Parser<'a> {
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
         let (get_op, set_op, arg, can_assign) = if let Some(result) = self.resolve_local(&name) {
-            (OpCode::GetLocal, OpCode::SetLocal, result.0, can_assign && result.1)
+            (
+                OpCode::GetLocal,
+                OpCode::SetLocal,
+                result.0,
+                can_assign && result.1,
+            )
         } else if let Some(result) = self.resolve_upvalue(&name) {
-            (OpCode::GetUpvalue, OpCode::SetUpvalue, result.0, can_assign && result.1)
+            (
+                OpCode::GetUpvalue,
+                OpCode::SetUpvalue,
+                result.0,
+                can_assign && result.1,
+            )
         } else {
             (
                 OpCode::GetGlobal,
@@ -1241,7 +1263,11 @@ impl<'a> Parser<'a> {
     }
 
     fn call(s: &mut Parser, _can_assign: bool) {
-        let arg_count = s.argument_list();
+        let arg_count = s.argument_list(
+            TokenKind::RightParen,
+            "Cannot have more than 255 arguments.",
+            "Expected ')' after arguments.",
+        );
         s.emit_bytes([OpCode::Call as u8, arg_count]);
     }
 
@@ -1254,12 +1280,43 @@ impl<'a> Parser<'a> {
             s.expression();
             s.emit_bytes([OpCode::SetProperty as u8, name]);
         } else if s.match_token(TokenKind::LeftParen) {
-            let arg_count = s.argument_list();
+            let arg_count = s.argument_list(
+                TokenKind::RightParen,
+                "Cannot have more than 255 arguments.",
+                "Expected ')' after arguments.",
+            );
             s.emit_bytes([OpCode::Invoke as u8, name]);
             s.emit_byte(arg_count);
         } else {
             s.emit_bytes([OpCode::GetProperty as u8, name]);
         }
+    }
+
+    fn index(s: &mut Parser, can_assign: bool) {
+        s.expression();
+        s.consume(TokenKind::RightBracket, "Expected ']' after index.");
+
+        let (name, num_args) = if can_assign && s.match_token(TokenKind::Equal) {
+            s.expression();
+            (s.identifier_constant(&Token::from_string("set")), 2)
+        } else {
+            (s.identifier_constant(&Token::from_string("get")), 1)
+        };
+        s.emit_bytes([OpCode::Invoke as u8, name]);
+        s.emit_byte(num_args as u8);
+    }
+
+    fn vector(s: &mut Parser, _can_assign: bool) {
+        let name = s.identifier_constant(&Token::from_string("Vec"));
+        s.emit_bytes([OpCode::GetGlobal as u8, name]);
+
+        let num_elems = s.argument_list(
+            TokenKind::RightBracket,
+            "Cannot have more than 255 Vec elements.",
+            "Expected ']' after elements.",
+        );
+
+        s.emit_bytes([OpCode::Call as u8, num_elems as u8]);
     }
 
     fn unary(s: &mut Parser, _can_assign: bool) {
@@ -1319,7 +1376,11 @@ impl<'a> Parser<'a> {
         let instance_local_name = s.compiler().locals[0].name.clone();
         s.named_variable(Token::from_string(instance_local_name.as_str()), false);
         if s.match_token(TokenKind::LeftParen) {
-            let arg_count = s.argument_list();
+            let arg_count = s.argument_list(
+                TokenKind::RightParen,
+                "Cannot have more than 255 arguments.",
+                "Expected ')' after arguments.",
+            );
             s.named_variable(Token::from_string("super"), false);
             s.emit_bytes([OpCode::SuperInvoke as u8, name]);
             s.emit_byte(arg_count);

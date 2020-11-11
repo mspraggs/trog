@@ -14,13 +14,13 @@
  */
 
 use std::cell::RefCell;
-use std::cmp::Eq;
+use std::cmp::{self, Eq};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::ManuallyDrop;
 
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Root};
 use crate::value::Value;
@@ -235,6 +235,12 @@ impl memory::GcManaged for ObjNative {
     fn blacken(&self) {}
 }
 
+impl fmt::Display for ObjNative {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<native fn>")
+    }
+}
+
 pub struct ObjClosure {
     pub function: memory::Gc<ObjFunction>,
     pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
@@ -302,6 +308,15 @@ impl ObjClass {
     }
 }
 
+fn add_native_method_to_class(class: Gc<RefCell<ObjClass>>, name: &str, native: NativeFn) {
+    let name = new_gc_obj_string(name);
+    let obj_native = new_root_obj_native(native);
+    class
+        .borrow_mut()
+        .methods
+        .insert(name, Value::ObjNative(obj_native.as_gc()));
+}
+
 impl memory::GcManaged for ObjClass {
     fn mark(&self) {
         self.name.mark();
@@ -360,32 +375,32 @@ impl fmt::Display for ObjInstance {
     }
 }
 
-pub struct ObjBoundMethod {
+pub struct ObjBoundMethod<T: memory::GcManaged> {
     pub receiver: Value,
-    pub method: memory::Gc<RefCell<ObjClosure>>,
+    pub method: memory::Gc<T>,
 }
 
-pub fn new_gc_obj_bound_method(
+pub fn new_gc_obj_bound_method<T: 'static + memory::GcManaged>(
     receiver: Value,
-    method: Gc<RefCell<ObjClosure>>,
-) -> Gc<RefCell<ObjBoundMethod>> {
+    method: Gc<T>,
+) -> Gc<RefCell<ObjBoundMethod<T>>> {
     memory::allocate(RefCell::new(ObjBoundMethod::new(receiver, method)))
 }
 
-pub fn new_root_obj_bound_method(
+pub fn new_root_obj_bound_method<T: 'static + memory::GcManaged>(
     receiver: Value,
-    method: Gc<RefCell<ObjClosure>>,
-) -> Root<RefCell<ObjBoundMethod>> {
+    method: Gc<T>,
+) -> Root<RefCell<ObjBoundMethod<T>>> {
     new_gc_obj_bound_method(receiver, method).as_root()
 }
 
-impl ObjBoundMethod {
-    fn new(receiver: Value, method: memory::Gc<RefCell<ObjClosure>>) -> Self {
+impl<T: memory::GcManaged> ObjBoundMethod<T> {
+    fn new(receiver: Value, method: memory::Gc<T>) -> Self {
         ObjBoundMethod { receiver, method }
     }
 }
 
-impl memory::GcManaged for ObjBoundMethod {
+impl<T: 'static + memory::GcManaged> memory::GcManaged for ObjBoundMethod<T> {
     fn mark(&self) {
         self.receiver.mark();
         self.method.mark();
@@ -397,8 +412,216 @@ impl memory::GcManaged for ObjBoundMethod {
     }
 }
 
-impl fmt::Display for ObjBoundMethod {
+impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", *self.method.borrow())
     }
+}
+
+impl fmt::Display for ObjBoundMethod<ObjNative> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", *self.method)
+    }
+}
+
+pub struct ObjVec {
+    pub class: Gc<RefCell<ObjClass>>,
+    pub elements: Vec<Value>,
+}
+
+pub fn new_gc_obj_vec(class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjVec>> {
+    memory::allocate(RefCell::new(ObjVec::new(class)))
+}
+
+pub fn new_root_obj_vec(class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjVec>> {
+    new_gc_obj_vec(class).as_root()
+}
+
+pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string("Vec");
+    let class = new_root_obj_class(class_name);
+    add_native_method_to_class(class.as_gc(), "init", Box::new(vec_init));
+    add_native_method_to_class(class.as_gc(), "push", Box::new(vec_push));
+    add_native_method_to_class(class.as_gc(), "pop", Box::new(vec_pop));
+    add_native_method_to_class(class.as_gc(), "get", Box::new(vec_get));
+    add_native_method_to_class(class.as_gc(), "set", Box::new(vec_set));
+    add_native_method_to_class(class.as_gc(), "len", Box::new(vec_len));
+    class
+}
+
+impl ObjVec {
+    fn new(class: Gc<RefCell<ObjClass>>) -> Self {
+        ObjVec {
+            class,
+            elements: Vec::new(),
+        }
+    }
+}
+
+impl memory::GcManaged for ObjVec {
+    fn mark(&self) {
+        self.class.mark();
+        self.elements.mark();
+    }
+
+    fn blacken(&self) {
+        self.class.blacken();
+        self.elements.blacken();
+    }
+}
+
+impl fmt::Display for ObjVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        let num_elems = self.elements.len();
+        for (i, e) in self.elements.iter().enumerate() {
+            let is_self = match e {
+                Value::ObjVec(v) => &(*v.borrow()) as *const _ == self as *const _,
+                _ => false,
+            };
+            if is_self {
+                write!(f, "[...]")?;
+            } else {
+                write!(f, "{}", e)?;
+            }
+            write!(f, "{}", if i == num_elems - 1 { "" } else { ", " })?;
+        }
+        write!(f, "]")
+    }
+}
+
+impl cmp::PartialEq for ObjVec {
+    fn eq(&self, other: &ObjVec) -> bool {
+        if self as *const _ == other as *const _ {
+            return true;
+        }
+        self.elements == other.elements
+    }
+}
+
+fn vec_init(args: &mut [Value]) -> Result<Value, Error> {
+    let class = if let Value::ObjInstance(c) = args[0] {
+        c.borrow().class
+    } else {
+        unreachable!()
+    };
+    let vec = new_root_obj_vec(class);
+    vec.borrow_mut().elements = args.iter().skip(1).map(|v| *v).collect();
+    Ok(Value::ObjVec(vec.as_gc()))
+}
+
+fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 2 {
+        let msg = format!("Expected 1 parameter but got {}", args.len() - 1);
+        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+    }
+
+    let vec = if let Value::ObjVec(v) = args[0] {
+        v
+    } else {
+        unreachable!()
+    };
+    vec.borrow_mut().elements.push(args[1]);
+
+    Ok(args[0])
+}
+
+fn vec_pop(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        let msg = format!("Expected 0 parameters but got {}", args.len() - 1);
+        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+    }
+
+    let vec = if let Value::ObjVec(v) = args[0] {
+        v
+    } else {
+        unreachable!()
+    };
+    let mut borrowed_vec = vec.borrow_mut();
+    borrowed_vec.elements.pop().ok_or(Error::with_message(
+        ErrorKind::RuntimeError,
+        "Cannot pop from empty Vec instance.",
+    ))
+}
+
+fn vec_get(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 2 {
+        let msg = format!("Expected 1 parameters but got {}", args.len() - 1);
+        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+    }
+
+    let vec = if let Value::ObjVec(v) = args[0] {
+        v
+    } else {
+        unreachable!()
+    };
+
+    let index = get_vec_index(vec, args[1])?;
+    let borrowed_vec = vec.borrow();
+    Ok(borrowed_vec.elements[index])
+}
+
+fn vec_set(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 3 {
+        let msg = format!("Expected 2 parameters but got {}", args.len() - 1);
+        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+    }
+
+    let vec = if let Value::ObjVec(v) = args[0] {
+        v
+    } else {
+        unreachable!()
+    };
+
+    let index = get_vec_index(vec, args[1])?;
+    let mut borrowed_vec = vec.borrow_mut();
+    borrowed_vec.elements[index] = args[2];
+    Ok(Value::None)
+}
+
+fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        let msg = format!("Expected 0 parameters but got {}", args.len() - 1);
+        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+    }
+
+    let vec = if let Value::ObjVec(v) = args[0] {
+        v
+    } else {
+        unreachable!()
+    };
+
+    let borrowed_vec = vec.borrow();
+    Ok(Value::from(borrowed_vec.elements.len() as f64))
+}
+
+fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error> {
+    let vec_len = vec.borrow_mut().elements.len();
+    let index = if let Value::Number(n) = value {
+        if n >= 0.0 {
+            if n.floor() != n {
+                let msg = format!("Expected an integer but found '{}'.", n);
+                return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
+            }
+            n as usize
+        } else {
+            if n.ceil() != n {
+                let msg = format!("Expected an integer but found '{}'.", n);
+                return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
+            }
+            ((n as isize + vec_len as isize) % vec_len as isize) as usize
+        }
+    } else {
+        let msg = format!("Expected an integer but found '{}'.", value);
+        return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
+    };
+
+    if index >= vec_len {
+        return Err(Error::with_message(
+            ErrorKind::ValueError,
+            "Vec index parameter out of bounds",
+        ));
+    }
+
+    Ok(index)
 }

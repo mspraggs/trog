@@ -1,0 +1,20 @@
+// 1
+// 2
+// 3
+// 3
+// 2
+// 1
+// elem
+// 0
+var v = [1, 2, 3];
+for (var i = 0; i < 3; i += 1) {
+    print(v[i]);
+}
+for (var i = -1; i > -4; i -= 1) {
+    print(v[i]);
+}
+
+fn make_vec() {
+    return ["elem", 2];
+}
+print(make_vec()[0]);
