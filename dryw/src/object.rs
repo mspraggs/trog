@@ -501,12 +501,10 @@ impl cmp::PartialEq for ObjVec {
 }
 
 fn vec_init(args: &mut [Value]) -> Result<Value, Error> {
-    let class = if let Value::ObjInstance(c) = args[0] {
-        c.borrow().class
-    } else {
-        unreachable!()
-    };
-    let vec = new_root_obj_vec(class);
+    let instance = args[0]
+        .try_as_obj_instance()
+        .expect("Expected ObjInstance.");
+    let vec = new_root_obj_vec(instance.borrow().class);
     vec.borrow_mut().elements = args.iter().skip(1).map(|v| *v).collect();
     Ok(Value::ObjVec(vec.as_gc()))
 }
@@ -520,11 +518,7 @@ fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
 
-    let vec = if let Value::ObjVec(v) = args[0] {
-        v
-    } else {
-        unreachable!()
-    };
+    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
 
     if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
         return error!(ErrorKind::RuntimeError, "Vec max capcity reached.");
@@ -544,11 +538,7 @@ fn vec_pop(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
 
-    let vec = if let Value::ObjVec(v) = args[0] {
-        v
-    } else {
-        unreachable!()
-    };
+    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let mut borrowed_vec = vec.borrow_mut();
     borrowed_vec.elements.pop().ok_or(Error::with_message(
         ErrorKind::RuntimeError,
@@ -562,11 +552,7 @@ fn vec_get(args: &mut [Value]) -> Result<Value, Error> {
         return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
     }
 
-    let vec = if let Value::ObjVec(v) = args[0] {
-        v
-    } else {
-        unreachable!()
-    };
+    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
 
     let index = get_vec_index(vec, args[1])?;
     let borrowed_vec = vec.borrow();
@@ -582,12 +568,7 @@ fn vec_set(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
 
-    let vec = if let Value::ObjVec(v) = args[0] {
-        v
-    } else {
-        unreachable!()
-    };
-
+    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let index = get_vec_index(vec, args[1])?;
     let mut borrowed_vec = vec.borrow_mut();
     borrowed_vec.elements[index] = args[2];
@@ -603,12 +584,7 @@ fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
 
-    let vec = if let Value::ObjVec(v) = args[0] {
-        v
-    } else {
-        unreachable!()
-    };
-
+    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let borrowed_vec = vec.borrow();
     Ok(Value::from(borrowed_vec.elements.len() as f64))
 }

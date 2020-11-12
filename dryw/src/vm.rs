@@ -208,10 +208,9 @@ impl Vm {
 
         macro_rules! read_string {
             () => {
-                match read_constant!() {
-                    Value::ObjString(s) => s,
-                    _ => panic!("Expected variable name."),
-                }
+                read_constant!()
+                    .try_as_obj_string()
+                    .expect("Expected variable name.")
             };
         }
 
@@ -287,15 +286,9 @@ impl Vm {
                     let name = read_string!();
                     let value = *self.peek(0);
                     let prev = self.globals.insert(name, value);
-                    match prev {
-                        Some(_) => {}
-                        None => {
-                            self.globals.remove(&name);
-                            return error!(
-                                ErrorKind::RuntimeError,
-                                "Undefined variable '{}'.", *name
-                            );
-                        }
+                    if prev.is_none() {
+                        self.globals.remove(&name);
+                        return error!(ErrorKind::RuntimeError, "Undefined variable '{}'.", *name);
                     }
                 }
 
@@ -329,14 +322,10 @@ impl Vm {
                         self.bind_method(vec.borrow().class, name)?;
                         continue;
                     }
-                    let instance = match *self.peek(0) {
-                        Value::ObjInstance(ptr) => ptr,
-                        _ => {
-                            return error!(
-                                ErrorKind::RuntimeError,
-                                "Only instances have properties.",
-                            );
-                        }
+                    let instance = if let Some(ptr) = self.peek(0).try_as_obj_instance() {
+                        ptr
+                    } else {
+                        return error!(ErrorKind::RuntimeError, "Only instances have properties.",);
                     };
                     let name = read_string!();
 
@@ -350,11 +339,10 @@ impl Vm {
                 }
 
                 OpCode::SetProperty => {
-                    let instance = match *self.peek(1) {
-                        Value::ObjInstance(ptr) => ptr,
-                        _ => {
-                            return error!(ErrorKind::RuntimeError, "Only instances have fields.");
-                        }
+                    let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
+                        ptr
+                    } else {
+                        return error!(ErrorKind::RuntimeError, "Only instances have fields.");
                     };
                     let name = read_string!();
                     let value = *self.peek(0);
@@ -367,10 +355,7 @@ impl Vm {
 
                 OpCode::GetSuper => {
                     let name = read_string!();
-                    let superclass = match self.pop() {
-                        Value::ObjClass(ptr) => ptr,
-                        _ => unreachable!(),
-                    };
+                    let superclass = self.pop().try_as_obj_class().expect("Expected ObjClass.");
 
                     self.bind_method(superclass, name)?;
                 }
@@ -422,16 +407,10 @@ impl Vm {
 
                 OpCode::Negate => {
                     let value = self.pop();
-                    match value {
-                        Value::Number(underlying) => {
-                            self.push(Value::Number(-underlying));
-                        }
-                        _ => {
-                            return error!(
-                                ErrorKind::RuntimeError,
-                                "Unary operand must be a number.",
-                            );
-                        }
+                    if let Some(num) = value.try_as_number() {
+                        self.push(Value::Number(-num));
+                    } else {
+                        return error!(ErrorKind::RuntimeError, "Unary operand must be a number.",);
                     }
                 }
 
@@ -528,20 +507,12 @@ impl Vm {
                 }
 
                 OpCode::Inherit => {
-                    let superclass_pos = self.stack.len() - 2;
-                    let superclass = match self.stack[superclass_pos] {
-                        Value::ObjClass(ptr) => ptr,
-                        _ => {
-                            return error!(
-                                ErrorKind::RuntimeError,
-                                "Superclass must be a class.",
-                            );
-                        }
+                    let superclass = if let Some(ptr) = self.peek(1).try_as_obj_class() {
+                        ptr
+                    } else {
+                        return error!(ErrorKind::RuntimeError, "Superclass must be a class.");
                     };
-                    let subclass = match self.peek(0) {
-                        Value::ObjClass(ptr) => *ptr,
-                        _ => unreachable!(),
-                    };
+                    let subclass = self.peek(0).try_as_obj_class().expect("Expected ObjClass.");
                     for (name, value) in superclass.borrow().methods.iter() {
                         subclass.borrow_mut().methods.insert(name.clone(), *value);
                     }
