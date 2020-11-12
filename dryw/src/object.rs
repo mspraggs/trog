@@ -524,7 +524,10 @@ fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
     };
 
     if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
-        return Err(Error::with_message(ErrorKind::RuntimeError, "Vec max capcity reached."));
+        return Err(Error::with_message(
+            ErrorKind::RuntimeError,
+            "Vec max capcity reached.",
+        ));
     }
 
     vec.borrow_mut().elements.push(args[1]);
@@ -602,32 +605,25 @@ fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
 }
 
 fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error> {
-    let vec_len = vec.borrow_mut().elements.len();
+    let vec_len = vec.borrow_mut().elements.len() as isize;
     let index = if let Value::Number(n) = value {
-        if n >= 0.0 {
-            if n.floor() != n {
-                let msg = format!("Expected an integer but found '{}'.", n);
-                return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
-            }
-            n as usize
-        } else {
-            if n.ceil() != n {
-                let msg = format!("Expected an integer but found '{}'.", n);
-                return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
-            }
-            ((n as isize + vec_len as isize) % vec_len as isize) as usize
+        if n.trunc() != n {
+            let msg = format!("Expected an integer but found '{}'.", n);
+            return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
         }
+        let n = if n < 0.0 { n as isize + vec_len } else { n as isize };
+        n
     } else {
         let msg = format!("Expected an integer but found '{}'.", value);
         return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
     };
 
-    if index >= vec_len {
+    if index < 0 || index >= vec_len {
         return Err(Error::with_message(
-            ErrorKind::ValueError,
+            ErrorKind::IndexError,
             "Vec index parameter out of bounds",
         ));
     }
 
-    Ok(index)
+    Ok(index as usize)
 }
