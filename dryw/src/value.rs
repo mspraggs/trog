@@ -46,6 +46,79 @@ impl Value {
             _ => true,
         }
     }
+
+    pub fn try_as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Boolean(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_number(&self) -> Option<f64> {
+        match self {
+            Value::Number(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_obj_string(&self) -> Option<Gc<ObjString>> {
+        match self {
+            Value::ObjString(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_obj_function(&self) -> Option<Gc<ObjFunction>> {
+        match self {
+            Value::ObjFunction(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_obj_native(&self) -> Option<Gc<ObjNative>> {
+        match self {
+            Value::ObjNative(innert) => Some(*innert),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_closure(&self) -> Option<Gc<RefCell<ObjClosure>>> {
+        match self {
+            Value::ObjClosure(innert) => Some(*innert),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_class(&self) -> Option<Gc<RefCell<ObjClass>>> {
+        match self {
+            Value::ObjClass(innert) => Some(*innert),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_instance(&self) -> Option<Gc<RefCell<ObjInstance>>> {
+        match self {
+            Value::ObjInstance(innert) => Some(*innert),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_bound_method(
+        &self,
+    ) -> Option<Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>> {
+        match self {
+            Value::ObjBoundMethod(innert) => Some(*innert),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_bound_native(&self) -> Option<Gc<RefCell<ObjBoundMethod<ObjNative>>>> {
+        match self {
+            Value::ObjBoundNative(innert) => Some(*innert),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_vec(&self) -> Option<Gc<RefCell<ObjVec>>> {
+        match self {
+            Value::ObjVec(innert) => Some(*innert),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
