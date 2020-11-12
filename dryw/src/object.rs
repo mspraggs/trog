@@ -513,8 +513,11 @@ fn vec_init(args: &mut [Value]) -> Result<Value, Error> {
 
 fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 2 {
-        let msg = format!("Expected 1 parameter but got {}", args.len() - 1);
-        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 1 parameter but got {}",
+            args.len() - 1
+        );
     }
 
     let vec = if let Value::ObjVec(v) = args[0] {
@@ -524,10 +527,7 @@ fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
     };
 
     if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
-        return Err(Error::with_message(
-            ErrorKind::RuntimeError,
-            "Vec max capcity reached.",
-        ));
+        return error!(ErrorKind::RuntimeError, "Vec max capcity reached.");
     }
 
     vec.borrow_mut().elements.push(args[1]);
@@ -537,8 +537,11 @@ fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
 
 fn vec_pop(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 1 {
-        let msg = format!("Expected 0 parameters but got {}", args.len() - 1);
-        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 0 parameters but got {}",
+            args.len() - 1
+        );
     }
 
     let vec = if let Value::ObjVec(v) = args[0] {
@@ -572,8 +575,11 @@ fn vec_get(args: &mut [Value]) -> Result<Value, Error> {
 
 fn vec_set(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 3 {
-        let msg = format!("Expected 2 parameters but got {}", args.len() - 1);
-        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 2 parameters but got {}",
+            args.len() - 1
+        );
     }
 
     let vec = if let Value::ObjVec(v) = args[0] {
@@ -590,8 +596,11 @@ fn vec_set(args: &mut [Value]) -> Result<Value, Error> {
 
 fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 1 {
-        let msg = format!("Expected 0 parameters but got {}", args.len() - 1);
-        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 0 parameters but got {}",
+            args.len() - 1
+        );
     }
 
     let vec = if let Value::ObjVec(v) = args[0] {
@@ -608,21 +617,26 @@ fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error>
     let vec_len = vec.borrow_mut().elements.len() as isize;
     let index = if let Value::Number(n) = value {
         if n.trunc() != n {
-            let msg = format!("Expected an integer but found '{}'.", n);
-            return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
+            return error!(
+                ErrorKind::ValueError,
+                "Expected an integer but found '{}'.", n
+            );
         }
-        let n = if n < 0.0 { n as isize + vec_len } else { n as isize };
+        let n = if n < 0.0 {
+            n as isize + vec_len
+        } else {
+            n as isize
+        };
         n
     } else {
-        let msg = format!("Expected an integer but found '{}'.", value);
-        return Err(Error::with_message(ErrorKind::ValueError, msg.as_str()));
+        return error!(
+            ErrorKind::ValueError,
+            "Expected an integer but found '{}'.", value
+        );
     };
 
     if index < 0 || index >= vec_len {
-        return Err(Error::with_message(
-            ErrorKind::IndexError,
-            "Vec index parameter out of bounds",
-        ));
+        return error!(ErrorKind::IndexError, "Vec index parameter out of bounds");
     }
 
     Ok(index as usize)

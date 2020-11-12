@@ -78,3 +78,13 @@ impl fmt::Display for Error {
         Ok(())
     }
 }
+
+#[macro_export]
+macro_rules! error {
+    ($kind:expr, $msg:literal) => {{
+        Err(Error::with_message($kind, $msg))
+    }};
+    ($kind:expr, $format:literal, $($args:expr),*) => {{
+        Err(Error::with_message($kind, format!($format, $($args),*).as_str()))
+    }};
+}

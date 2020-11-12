@@ -86,10 +86,7 @@ fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
-            return Err(Error::with_message(
-                ErrorKind::RuntimeError,
-                "Error calling native function.",
-            ));
+            return error!(ErrorKind::RuntimeError, "Error calling native function.");
         }
     };
     let seconds = duration.as_secs_f64();
@@ -99,10 +96,7 @@ fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
 
 fn default_print(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 2 {
-        return Err(Error::with_message(
-            ErrorKind::RuntimeError,
-            "Expected one argument to 'print'.",
-        ));
+        return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
     }
     println!("{}", args[1]);
     Ok(Value::None)
@@ -174,8 +168,8 @@ impl Vm {
                             Value::Number(second)
                         ) => (first, second),
                         _ => {
-                            return Err(
-                                Error::with_message(ErrorKind::RuntimeError, "Binary operands must both be numbers.")
+                            return error!(
+                                ErrorKind::RuntimeError, "Binary operands must both be numbers."
                             );
                         }
                     };
@@ -273,8 +267,10 @@ impl Vm {
                     let value = match self.globals.get(&name) {
                         Some(value) => *value,
                         None => {
-                            let msg = format!("Undefined variable '{}'.", *name);
-                            return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+                            return error!(
+                                ErrorKind::RuntimeError,
+                                "Undefined variable '{}'.", *name
+                            );
                         }
                     };
                     self.push(value);
@@ -295,8 +291,10 @@ impl Vm {
                         Some(_) => {}
                         None => {
                             self.globals.remove(&name);
-                            let msg = format!("Undefined variable '{}'.", *name);
-                            return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
+                            return error!(
+                                ErrorKind::RuntimeError,
+                                "Undefined variable '{}'.", *name
+                            );
                         }
                     }
                 }
@@ -334,10 +332,10 @@ impl Vm {
                     let instance = match *self.peek(0) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
-                            return Err(Error::with_message(
+                            return error!(
                                 ErrorKind::RuntimeError,
                                 "Only instances have properties.",
-                            ));
+                            );
                         }
                     };
                     let name = read_string!();
@@ -355,10 +353,7 @@ impl Vm {
                     let instance = match *self.peek(1) {
                         Value::ObjInstance(ptr) => ptr,
                         _ => {
-                            return Err(Error::with_message(
-                                ErrorKind::RuntimeError,
-                                "Only instances have fields.",
-                            ));
+                            return error!(ErrorKind::RuntimeError, "Only instances have fields.");
                         }
                     };
                     let name = read_string!();
@@ -406,10 +401,10 @@ impl Vm {
                         }
 
                         _ => {
-                            return Err(Error::with_message(
+                            return error!(
                                 ErrorKind::RuntimeError,
                                 "Binary operands must be two numbers or two strings.",
-                            ));
+                            );
                         }
                     }
                 }
@@ -432,10 +427,10 @@ impl Vm {
                             self.push(Value::Number(-underlying));
                         }
                         _ => {
-                            return Err(Error::with_message(
+                            return error!(
                                 ErrorKind::RuntimeError,
                                 "Unary operand must be a number.",
-                            ));
+                            );
                         }
                     }
                 }
@@ -537,10 +532,10 @@ impl Vm {
                     let superclass = match self.stack[superclass_pos] {
                         Value::ObjClass(ptr) => ptr,
                         _ => {
-                            return Err(Error::with_message(
+                            return error!(
                                 ErrorKind::RuntimeError,
                                 "Superclass must be a class.",
-                            ));
+                            );
                         }
                     };
                     let subclass = match self.peek(0) {
@@ -584,8 +579,10 @@ impl Vm {
                 } else if let Some(Value::ObjNative(initialiser)) = init {
                     return self.call_value(Value::ObjNative(*initialiser), arg_count);
                 } else if arg_count != 0 {
-                    let msg = format!("Expected 0 arguments but got {}.", arg_count);
-                    return Err(Error::with_message(ErrorKind::TypeError, msg.as_str()));
+                    return error!(
+                        ErrorKind::TypeError,
+                        "Expected 0 arguments but got {}.", arg_count
+                    );
                 }
 
                 Ok(())
@@ -602,10 +599,7 @@ impl Vm {
                 Ok(())
             }
 
-            _ => Err(Error::with_message(
-                ErrorKind::TypeError,
-                "Can only call functions and classes.",
-            )),
+            _ => error!(ErrorKind::TypeError, "Can only call functions and classes."),
         }
     }
 
@@ -622,8 +616,7 @@ impl Vm {
                 _ => unreachable!(),
             };
         }
-        let msg = format!("Undefined property '{}'.", *name);
-        Err(Error::with_message(ErrorKind::AttributeError, msg.as_str()))
+        error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name)
     }
 
     fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), Error> {
@@ -641,28 +634,22 @@ impl Vm {
                 let class = { vec.borrow().class };
                 self.invoke_from_class(class, name, arg_count)
             }
-            _ => Err(Error::with_message(
-                ErrorKind::ValueError,
-                "Only instances have methods.",
-            )),
+            _ => error!(ErrorKind::ValueError, "Only instances have methods."),
         }
     }
 
     fn call(&mut self, closure: Gc<RefCell<ObjClosure>>, arg_count: usize) -> Result<(), Error> {
         if arg_count as u32 + 1 != closure.borrow().function.arity {
-            let msg = format!(
+            return error!(
+                ErrorKind::TypeError,
                 "Expected {} arguments but got {}.",
                 closure.borrow().function.arity - 1,
                 arg_count
             );
-            return Err(Error::with_message(ErrorKind::TypeError, msg.as_str()));
         }
 
         if self.frames.len() == FRAMES_MAX {
-            return Err(Error::with_message(
-                ErrorKind::IndexError,
-                "Stack overflow.",
-            ));
+            return error!(ErrorKind::IndexError, "Stack overflow.");
         }
 
         self.active_chunk_index = closure.borrow().function.chunk_index;
@@ -736,8 +723,7 @@ impl Vm {
                 Value::ObjBoundNative(object::new_gc_obj_bound_method(instance, *ptr))
             }
             None => {
-                let msg = format!("Undefined property '{}'.", *name);
-                return Err(Error::with_message(ErrorKind::AttributeError, msg.as_str()));
+                return error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
             }
             _ => unreachable!(),
         };

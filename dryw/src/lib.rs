@@ -17,6 +17,7 @@ mod chunk;
 mod common;
 pub mod compiler;
 mod debug;
+#[macro_use]
 pub mod error;
 mod hash;
 pub mod memory;
