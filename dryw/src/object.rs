@@ -20,6 +20,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::ManuallyDrop;
 
+use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Root};
@@ -521,6 +522,11 @@ fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
     } else {
         unreachable!()
     };
+
+    if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
+        return Err(Error::with_message(ErrorKind::RuntimeError, "Vec max capcity reached."));
+    }
+
     vec.borrow_mut().elements.push(args[1]);
 
     Ok(args[0])
