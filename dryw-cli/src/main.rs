@@ -33,7 +33,10 @@ fn repl(vm: &mut vm::Vm) {
                     println!();
                     process::exit(0);
                 }
-                vm::interpret(vm, buffer).unwrap_or_default();
+                match vm::interpret(vm, buffer) {
+                    Ok(_) => {}
+                    Err(error) => eprint!("{}", error),
+                }
             }
             _ => {
                 eprintln!("Failed to read from stdin.");
