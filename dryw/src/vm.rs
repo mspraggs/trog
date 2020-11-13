@@ -102,10 +102,18 @@ fn default_print(args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::None)
 }
 
+fn string(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 2 {
+        return error!(ErrorKind::RuntimeError, "Expected one argument to 'String'.");
+    }
+    Ok(Value::ObjString(object::new_gc_obj_string(format!("{}", args[1]).as_str())))
+}
+
 pub fn new_root_vm() -> Root<Vm> {
     let mut vm = memory::allocate_root(Vm::new());
     vm.define_native("clock", Box::new(clock_native));
     vm.define_native("print", Box::new(default_print));
+    vm.define_native("String", Box::new(string));
     let obj_vec_class = object::new_root_obj_vec_class();
     vm.set_global("Vec", Value::ObjClass(obj_vec_class.as_gc()));
     vm
