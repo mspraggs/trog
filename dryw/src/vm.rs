@@ -26,7 +26,9 @@ use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::hash::BuildPassThroughHasher;
 use crate::memory::{self, Gc, GcManaged, Root};
-use crate::object::{self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjString, ObjUpvalue};
+use crate::object::{
+    self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjString, ObjUpvalue,
+};
 use crate::value::Value;
 
 const FRAMES_MAX: usize = 64;
@@ -104,9 +106,14 @@ fn default_print(args: &mut [Value]) -> Result<Value, Error> {
 
 fn string(args: &mut [Value]) -> Result<Value, Error> {
     if args.len() != 2 {
-        return error!(ErrorKind::RuntimeError, "Expected one argument to 'String'.");
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected one argument to 'String'."
+        );
     }
-    Ok(Value::ObjString(object::new_gc_obj_string(format!("{}", args[1]).as_str())))
+    Ok(Value::ObjString(object::new_gc_obj_string(
+        format!("{}", args[1]).as_str(),
+    )))
 }
 
 pub fn new_root_vm() -> Root<Vm> {
@@ -539,12 +546,12 @@ impl Vm {
         match value {
             Value::ObjBoundMethod(bound) => {
                 *self.peek_mut(arg_count) = bound.borrow().receiver;
-                self.call(bound.borrow().method, arg_count)
+                self.call_closure(bound.borrow().method, arg_count)
             }
 
             Value::ObjBoundNative(bound) => {
                 *self.peek_mut(arg_count) = bound.borrow().receiver;
-                self.call_value(Value::ObjNative(bound.borrow().method), arg_count)
+                self.call_native(bound.borrow().method, arg_count)
             }
 
             Value::ObjClass(class) => {
@@ -554,9 +561,9 @@ impl Vm {
                 let borrowed_class = class.borrow();
                 let init = borrowed_class.methods.get(&self.init_string);
                 if let Some(Value::ObjClosure(initialiser)) = init {
-                    return self.call(*initialiser, arg_count);
+                    return self.call_closure(*initialiser, arg_count);
                 } else if let Some(Value::ObjNative(initialiser)) = init {
-                    return self.call_value(Value::ObjNative(*initialiser), arg_count);
+                    return self.call_native(*initialiser, arg_count);
                 } else if arg_count != 0 {
                     return error!(
                         ErrorKind::TypeError,
@@ -567,16 +574,9 @@ impl Vm {
                 Ok(())
             }
 
-            Value::ObjClosure(function) => self.call(function, arg_count),
+            Value::ObjClosure(function) => self.call_closure(function, arg_count),
 
-            Value::ObjNative(mut wrapped) => {
-                let function = wrapped.function.as_mut();
-                let frame_begin = self.stack.len() - arg_count - 1;
-                let result = function(&mut self.stack[frame_begin..frame_begin + arg_count + 1])?;
-                self.stack.truncate(frame_begin);
-                self.push(result);
-                Ok(())
-            }
+            Value::ObjNative(wrapped) => self.call_native(wrapped, arg_count),
 
             _ => error!(ErrorKind::TypeError, "Can only call functions and classes."),
         }
@@ -590,8 +590,8 @@ impl Vm {
     ) -> Result<(), Error> {
         if let Some(value) = class.borrow().methods.get(&name) {
             return match value {
-                Value::ObjClosure(closure) => self.call(*closure, arg_count),
-                Value::ObjNative(native) => self.call_value(Value::ObjNative(*native), arg_count),
+                Value::ObjClosure(closure) => self.call_closure(*closure, arg_count),
+                Value::ObjNative(native) => self.call_native(*native, arg_count),
                 _ => unreachable!(),
             };
         }
@@ -617,7 +617,11 @@ impl Vm {
         }
     }
 
-    fn call(&mut self, closure: Gc<RefCell<ObjClosure>>, arg_count: usize) -> Result<(), Error> {
+    fn call_closure(
+        &mut self,
+        closure: Gc<RefCell<ObjClosure>>,
+        arg_count: usize,
+    ) -> Result<(), Error> {
         if arg_count as u32 + 1 != closure.borrow().function.arity {
             return error!(
                 ErrorKind::TypeError,
@@ -638,6 +642,15 @@ impl Vm {
             slot_base: self.stack.len() - arg_count - 1,
         });
         self.ip = 0;
+        Ok(())
+    }
+
+    fn call_native(&mut self, mut native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
+        let function = native.function.as_mut();
+        let frame_begin = self.stack.len() - arg_count - 1;
+        let result = function(&mut self.stack[frame_begin..frame_begin + arg_count + 1])?;
+        self.stack.truncate(frame_begin);
+        self.push(result);
         Ok(())
     }
 
