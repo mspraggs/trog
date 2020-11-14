@@ -13,7 +13,9 @@
  * limitations under the License.
  */
 
-#[derive(Copy, Clone, PartialEq)]
+use crate::common;
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u32)]
 pub enum TokenKind {
     LeftParen,
@@ -43,6 +45,7 @@ pub enum TokenKind {
     LessEqual,
     Identifier,
     Str,
+    Interpolation,
     Number,
     And,
     Class,
@@ -102,6 +105,7 @@ pub struct Scanner {
     start: usize,
     current: usize,
     line: usize,
+    parantheses: Vec<usize>,
 }
 
 impl Scanner {
@@ -111,6 +115,7 @@ impl Scanner {
             start: 0,
             current: 0,
             line: 1,
+            parantheses: Vec::new(),
         }
     }
 
@@ -135,8 +140,25 @@ impl Scanner {
         match c {
             "(" => self.make_token(TokenKind::LeftParen),
             ")" => self.make_token(TokenKind::RightParen),
-            "{" => self.make_token(TokenKind::LeftBrace),
-            "}" => self.make_token(TokenKind::RightBrace),
+            "{" => {
+                if let Some(count) = self.parantheses.last_mut() {
+                    *count += 1;
+                }
+                self.make_token(TokenKind::LeftBrace)
+            }
+            "}" => {
+                if let Some(count) = self.parantheses.last_mut() {
+                    *count -= 1;
+                    if *count == 0 {
+                        self.parantheses.pop();
+                        self.string()
+                    } else {
+                        self.make_token(TokenKind::RightBrace)
+                    }
+                } else {
+                    self.make_token(TokenKind::RightBrace)
+                }
+            }
             "[" => self.make_token(TokenKind::LeftBracket),
             "]" => self.make_token(TokenKind::RightBracket),
             ";" => self.make_token(TokenKind::SemiColon),
@@ -367,11 +389,47 @@ impl Scanner {
     }
 
     fn string(&mut self) -> Token {
+        let mut buffer = String::new();
+
         while !self.is_at_end() && self.peek() != "\"" {
-            if self.peek() == "\n" {
-                self.line += 1;
+            let s = self.advance();
+
+            match s {
+                "$" => {
+                    let s = self.advance();
+                    if s != "{" {
+                        return self.error_token("Expected '{' in string interpolation.");
+                    }
+                    if self.parantheses.len() >= common::INTERPOLATION_DEPTH_MAX {
+                        return self.error_token("Max interpolation depth exceeded.");
+                    }
+                    self.parantheses.push(1);
+                    return Token {
+                        line: self.line,
+                        source: buffer,
+                        kind: TokenKind::Interpolation,
+                    };
+                }
+                "\\" => {
+                    let s = self.advance();
+                    match s {
+                        "$" => buffer.push_str("$"),
+                        "t" => buffer.push_str("\t"),
+                        "n" => buffer.push_str("\n"),
+                        "r" => buffer.push_str("\r"),
+                        "\"" => buffer.push_str("\""),
+                        "0" => buffer.push_str("\0"),
+                        _ => {
+                            return self.error_token("Invalid escape sequence.");
+                        }
+                    }
+                }
+                "\n" => {
+                    buffer.push_str(s);
+                    self.line += 1;
+                }
+                _ => buffer.push_str(s),
             }
-            self.advance();
         }
 
         if self.is_at_end() {
@@ -379,7 +437,11 @@ impl Scanner {
         }
 
         self.advance();
-        self.make_token(TokenKind::Str)
+        Token {
+            line: self.line,
+            source: buffer,
+            kind: TokenKind::Str,
+        }
     }
 
     fn get_next_char_boundary(&self, start: usize) -> usize {

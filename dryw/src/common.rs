@@ -19,3 +19,4 @@ pub const JUMP_SIZE_MAX: usize = u16::MAX as usize + 1;
 pub const HEAP_INIT_BYTES_MAX: usize = 65536;
 pub const HEAP_GROWTH_FACTOR: usize = 2;
 pub const VEC_ELEMS_MAX: usize = isize::MAX as usize + 1;
+pub const INTERPOLATION_DEPTH_MAX: usize = 8;

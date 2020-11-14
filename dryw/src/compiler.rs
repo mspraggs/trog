@@ -210,7 +210,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 44] = [
+const RULES: [ParseRule; 45] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -370,6 +370,12 @@ const RULES: [ParseRule; 44] = [
     // Str
     ParseRule {
         prefix: Some(Parser::string),
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Interpolation
+    ParseRule {
+        prefix: Some(Parser::interpolation),
         infix: None,
         precedence: Precedence::None,
     },
@@ -1351,10 +1357,33 @@ impl<'a> Parser<'a> {
     }
 
     fn string(s: &mut Parser, _can_assign: bool) {
-        let value = Value::ObjString(object::new_gc_obj_string(
-            &s.previous.source[1..s.previous.source.len() - 1],
-        ));
+        let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
         s.emit_constant(value);
+    }
+
+    fn interpolation(s: &mut Parser, _can_assign: bool) {
+        let mut arg_count = 0;
+        loop {
+            if !s.previous.source.is_empty() {
+                let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
+                s.emit_constant(value);
+                arg_count += 1;
+            }
+            s.expression();
+            arg_count += 1;
+            if !s.match_token(TokenKind::Interpolation) {
+                break;
+            }
+        }
+        
+        s.advance();
+        if !s.previous.source.is_empty() {
+            let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
+            s.emit_constant(value);
+            arg_count += 1;
+        }
+
+        s.emit_bytes([OpCode::BuildString as u8, arg_count as u8]);
     }
 
     fn variable(s: &mut Parser, can_assign: bool) {

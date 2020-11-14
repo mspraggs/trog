@@ -1,0 +1,4 @@
+// [line 4] Error: Max interpolation depth exceeded.
+// 0
+print("${"${"${"${"${"${"${"${"this is fine"}"}"}"}"}"}"}"}");
+print("${"${"${"${"${"${"${"${"${"this is not"}"}"}"}"}"}"}"}"}"}");

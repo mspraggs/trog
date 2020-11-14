@@ -73,6 +73,10 @@ impl ObjString {
     pub fn len(&self) -> usize {
         self.string.len()
     }
+
+    pub fn as_str(&self) -> &str {
+        self.string.as_str()
+    }
 }
 
 impl From<&str> for ObjString {
