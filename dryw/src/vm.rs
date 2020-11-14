@@ -60,8 +60,8 @@ impl GcManaged for CallFrame {
 
 pub struct Vm {
     ip: usize,
-    active_chunk_index: usize,
-    chunks: Vec<Chunk>,
+    active_chunk: Gc<Chunk>,
+    chunks: Vec<Root<Chunk>>,
     frames: Vec<CallFrame>,
     stack: Vec<Value>,
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
@@ -73,7 +73,7 @@ impl Default for Vm {
     fn default() -> Self {
         Vm {
             ip: 0,
-            active_chunk_index: 0,
+            active_chunk: memory::allocate(Chunk::new()),
             chunks: Vec::new(),
             frames: Vec::with_capacity(FRAMES_MAX),
             stack: Vec::with_capacity(STACK_MAX),
@@ -143,7 +143,7 @@ impl Vm {
     }
 
     pub fn new_chunk(&mut self) -> usize {
-        self.chunks.push(Chunk::new());
+        self.chunks.push(memory::allocate_root(Chunk::new()));
         self.chunks.len() - 1
     }
 
@@ -196,7 +196,7 @@ impl Vm {
         macro_rules! read_byte {
             () => {{
                 let ip = self.ip;
-                let ret = self.active_chunk().code[ip];
+                let ret = self.active_chunk.code[ip];
                 self.ip += 1;
                 ret
             }};
@@ -205,7 +205,7 @@ impl Vm {
         macro_rules! read_short {
             () => {{
                 let ret = u16::from_ne_bytes(
-                    (&self.active_chunk().code[self.ip..self.ip + 2])
+                    (&self.active_chunk.code[self.ip..self.ip + 2])
                         .try_into()
                         .unwrap(),
                 );
@@ -217,7 +217,7 @@ impl Vm {
         macro_rules! read_constant {
             () => {{
                 let index = read_byte!() as usize;
-                self.active_chunk().constants[index]
+                self.active_chunk.constants[index]
             }};
         }
 
@@ -237,7 +237,7 @@ impl Vm {
                 }
                 println!();
                 let ip = self.ip;
-                debug::disassemble_instruction(self.active_chunk(), ip);
+                debug::disassemble_instruction(&self.active_chunk, ip);
             }
             let instruction = OpCode::from(read_byte!());
 
@@ -469,13 +469,13 @@ impl Vm {
                     let arg_count = read_byte!() as usize;
                     self.call_value(*self.peek(arg_count), arg_count)?;
                 }
-
+                
                 OpCode::Invoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
                     self.invoke(method, arg_count)?;
                 }
-
+                
                 OpCode::SuperInvoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
@@ -527,7 +527,7 @@ impl Vm {
                         return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
-                    self.active_chunk_index = prev_chunk_index;
+                    self.active_chunk = self.chunks[prev_chunk_index].as_gc();
                     self.ip = prev_ip;
 
                     self.stack.truncate(prev_stack_size);
@@ -654,7 +654,7 @@ impl Vm {
             return error!(ErrorKind::IndexError, "Stack overflow.");
         }
 
-        self.active_chunk_index = closure.borrow().function.chunk_index;
+        self.active_chunk = self.chunks[closure.borrow().function.chunk_index].as_gc();
         self.frames.push(CallFrame {
             closure,
             prev_ip: self.ip,
@@ -767,10 +767,6 @@ impl Vm {
         }
 
         self.open_upvalues.retain(|u| u.borrow().is_open());
-    }
-
-    fn active_chunk(&self) -> &Chunk {
-        &self.chunks[self.active_chunk_index]
     }
 
     fn frame(&self) -> &CallFrame {
