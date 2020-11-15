@@ -1,7 +1,0 @@
-// baz
-// 0
-class Foo {
-fn bar(self) { return self; }
-fn baz(self) { return "baz"; }
-}
-print(Foo().bar().baz());
