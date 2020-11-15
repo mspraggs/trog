@@ -2,7 +2,7 @@
 // [line 10] in script
 // 70
 class Foo {
-  fn init(self, a, b) {
+  fn __init__(self, a, b) {
     self.a = a;
     self.b = b;
   }

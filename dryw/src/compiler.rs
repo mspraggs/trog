@@ -653,7 +653,7 @@ impl<'a> Parser<'a> {
         let previous = self.previous.clone();
         let constant = self.identifier_constant(&previous);
 
-        let kind = if self.previous.source == "init" {
+        let kind = if self.previous.source == "__init__" {
             FunctionKind::Initialiser
         } else {
             FunctionKind::Method
@@ -1304,9 +1304,9 @@ impl<'a> Parser<'a> {
 
         let (name, num_args) = if can_assign && s.match_token(TokenKind::Equal) {
             s.expression();
-            (s.identifier_constant(&Token::from_string("set")), 2)
+            (s.identifier_constant(&Token::from_string("__setitem__")), 2)
         } else {
-            (s.identifier_constant(&Token::from_string("get")), 1)
+            (s.identifier_constant(&Token::from_string("__getitem__")), 1)
         };
         s.emit_bytes([OpCode::Invoke as u8, name]);
         s.emit_byte(num_args as u8);

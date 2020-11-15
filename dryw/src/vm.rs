@@ -79,7 +79,7 @@ impl Default for Vm {
             stack: Vec::with_capacity(STACK_MAX),
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
-            init_string: object::new_gc_obj_string("init"),
+            init_string: object::new_gc_obj_string("__init__"),
         }
     }
 }

@@ -2,11 +2,11 @@
 // Foo instance
 // 0
 class Foo {
-  fn init(self) {
-    fn init() {
+  fn __init__(self) {
+    fn __init__() {
       return "bar";
     }
-    print(init());
+    print(__init__());
   }
 }
 print(Foo());

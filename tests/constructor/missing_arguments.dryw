@@ -2,6 +2,6 @@
 // [line 7] in script
 // 70
 class Foo {
-  fn init(self, a, b) {}
+  fn __init__(self, a, b) {}
 }
 var foo = Foo(1);

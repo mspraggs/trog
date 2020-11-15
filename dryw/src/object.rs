@@ -445,11 +445,11 @@ pub fn new_root_obj_vec(class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjVec>> {
 pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
     let class_name = new_gc_obj_string("Vec");
     let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "init", Box::new(vec_init));
+    add_native_method_to_class(class.as_gc(), "__init__", Box::new(vec_init));
     add_native_method_to_class(class.as_gc(), "push", Box::new(vec_push));
     add_native_method_to_class(class.as_gc(), "pop", Box::new(vec_pop));
-    add_native_method_to_class(class.as_gc(), "get", Box::new(vec_get));
-    add_native_method_to_class(class.as_gc(), "set", Box::new(vec_set));
+    add_native_method_to_class(class.as_gc(), "__getitem__", Box::new(vec_get));
+    add_native_method_to_class(class.as_gc(), "__setitem__", Box::new(vec_set));
     add_native_method_to_class(class.as_gc(), "len", Box::new(vec_len));
     class
 }

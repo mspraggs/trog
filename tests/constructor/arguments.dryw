@@ -1,10 +1,10 @@
-// init
+// __init__
 // 1
 // 2
 // 0
 class Foo {
-  fn init(self, a, b) {
-    print("init");
+  fn __init__(self, a, b) {
+    print("__init__");
     self.a = a;
     self.b = b;
   }

@@ -1,12 +1,12 @@
 // not initializer
 // 0
 class Foo {
-  fn init(arg) {
-    print("Foo.init(" + arg + ")");
-    this.field = "init";
+  fn __init__(arg) {
+    print("Foo.__init__(" + arg + ")");
+    this.field = "__init__";
   }
 }
-fn init() {
+fn __init__() {
   print("not initializer");
 }
-init();
+__init__();

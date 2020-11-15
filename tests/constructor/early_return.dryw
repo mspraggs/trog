@@ -1,9 +1,9 @@
-// init
+// __init__
 // Foo instance
 // 0
 class Foo {
-  fn init(self) {
-    print("init");
+  fn __init__(self) {
+    print("__init__");
     return;
     print("nope");
   }
