@@ -1313,16 +1313,13 @@ impl<'a> Parser<'a> {
     }
 
     fn vector(s: &mut Parser, _can_assign: bool) {
-        let name = s.identifier_constant(&Token::from_string("Vec"));
-        s.emit_bytes([OpCode::GetGlobal as u8, name]);
-
         let num_elems = s.argument_list(
             TokenKind::RightBracket,
             "Cannot have more than 255 Vec elements.",
             "Expected ']' after elements.",
         );
 
-        s.emit_bytes([OpCode::Call as u8, num_elems as u8]);
+        s.emit_bytes([OpCode::BuildVec as u8, num_elems as u8]);
     }
 
     fn unary(s: &mut Parser, _can_assign: bool) {

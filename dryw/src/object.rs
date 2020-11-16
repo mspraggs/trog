@@ -509,7 +509,6 @@ fn vec_init(args: &mut [Value]) -> Result<Value, Error> {
         .try_as_obj_instance()
         .expect("Expected ObjInstance.");
     let vec = new_root_obj_vec(instance.borrow().class);
-    vec.borrow_mut().elements = args.iter().skip(1).map(|v| *v).collect();
     Ok(Value::ObjVec(vec.as_gc()))
 }
 

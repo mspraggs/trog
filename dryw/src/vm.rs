@@ -58,6 +58,10 @@ impl GcManaged for CallFrame {
     }
 }
 
+enum BuiltInClassIndex {
+    ObjVec,
+}
+
 pub struct Vm {
     ip: *const u8,
     active_chunk: Gc<Chunk>,
@@ -67,6 +71,7 @@ pub struct Vm {
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     init_string: Gc<ObjString>,
+    built_in_classes: Vec<Gc<RefCell<ObjClass>>>,
 }
 
 impl Default for Vm {
@@ -80,6 +85,7 @@ impl Default for Vm {
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
             init_string: object::new_gc_obj_string("__init__"),
+            built_in_classes: Vec::new(),
         }
     }
 }
@@ -123,6 +129,7 @@ pub fn new_root_vm() -> Root<Vm> {
     vm.define_native("String", Box::new(string));
     let obj_vec_class = object::new_root_obj_vec_class();
     vm.set_global("Vec", Value::ObjClass(obj_vec_class.as_gc()));
+    vm.built_in_classes.push(obj_vec_class.as_gc());
     vm
 }
 
@@ -447,6 +454,17 @@ impl Vm {
                     self.push(Value::ObjString(object::new_gc_obj_string(
                         new_string.as_str(),
                     )))
+                }
+
+                OpCode::BuildVec => {
+                    let num_operands = read_byte!() as usize;
+                    let vec_class = self.built_in_classes[BuiltInClassIndex::ObjVec as usize];
+                    let vec = object::new_root_obj_vec(vec_class);
+                    let begin = self.stack.len() - num_operands;
+                    let end = self.stack.len();
+                    vec.borrow_mut().elements = self.stack[begin..end].iter().map(|v| *v).collect();
+                    self.stack.truncate(begin);
+                    self.push(Value::ObjVec(vec.as_gc()));
                 }
 
                 OpCode::Jump => {
