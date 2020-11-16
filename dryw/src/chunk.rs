@@ -123,6 +123,10 @@ impl Chunk {
         self.constants.push(value);
         self.constants.len() - 1
     }
+
+    pub(crate) fn code_offset(&self, ptr: *const u8) -> usize {
+        ptr as usize - (&self.code[0] as *const u8) as usize
+    }
 }
 
 impl memory::GcManaged for Chunk {

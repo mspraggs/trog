@@ -15,8 +15,8 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::fmt::Write;
+use std::ptr;
 use std::time;
 
 use crate::chunk::{Chunk, OpCode};
@@ -44,7 +44,7 @@ pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
 
 pub struct CallFrame {
     closure: Gc<RefCell<ObjClosure>>,
-    prev_ip: usize,
+    prev_ip: *const u8,
     slot_base: usize,
 }
 
@@ -59,7 +59,7 @@ impl GcManaged for CallFrame {
 }
 
 pub struct Vm {
-    ip: usize,
+    ip: *const u8,
     active_chunk: Gc<Chunk>,
     chunks: Vec<Root<Chunk>>,
     frames: Vec<CallFrame>,
@@ -72,7 +72,7 @@ pub struct Vm {
 impl Default for Vm {
     fn default() -> Self {
         Vm {
-            ip: 0,
+            ip: ptr::null(),
             active_chunk: memory::allocate(Chunk::new()),
             chunks: Vec::new(),
             frames: Vec::with_capacity(FRAMES_MAX),
@@ -195,22 +195,21 @@ impl Vm {
 
         macro_rules! read_byte {
             () => {{
-                let ip = self.ip;
-                let ret = self.active_chunk.code[ip];
-                self.ip += 1;
-                ret
+                unsafe {
+                    let ret = *self.ip;
+                    self.ip = self.ip.offset(1);
+                    ret
+                }
             }};
         }
 
         macro_rules! read_short {
             () => {{
-                let ret = u16::from_ne_bytes(
-                    (&self.active_chunk.code[self.ip..self.ip + 2])
-                        .try_into()
-                        .unwrap(),
-                );
-                self.ip += 2;
-                ret
+                unsafe {
+                    let ret = u16::from_ne_bytes([*self.ip, *self.ip.offset(1)]);
+                    self.ip = self.ip.offset(2);
+                    ret
+                }
             }};
         }
 
@@ -236,8 +235,8 @@ impl Vm {
                     print!("[ {} ]", v);
                 }
                 println!();
-                let ip = self.ip;
-                debug::disassemble_instruction(&self.active_chunk, ip);
+                let offset = self.active_chunk.code_offset(self.ip);
+                debug::disassemble_instruction(&self.active_chunk, offset);
             }
             let instruction = OpCode::from(read_byte!());
 
@@ -445,37 +444,39 @@ impl Vm {
                     }
                     let new_stack_size = self.stack.len() - num_operands;
                     self.stack.truncate(new_stack_size);
-                    self.push(Value::ObjString(object::new_gc_obj_string(new_string.as_str())))
+                    self.push(Value::ObjString(object::new_gc_obj_string(
+                        new_string.as_str(),
+                    )))
                 }
 
                 OpCode::Jump => {
                     let offset = read_short!();
-                    self.ip += offset as usize;
+                    self.ip = unsafe { self.ip.offset(offset as isize) };
                 }
 
                 OpCode::JumpIfFalse => {
                     let offset = read_short!();
                     if !self.peek(0).as_bool() {
-                        self.ip += offset as usize;
+                        self.ip = unsafe { self.ip.offset(offset as isize) };
                     }
                 }
 
                 OpCode::Loop => {
                     let offset = read_short!();
-                    self.ip -= offset as usize;
+                    self.ip = unsafe { self.ip.offset(-(offset as isize)) };
                 }
 
                 OpCode::Call => {
                     let arg_count = read_byte!() as usize;
                     self.call_value(*self.peek(arg_count), arg_count)?;
                 }
-                
+
                 OpCode::Invoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
                     self.invoke(method, arg_count)?;
                 }
-                
+
                 OpCode::SuperInvoke => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
@@ -660,7 +661,7 @@ impl Vm {
             prev_ip: self.ip,
             slot_base: self.stack.len() - arg_count - 1,
         });
-        self.ip = 0;
+        self.ip = &self.active_chunk.code[0];
         Ok(())
     }
 
@@ -679,21 +680,18 @@ impl Vm {
     }
 
     fn runtime_error(&mut self, error: &mut Error) -> Error {
-        let mut ips: Vec<usize> = self.frames.iter().skip(1).map(|f| f.prev_ip).collect();
+        let mut ips: Vec<*const u8> = self.frames.iter().skip(1).map(|f| f.prev_ip).collect();
         ips.push(self.ip);
 
         for (i, frame) in self.frames.iter().enumerate().rev() {
             let function = frame.closure.borrow().function;
 
             let mut new_msg = String::new();
-            let instruction = ips[i] - 1;
             let chunk_index = frame.closure.borrow().function.chunk_index;
-            write!(
-                new_msg,
-                "[line {}] in ",
-                self.chunks[chunk_index].lines[instruction]
-            )
-            .expect("Unable to write error to buffer.");
+            let chunk = &self.chunks[chunk_index];
+            let instruction = chunk.code_offset(ips[i]) - 1;
+            write!(new_msg, "[line {}] in ", chunk.lines[instruction])
+                .expect("Unable to write error to buffer.");
             if function.name.is_empty() {
                 write!(new_msg, "script").expect("Unable to write error to buffer.");
             } else {
