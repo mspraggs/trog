@@ -435,19 +435,23 @@ impl Vm {
                     }
                 }
 
+                OpCode::FormatString => {
+                    let value = self.peek_mut(0);
+                    if let Some(_) = value.try_as_obj_string() {
+                        continue;
+                    }
+                    *value =
+                        Value::ObjString(object::new_gc_obj_string(format!("{}", value).as_str()));
+                }
+
                 OpCode::BuildString => {
                     let num_operands = read_byte!() as usize;
                     if num_operands == 1 {
-                        if let Some(_) = self.peek(0).try_as_obj_string() {
-                            continue;
-                        }
+                        continue;
                     }
                     let mut new_string = String::new();
                     for pos in (0..num_operands).rev() {
-                        match self.peek(pos) {
-                            Value::ObjString(s) => new_string.push_str(s.as_str()),
-                            v => new_string.push_str(format!("{}", v).as_str()),
-                        }
+                        new_string.push_str(self.peek(pos).try_as_obj_string().unwrap().as_str())
                     }
                     let new_stack_size = self.stack.len() - num_operands;
                     self.stack.truncate(new_stack_size);

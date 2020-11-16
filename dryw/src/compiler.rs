@@ -1367,12 +1367,13 @@ impl<'a> Parser<'a> {
                 arg_count += 1;
             }
             s.expression();
+            s.emit_byte(OpCode::FormatString as u8);
             arg_count += 1;
             if !s.match_token(TokenKind::Interpolation) {
                 break;
             }
         }
-        
+
         s.advance();
         if !s.previous.source.is_empty() {
             let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
