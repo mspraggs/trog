@@ -388,7 +388,41 @@ impl Scanner {
         self.make_token(TokenKind::Number)
     }
 
+    fn read_escaped_bytes(&mut self, num_bytes: usize) -> Result<String, ()> {
+        let mut bytes = Vec::with_capacity(num_bytes);
+        for _ in 0..num_bytes {
+            let mut read_chars = String::new();
+            for _ in 0..2 {
+                if self.is_at_end() {
+                    return Err(());
+                }
+                let slice_start = self.current;
+                let chars = self.advance();
+                if chars == "\"" {
+                    self.current = slice_start;
+                    return Err(());
+                }
+                read_chars.push_str(chars);
+            }
+            let result = u8::from_str_radix(read_chars.as_str(), 16);
+            match result {
+                Ok(b) => bytes.push(b),
+                Err(_) => {
+                    return Err(());
+                }
+            }
+        }
+        if num_bytes == 1 {
+            return Ok(String::from_utf8_lossy(&bytes).to_string());
+        }
+        match String::from_utf8(bytes) {
+            Ok(s) => Ok(s),
+            Err(_) => Err(()),
+        }
+    }
+
     fn string(&mut self) -> Token {
+        let mut error = None;
         let mut buffer = String::new();
 
         while !self.is_at_end() && self.peek() != "\"" {
@@ -414,10 +448,42 @@ impl Scanner {
                     let s = self.advance();
                     match s {
                         "$" => buffer.push_str("$"),
-                        "t" => buffer.push_str("\t"),
+                        "a" => buffer.push_str("\x07"),
+                        "b" => buffer.push_str("\x08"),
+                        "f" => buffer.push_str("\x0c"),
                         "n" => buffer.push_str("\n"),
                         "r" => buffer.push_str("\r"),
+                        "t" => buffer.push_str("\t"),
+                        "u" => {
+                            let result = self.read_escaped_bytes(2);
+                            match result {
+                                Ok(s) => buffer.push_str(s.as_str()),
+                                Err(_) => {
+                                    error = Some("Invalid Unicode sequence.");
+                                }
+                            }
+                        }
+                        "U" => {
+                            let result = self.read_escaped_bytes(4);
+                            match result {
+                                Ok(s) => buffer.push_str(s.as_str()),
+                                Err(_) => {
+                                    error = Some("Invalid Unicode sequence.");
+                                }
+                            }
+                        }
+                        "v" => buffer.push_str("\x0b"),
+                        "x" => {
+                            let result = self.read_escaped_bytes(1);
+                            match result {
+                                Ok(s) => buffer.push_str(s.as_str()),
+                                Err(_) => {
+                                    error = Some("Invalid hexadecimal sequence.");
+                                }
+                            }
+                        }
                         "\"" => buffer.push_str("\""),
+                        "\\" => buffer.push_str("\\"),
                         "0" => buffer.push_str("\0"),
                         _ => {
                             return self.error_token("Invalid escape sequence.");
@@ -435,8 +501,11 @@ impl Scanner {
         if self.is_at_end() {
             return self.error_token("Unterminated string.");
         }
-
         self.advance();
+        if let Some(msg) = error {
+            return self.error_token(msg);
+        }
+
         Token {
             line: self.line,
             source: buffer,
