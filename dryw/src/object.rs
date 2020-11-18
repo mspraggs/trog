@@ -30,10 +30,13 @@ type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
 
 // The use of ManuallyDrop here is sadly necessary, otherwise the Root may try
 // to read memory that's been free'd when the Root is dropped.
-thread_local!(
+thread_local! {
     static OBJ_STRING_CACHE: ManuallyDrop<ObjStringCache> =
-        ManuallyDrop::new(memory::allocate_root(RefCell::new(HashMap::new())))
-);
+        ManuallyDrop::new(memory::allocate_root(RefCell::new(HashMap::new())));
+
+    pub static ROOT_OBJ_VEC_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+        ManuallyDrop::new(new_root_obj_vec_class());
+}
 
 pub struct ObjString {
     string: String,
@@ -434,12 +437,12 @@ pub struct ObjVec {
     pub elements: Vec<Value>,
 }
 
-pub fn new_gc_obj_vec(class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjVec>> {
-    memory::allocate(RefCell::new(ObjVec::new(class)))
+pub fn new_gc_obj_vec() -> Gc<RefCell<ObjVec>> {
+    memory::allocate(RefCell::new(ObjVec::new()))
 }
 
-pub fn new_root_obj_vec(class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjVec>> {
-    new_gc_obj_vec(class).as_root()
+pub fn new_root_obj_vec() -> Root<RefCell<ObjVec>> {
+    new_gc_obj_vec().as_root()
 }
 
 pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
@@ -455,9 +458,9 @@ pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
 }
 
 impl ObjVec {
-    fn new(class: Gc<RefCell<ObjClass>>) -> Self {
+    fn new() -> Self {
         ObjVec {
-            class,
+            class: ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc()),
             elements: Vec::new(),
         }
     }
@@ -504,11 +507,8 @@ impl cmp::PartialEq for ObjVec {
     }
 }
 
-fn vec_init(args: &mut [Value]) -> Result<Value, Error> {
-    let instance = args[0]
-        .try_as_obj_instance()
-        .expect("Expected ObjInstance.");
-    let vec = new_root_obj_vec(instance.borrow().class);
+fn vec_init(_args: &mut [Value]) -> Result<Value, Error> {
+    let vec = new_root_obj_vec();
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
