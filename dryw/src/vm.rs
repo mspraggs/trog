@@ -123,6 +123,8 @@ pub fn new_root_vm() -> Root<Vm> {
     vm.define_native("String", Box::new(string));
     let obj_vec_class = object::ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc());
     vm.set_global("Vec", Value::ObjClass(obj_vec_class));
+    let obj_range_class = object::ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc());
+    vm.set_global("Range", Value::ObjClass(obj_range_class));
     vm
 }
 
@@ -648,6 +650,14 @@ impl Vm {
                 self.invoke_from_class(class, name, arg_count)
             }
             Value::ObjVecIter(iter) => {
+                let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjRange(range) => {
+                let class = { range.class };
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjRangeIter(iter) => {
                 let class = iter.borrow().class;
                 self.invoke_from_class(class, name, arg_count)
             }

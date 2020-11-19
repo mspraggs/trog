@@ -39,6 +39,12 @@ thread_local! {
 
     pub static ROOT_OBJ_VEC_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
         ManuallyDrop::new(new_root_obj_vec_iter_class());
+
+    pub static ROOT_OBJ_RANGE_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+        ManuallyDrop::new(new_root_obj_range_class());
+
+    pub static ROOT_OBJ_RANGE_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+        ManuallyDrop::new(new_root_obj_range_iter_class());
 }
 
 pub struct ObjString {
@@ -702,4 +708,155 @@ fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error>
     }
 
     Ok(index as usize)
+}
+
+pub struct ObjRange {
+    pub class: Gc<RefCell<ObjClass>>,
+    pub begin: isize,
+    pub end: isize,
+}
+
+pub fn new_gc_obj_range(begin: isize, end: isize) -> Gc<ObjRange> {
+    memory::allocate(ObjRange::new(begin, end))
+}
+
+pub fn new_root_obj_range(begin: isize, end: isize) -> Root<ObjRange> {
+    new_gc_obj_range(begin, end).as_root()
+}
+
+pub fn new_root_obj_range_class() -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string("Range");
+    let class = new_root_obj_class(class_name);
+    add_native_method_to_class(class.as_gc(), "__init__", Box::new(range_init));
+    add_native_method_to_class(class.as_gc(), "__iter__", Box::new(range_iter));
+    class
+}
+
+impl ObjRange {
+    fn new(begin: isize, end: isize) -> Self {
+        ObjRange {
+            class: ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc()),
+            begin,
+            end,
+        }
+    }
+}
+
+impl memory::GcManaged for ObjRange {
+    fn mark(&self) {
+        self.class.mark();
+    }
+
+    fn blacken(&self) {
+        self.class.blacken();
+    }
+}
+
+impl fmt::Display for ObjRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Range({}, {})", self.begin, self.end)
+    }
+}
+
+fn range_init(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 3 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 2 parameters but got {}",
+            args.len() - 1
+        );
+    }
+    let mut bounds: [isize; 2] = [0; 2];
+    for i in 0..2 {
+        bounds[i] = match args[i + 1] {
+            Value::Number(n) => {
+                if n.trunc() != n {
+                    return error!(ErrorKind::ValueError, "Expected integer value.");
+                }
+                n as isize
+            },
+            _ => return error!(ErrorKind::TypeError, "Expected integer value.")
+        }
+    }
+    let range = new_root_obj_range(bounds[0], bounds[1]);
+    Ok(Value::ObjRange(range.as_gc()))
+}
+
+fn range_iter(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 0 parameters but got {}.",
+            args.len() - 1
+        );
+    }
+
+    let iter = new_root_obj_range_iter(args[0].try_as_obj_range().expect("Expected ObjRange instance."));
+    Ok(Value::ObjRangeIter(iter.as_gc()))
+}
+
+pub struct ObjRangeIter {
+    pub class: Gc<RefCell<ObjClass>>,
+    pub iterable: Gc<ObjRange>,
+    pub current: isize,
+}
+
+pub fn new_gc_obj_range_iter(range: Gc<ObjRange>) -> Gc<RefCell<ObjRangeIter>> {
+    memory::allocate(RefCell::new(ObjRangeIter::new(range)))
+}
+
+pub fn new_root_obj_range_iter(range: Gc<ObjRange>) -> Root<RefCell<ObjRangeIter>> {
+    new_gc_obj_range_iter(range).as_root()
+}
+
+impl ObjRangeIter {
+    fn new(iterable: Gc<ObjRange>) -> Self {
+        let current = iterable.begin;
+        ObjRangeIter {
+            class: ROOT_OBJ_RANGE_ITER_CLASS.with(|c| c.as_gc()),
+            iterable,
+            current,
+        }
+    }
+
+    fn next(&mut self) -> Value {
+        if self.current >= self.iterable.end {
+            return Value::Sentinel;
+        }
+        let ret = Value::Number(self.current as f64);
+        self.current += 1;
+        ret
+    }
+}
+
+impl memory::GcManaged for ObjRangeIter {
+    fn mark(&self) {
+        self.iterable.mark();
+    }
+
+    fn blacken(&self) {
+        self.iterable.blacken();
+    }
+}
+
+impl fmt::Display for ObjRangeIter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ObjRangeIter instance")
+    }
+}
+
+fn range_iter_next(args: &mut [Value]) -> Result<Value, Error> {
+    assert!(args.len() == 1);
+    let iter = args[0]
+        .try_as_obj_range_iter()
+        .expect("Expected ObjIter instance.");
+    let mut borrowed_iter = iter.borrow_mut();
+    Ok(borrowed_iter.next())
+}
+
+pub fn new_root_obj_range_iter_class() -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string("IterVec");
+    let class = new_root_obj_class(class_name);
+    add_native_method_to_class(class.as_gc(), "__next__", Box::new(range_iter_next));
+    class
 }

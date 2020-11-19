@@ -19,8 +19,8 @@ use std::fmt;
 
 use crate::memory::{self, Gc};
 use crate::object::{
-    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjString, ObjVec,
-    ObjVecIter,
+    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjRange,
+    ObjRangeIter, ObjString, ObjVec, ObjVecIter,
 };
 
 #[derive(Clone, Copy)]
@@ -37,6 +37,8 @@ pub enum Value {
     ObjBoundNative(Gc<RefCell<ObjBoundMethod<ObjNative>>>),
     ObjVec(Gc<RefCell<ObjVec>>),
     ObjVecIter(Gc<RefCell<ObjVecIter>>),
+    ObjRange(Gc<ObjRange>),
+    ObjRangeIter(Gc<RefCell<ObjRangeIter>>),
     None,
     Sentinel,
 }
@@ -128,6 +130,18 @@ impl Value {
             _ => None,
         }
     }
+    pub fn try_as_obj_range(&self) -> Option<Gc<ObjRange>> {
+        match self {
+            Value::ObjRange(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_range_iter(&self) -> Option<Gc<RefCell<ObjRangeIter>>> {
+        match self {
+            Value::ObjRangeIter(inner) => Some(*inner),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
@@ -149,6 +163,8 @@ impl memory::GcManaged for Value {
             Value::ObjBoundNative(inner) => inner.mark(),
             Value::ObjVec(inner) => inner.mark(),
             Value::ObjVecIter(inner) => inner.mark(),
+            Value::ObjRange(inner) => inner.mark(),
+            Value::ObjRangeIter(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -165,6 +181,8 @@ impl memory::GcManaged for Value {
             Value::ObjBoundNative(inner) => inner.blacken(),
             Value::ObjVec(inner) => inner.blacken(),
             Value::ObjVecIter(inner) => inner.blacken(),
+            Value::ObjRange(inner) => inner.blacken(),
+            Value::ObjRangeIter(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -198,6 +216,8 @@ impl fmt::Display for Value {
             Value::ObjBoundNative(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjVec(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjVecIter(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjRange(underlying) => write!(f, "{}", **underlying),
+            Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::None => write!(f, "nil"),
             Value::Sentinel => write!(f, "<sentinel>"),
         }
@@ -218,6 +238,8 @@ impl cmp::PartialEq for Value {
             (Value::ObjBoundMethod(first), Value::ObjBoundMethod(second)) => *first == *second,
             (Value::ObjVec(first), Value::ObjVec(second)) => *first.borrow() == *second.borrow(),
             (Value::ObjVecIter(first), Value::ObjVecIter(second)) => *first == *second,
+            (Value::ObjRange(first), Value::ObjRange(second)) => *first == *second,
+            (Value::ObjRangeIter(first), Value::ObjRangeIter(second)) => *first == *second,
             (Value::None, Value::None) => true,
             _ => false,
         }
