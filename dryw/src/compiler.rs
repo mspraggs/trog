@@ -1285,6 +1285,10 @@ impl<'a> Parser<'a> {
         if can_assign && s.match_token(TokenKind::Equal) {
             s.expression();
             s.emit_bytes([OpCode::SetProperty as u8, name]);
+        } else if can_assign && s.match_binary_assignment() {
+            s.emit_byte(OpCode::CopyTop as u8);
+            s.binary_assign(OpCode::GetProperty, name);
+            s.emit_bytes([OpCode::SetProperty as u8, name]);
         } else if s.match_token(TokenKind::LeftParen) {
             let arg_count = s.argument_list(
                 TokenKind::RightParen,

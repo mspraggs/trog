@@ -41,6 +41,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::True => simple_instruction("TRUE", offset),
         OpCode::False => simple_instruction("FALSE", offset),
         OpCode::Pop => simple_instruction("POP", offset),
+        OpCode::CopyTop => simple_instruction("COPY_TOP", offset),
         OpCode::GetLocal => byte_instruction("GET_LOCAL", chunk, offset),
         OpCode::SetLocal => byte_instruction("SET_LOCAL", chunk, offset),
         OpCode::GetGlobal => constant_instruction("GET_GLOBAL", chunk, offset),

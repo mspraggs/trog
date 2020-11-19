@@ -264,6 +264,11 @@ impl Vm {
                     self.pop();
                 }
 
+                OpCode::CopyTop => {
+                    let top = *self.peek(0);
+                    self.push(top);
+                }
+
                 OpCode::GetLocal => {
                     let slot = read_byte!() as usize;
                     let slot_base = self.frame().slot_base;
