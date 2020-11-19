@@ -647,6 +647,10 @@ impl Vm {
                 let class = { vec.borrow().class };
                 self.invoke_from_class(class, name, arg_count)
             }
+            Value::ObjVecIter(iter) => {
+                let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
             _ => error!(ErrorKind::ValueError, "Only instances have methods."),
         }
     }

@@ -36,6 +36,9 @@ thread_local! {
 
     pub static ROOT_OBJ_VEC_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
         ManuallyDrop::new(new_root_obj_vec_class());
+
+    pub static ROOT_OBJ_VEC_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+        ManuallyDrop::new(new_root_obj_vec_iter_class());
 }
 
 pub struct ObjString {
@@ -454,6 +457,7 @@ pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
     add_native_method_to_class(class.as_gc(), "__getitem__", Box::new(vec_get));
     add_native_method_to_class(class.as_gc(), "__setitem__", Box::new(vec_set));
     add_native_method_to_class(class.as_gc(), "len", Box::new(vec_len));
+    add_native_method_to_class(class.as_gc(), "__iter__", Box::new(vec_iter));
     class
 }
 
@@ -590,6 +594,85 @@ fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let borrowed_vec = vec.borrow();
     Ok(Value::from(borrowed_vec.elements.len() as f64))
+}
+
+fn vec_iter(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected 0 parameters but got {}.",
+            args.len() - 1
+        );
+    }
+
+    let iter = new_root_obj_vec_iter(args[0].try_as_obj_vec().expect("Expected ObjVec instance."));
+    Ok(Value::ObjVecIter(iter.as_gc()))
+}
+
+pub struct ObjVecIter {
+    pub class: Gc<RefCell<ObjClass>>,
+    pub iterable: Gc<RefCell<ObjVec>>,
+    pub current: usize,
+}
+
+pub fn new_gc_obj_vec_iter(vec: Gc<RefCell<ObjVec>>) -> Gc<RefCell<ObjVecIter>> {
+    memory::allocate(RefCell::new(ObjVecIter::new(vec)))
+}
+
+pub fn new_root_obj_vec_iter(vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIter>> {
+    new_gc_obj_vec_iter(vec).as_root()
+}
+
+impl ObjVecIter {
+    fn new(iterable: Gc<RefCell<ObjVec>>) -> Self {
+        ObjVecIter {
+            class: ROOT_OBJ_VEC_ITER_CLASS.with(|c| c.as_gc()),
+            iterable,
+            current: 0,
+        }
+    }
+
+    fn next(&mut self) -> Value {
+        let borrowed_vec = self.iterable.borrow();
+        if self.current >= borrowed_vec.elements.len() {
+            return Value::Sentinel;
+        }
+        let ret = borrowed_vec.elements[self.current];
+        self.current += 1;
+        ret
+    }
+}
+
+impl memory::GcManaged for ObjVecIter {
+    fn mark(&self) {
+        self.iterable.mark();
+    }
+
+    fn blacken(&self) {
+        self.iterable.blacken();
+    }
+}
+
+impl fmt::Display for ObjVecIter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ObjVecIter instance")
+    }
+}
+
+fn vec_iter_next(args: &mut [Value]) -> Result<Value, Error> {
+    assert!(args.len() == 1);
+    let iter = args[0]
+        .try_as_obj_vec_iter()
+        .expect("Expected ObjVecIter instance.");
+    let mut borrowed_iter = iter.borrow_mut();
+    Ok(borrowed_iter.next())
+}
+
+pub fn new_root_obj_vec_iter_class() -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string("VecIter");
+    let class = new_root_obj_class(class_name);
+    add_native_method_to_class(class.as_gc(), "__next__", Box::new(vec_iter_next));
+    class
 }
 
 fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error> {

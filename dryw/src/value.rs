@@ -20,6 +20,7 @@ use std::fmt;
 use crate::memory::{self, Gc};
 use crate::object::{
     ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjString, ObjVec,
+    ObjVecIter,
 };
 
 #[derive(Clone, Copy)]
@@ -35,7 +36,9 @@ pub enum Value {
     ObjBoundMethod(Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>),
     ObjBoundNative(Gc<RefCell<ObjBoundMethod<ObjNative>>>),
     ObjVec(Gc<RefCell<ObjVec>>),
+    ObjVecIter(Gc<RefCell<ObjVecIter>>),
     None,
+    Sentinel,
 }
 
 impl Value {
@@ -77,25 +80,25 @@ impl Value {
 
     pub fn try_as_obj_native(&self) -> Option<Gc<ObjNative>> {
         match self {
-            Value::ObjNative(innert) => Some(*innert),
+            Value::ObjNative(inner) => Some(*inner),
             _ => None,
         }
     }
     pub fn try_as_obj_closure(&self) -> Option<Gc<RefCell<ObjClosure>>> {
         match self {
-            Value::ObjClosure(innert) => Some(*innert),
+            Value::ObjClosure(inner) => Some(*inner),
             _ => None,
         }
     }
     pub fn try_as_obj_class(&self) -> Option<Gc<RefCell<ObjClass>>> {
         match self {
-            Value::ObjClass(innert) => Some(*innert),
+            Value::ObjClass(inner) => Some(*inner),
             _ => None,
         }
     }
     pub fn try_as_obj_instance(&self) -> Option<Gc<RefCell<ObjInstance>>> {
         match self {
-            Value::ObjInstance(innert) => Some(*innert),
+            Value::ObjInstance(inner) => Some(*inner),
             _ => None,
         }
     }
@@ -103,19 +106,25 @@ impl Value {
         &self,
     ) -> Option<Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>> {
         match self {
-            Value::ObjBoundMethod(innert) => Some(*innert),
+            Value::ObjBoundMethod(inner) => Some(*inner),
             _ => None,
         }
     }
     pub fn try_as_obj_bound_native(&self) -> Option<Gc<RefCell<ObjBoundMethod<ObjNative>>>> {
         match self {
-            Value::ObjBoundNative(innert) => Some(*innert),
+            Value::ObjBoundNative(inner) => Some(*inner),
             _ => None,
         }
     }
     pub fn try_as_obj_vec(&self) -> Option<Gc<RefCell<ObjVec>>> {
         match self {
-            Value::ObjVec(innert) => Some(*innert),
+            Value::ObjVec(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_vec_iter(&self) -> Option<Gc<RefCell<ObjVecIter>>> {
+        match self {
+            Value::ObjVecIter(inner) => Some(*inner),
             _ => None,
         }
     }
@@ -139,6 +148,7 @@ impl memory::GcManaged for Value {
             Value::ObjBoundMethod(inner) => inner.mark(),
             Value::ObjBoundNative(inner) => inner.mark(),
             Value::ObjVec(inner) => inner.mark(),
+            Value::ObjVecIter(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -154,6 +164,7 @@ impl memory::GcManaged for Value {
             Value::ObjBoundMethod(inner) => inner.blacken(),
             Value::ObjBoundNative(inner) => inner.blacken(),
             Value::ObjVec(inner) => inner.blacken(),
+            Value::ObjVecIter(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -186,7 +197,9 @@ impl fmt::Display for Value {
             Value::ObjBoundMethod(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjBoundNative(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjVec(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjVecIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::None => write!(f, "nil"),
+            Value::Sentinel => write!(f, "<sentinel>"),
         }
     }
 }
@@ -204,6 +217,7 @@ impl cmp::PartialEq for Value {
             (Value::ObjInstance(first), Value::ObjInstance(second)) => *first == *second,
             (Value::ObjBoundMethod(first), Value::ObjBoundMethod(second)) => *first == *second,
             (Value::ObjVec(first), Value::ObjVec(second)) => *first.borrow() == *second.borrow(),
+            (Value::ObjVecIter(first), Value::ObjVecIter(second)) => *first == *second,
             (Value::None, Value::None) => true,
             _ => false,
         }
