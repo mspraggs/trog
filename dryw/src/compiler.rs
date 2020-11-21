@@ -563,6 +563,10 @@ impl<'a> Parser<'a> {
         self.current.kind == kind
     }
 
+    fn check_any(&self, kinds: &[TokenKind]) -> bool {
+        kinds.iter().any(|k| self.check(*k))
+    }
+
     fn match_token(&mut self, kind: TokenKind) -> bool {
         if !self.check(kind) {
             return false;
@@ -767,8 +771,6 @@ impl<'a> Parser<'a> {
         //     ... loop body ...
         // }
 
-        self.consume(TokenKind::LeftParen, "Expected '(' after 'for'.");
-
         // Set up loop variable
         self.consume(TokenKind::Identifier, "Expected loop variable name.");
         self.declare_variable();
@@ -804,10 +806,12 @@ impl<'a> Parser<'a> {
 
         let exit_jump = self.emit_jump(OpCode::JumpIfSentinel);
 
-        self.consume(TokenKind::RightParen, "Expected ')' after loop expression.");
-
         self.emit_byte(OpCode::Pop as u8);
-        self.statement();
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after loop expression.");
+        self.begin_scope();
+        self.block();
+        self.end_scope();
 
         self.emit_loop(loop_start);
 
@@ -817,13 +821,15 @@ impl<'a> Parser<'a> {
     }
 
     fn if_statement(&mut self) {
-        self.consume(TokenKind::LeftParen, "Expected '(' after 'if'.");
         self.expression();
-        self.consume(TokenKind::RightParen, "Expected ')' after condition.");
 
         let then_jump = self.emit_jump(OpCode::JumpIfFalse);
         self.emit_byte(OpCode::Pop as u8);
-        self.statement();
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after condition.");
+        self.begin_scope();
+        self.block();
+        self.end_scope();
 
         let else_jump = self.emit_jump(OpCode::Jump);
 
@@ -831,6 +837,12 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::Pop as u8);
 
         if self.match_token(TokenKind::Else) {
+            if !self.check_any(&[
+                TokenKind::If,
+                TokenKind::LeftBrace,
+            ]) {
+                self.error_at_current("Expected '{' after 'else'.");
+            }
             self.statement();
         }
         self.patch_jump(else_jump);
@@ -855,14 +867,16 @@ impl<'a> Parser<'a> {
     fn while_statement(&mut self) {
         let loop_start = self.chunk().code.len();
 
-        self.consume(TokenKind::LeftParen, "'Expected '(' after 'while'.");
         self.expression();
-        self.consume(TokenKind::RightParen, "'Expected ')' after expression.");
 
         let exit_jump = self.emit_jump(OpCode::JumpIfFalse);
 
         self.emit_byte(OpCode::Pop as u8);
-        self.statement();
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after condition.");
+        self.begin_scope();
+        self.block();
+        self.end_scope();
 
         self.emit_loop(loop_start);
 

@@ -1,3 +1,4 @@
-// [line 3] Error at 'var': Expected expression.
+// [line 4] Error at 'var': Expected '{' after condition.
+// [line 5] Error at end: Expected '}' after block.
 // 65
-if (true) var foo;
+if true var foo;

@@ -1,3 +1,4 @@
-// [line 3] Error at 'class': Expected expression.
+// [line 4] Error at 'class': Expected '{' after loop expression.
+// [line 5] Error at end: Expected '}' after block.
 // 65
-for (i in 1..2) class Foo {}
+for i in 1..2 class Foo {}

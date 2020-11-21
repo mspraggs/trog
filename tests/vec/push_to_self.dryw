@@ -1,7 +1,7 @@
 // [[...], [...], [...]]
 // 0
 var v = [];
-for (i in 0..3) {
+for i in 0..3 {
     v.push(v);
 }
 print(v);

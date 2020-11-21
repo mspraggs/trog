@@ -1,6 +1,6 @@
 // ok
 // 0
 fn f() {
-  if (true) return "ok";
+  if true { return "ok"; }
 }
 print(f());

@@ -7,10 +7,10 @@
 // elem
 // 0
 var v = [1, 2, 3];
-for (i in 0..3) {
+for i in 0..3 {
     print(v[i]);
 }
-for (i in -1..-4) {
+for i in -1..-4 {
     print(v[i]);
 }
 

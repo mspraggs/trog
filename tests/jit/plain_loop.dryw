@@ -1,9 +1,0 @@
-// 4950
-// 0
-{
-  var sum = 0;
-  for (i in 0..100) {
-    sum = sum + i;
-  }
-  print(sum);
-}

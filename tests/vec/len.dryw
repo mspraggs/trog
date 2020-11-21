@@ -6,9 +6,9 @@
 // 10
 // 0
 var v = [];
-for (i in 0..6) {
+for i in 0..6 {
     print(v.len());
-    for (j in 0..i) {
+    for j in 0..i {
         v.push(i * j);
     }
 }
