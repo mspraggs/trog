@@ -444,6 +444,13 @@ impl Vm {
                         Value::ObjString(object::new_gc_obj_string(format!("{}", value).as_str()));
                 }
 
+                OpCode::BuildRange => {
+                    let end = object::validate_integer(self.pop())?;
+                    let begin = object::validate_integer(self.pop())?;
+                    let range = object::new_root_obj_range(begin, end);
+                    self.push(Value::ObjRange(range.as_gc()));
+                }
+
                 OpCode::BuildString => {
                     let num_operands = read_byte!() as usize;
                     if num_operands == 1 {

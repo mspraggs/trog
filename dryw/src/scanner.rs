@@ -26,6 +26,7 @@ pub enum TokenKind {
     RightBracket,
     Comma,
     Dot,
+    DotDot,
     Minus,
     MinusEqual,
     Plus,
@@ -163,7 +164,14 @@ impl Scanner {
             "]" => self.make_token(TokenKind::RightBracket),
             ";" => self.make_token(TokenKind::SemiColon),
             "," => self.make_token(TokenKind::Comma),
-            "." => self.make_token(TokenKind::Dot),
+            "." => {
+                let match_char = self.match_char(".");
+                self.make_token(if match_char {
+                    TokenKind::DotDot
+                } else {
+                    TokenKind::Dot
+                })
+            }
             "-" => {
                 let match_char = self.match_char("=");
                 self.make_token(if match_char {

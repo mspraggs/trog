@@ -768,15 +768,7 @@ fn range_init(args: &mut [Value]) -> Result<Value, Error> {
     }
     let mut bounds: [isize; 2] = [0; 2];
     for i in 0..2 {
-        bounds[i] = match args[i + 1] {
-            Value::Number(n) => {
-                if n.trunc() != n {
-                    return error!(ErrorKind::ValueError, "Expected integer value.");
-                }
-                n as isize
-            },
-            _ => return error!(ErrorKind::TypeError, "Expected integer value.")
-        }
+        bounds[i] = validate_integer(args[i + 1])?;
     }
     let range = new_root_obj_range(bounds[0], bounds[1]);
     Ok(Value::ObjRange(range.as_gc()))
@@ -793,6 +785,18 @@ fn range_iter(args: &mut [Value]) -> Result<Value, Error> {
 
     let iter = new_root_obj_range_iter(args[0].try_as_obj_range().expect("Expected ObjRange instance."));
     Ok(Value::ObjRangeIter(iter.as_gc()))
+}
+
+pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
+    match value {
+        Value::Number(n) => {
+            if n.trunc() != n {
+                return error!(ErrorKind::ValueError, "Expected integer value.");
+            }
+            Ok(n as isize)
+        }
+        _ => return error!(ErrorKind::TypeError, "Expected integer value."),
+    }
 }
 
 pub struct ObjRangeIter {

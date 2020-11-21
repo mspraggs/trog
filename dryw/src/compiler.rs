@@ -37,6 +37,7 @@ enum Precedence {
     Comparison,
     Term,
     Factor,
+    Range,
     Unary,
     Call,
     Primary,
@@ -53,6 +54,7 @@ impl From<usize> for Precedence {
             value if value == Precedence::Comparison as usize => Precedence::Comparison,
             value if value == Precedence::Term as usize => Precedence::Term,
             value if value == Precedence::Factor as usize => Precedence::Factor,
+            value if value == Precedence::Range as usize => Precedence::Range,
             value if value == Precedence::Unary as usize => Precedence::Unary,
             value if value == Precedence::Call as usize => Precedence::Call,
             value if value == Precedence::Primary as usize => Precedence::Primary,
@@ -210,7 +212,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 45] = [
+const RULES: [ParseRule; 46] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -258,6 +260,12 @@ const RULES: [ParseRule; 45] = [
         prefix: None,
         infix: Some(Parser::dot),
         precedence: Precedence::Call,
+    },
+    // DotDot
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::dotdot),
+        precedence: Precedence::Range,
     },
     // Minus
     ParseRule {
@@ -1300,6 +1308,11 @@ impl<'a> Parser<'a> {
         } else {
             s.emit_bytes([OpCode::GetProperty as u8, name]);
         }
+    }
+
+    fn dotdot(s: &mut Parser, _can_assign: bool) {
+        s.parse_precedence(Precedence::Unary);
+        s.emit_byte(OpCode::BuildRange as u8);
     }
 
     fn index(s: &mut Parser, can_assign: bool) {

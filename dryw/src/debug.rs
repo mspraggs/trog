@@ -61,6 +61,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Divide => simple_instruction("DIVIDE", offset),
         OpCode::Not => simple_instruction("NOT", offset),
         OpCode::Negate => simple_instruction("NEGATE", offset),
+        OpCode::BuildRange => simple_instruction("BUILD_RANGE", offset),
         OpCode::BuildString => byte_instruction("BUILD_STRING", chunk, offset),
         OpCode::FormatString => simple_instruction("FORMAT_STRING", offset),
         OpCode::BuildVec => byte_instruction("BUILD_VEC", chunk, offset),
