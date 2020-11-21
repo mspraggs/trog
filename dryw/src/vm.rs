@@ -19,7 +19,7 @@ use std::fmt::Write;
 use std::ptr;
 use std::time;
 
-use crate::chunk::{Chunk, OpCode};
+use crate::chunk::{self, Chunk, OpCode};
 use crate::common;
 use crate::compiler;
 use crate::debug;
@@ -35,7 +35,7 @@ const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
-    let compile_result = compiler::compile(vm, source);
+    let compile_result = compiler::compile(source);
     match compile_result {
         Ok(function) => vm.execute(function, &[]),
         Err(error) => Err(error),
@@ -61,7 +61,6 @@ impl GcManaged for CallFrame {
 pub struct Vm {
     ip: *const u8,
     active_chunk: Gc<Chunk>,
-    chunks: Vec<Root<Chunk>>,
     frames: Vec<CallFrame>,
     stack: Vec<Value>,
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
@@ -74,7 +73,6 @@ impl Default for Vm {
         Vm {
             ip: ptr::null(),
             active_chunk: memory::allocate(Chunk::new()),
-            chunks: Vec::new(),
             frames: Vec::with_capacity(FRAMES_MAX),
             stack: Vec::with_capacity(STACK_MAX),
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
@@ -153,19 +151,6 @@ impl Vm {
             Ok(value) => Ok(value),
             Err(mut error) => Err(self.runtime_error(&mut error)),
         }
-    }
-
-    pub fn new_chunk(&mut self) -> usize {
-        self.chunks.push(memory::allocate_root(Chunk::new()));
-        self.chunks.len() - 1
-    }
-
-    pub fn get_chunk(&self, index: usize) -> &Chunk {
-        &self.chunks[index]
-    }
-
-    pub fn get_chunk_mut(&mut self, index: usize) -> &mut Chunk {
-        &mut self.chunks[index]
     }
 
     pub fn get_global(&self, name: &str) -> Option<Value> {
@@ -574,7 +559,7 @@ impl Vm {
                         return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
-                    self.active_chunk = self.chunks[prev_chunk_index].as_gc();
+                    self.active_chunk = chunk::get_chunk(prev_chunk_index);
                     self.ip = prev_ip;
 
                     self.stack.truncate(prev_stack_size);
@@ -713,7 +698,8 @@ impl Vm {
             return error!(ErrorKind::IndexError, "Stack overflow.");
         }
 
-        self.active_chunk = self.chunks[closure.borrow().function.chunk_index].as_gc();
+        let chunk_index = closure.borrow().function.chunk_index;
+        self.active_chunk = chunk::get_chunk(chunk_index);
         self.frames.push(CallFrame {
             closure,
             prev_ip: self.ip,
@@ -745,8 +731,7 @@ impl Vm {
             let function = frame.closure.borrow().function;
 
             let mut new_msg = String::new();
-            let chunk_index = frame.closure.borrow().function.chunk_index;
-            let chunk = &self.chunks[chunk_index];
+            let chunk = chunk::get_chunk(frame.closure.borrow().function.chunk_index);
             let instruction = chunk.code_offset(ips[i]) - 1;
             write!(new_msg, "[line {}] in ", chunk.lines[instruction])
                 .expect("Unable to write error to buffer.");
@@ -850,7 +835,6 @@ impl Vm {
 
 impl GcManaged for Vm {
     fn mark(&self) {
-        self.chunks.mark();
         self.stack.mark();
         self.globals.mark();
         self.frames.mark();
@@ -858,7 +842,6 @@ impl GcManaged for Vm {
     }
 
     fn blacken(&self) {
-        self.chunks.blacken();
         self.stack.blacken();
         self.globals.blacken();
         self.frames.blacken();

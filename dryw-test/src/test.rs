@@ -118,7 +118,7 @@ pub fn run_test(path: &str) -> Result<Success, Failure> {
         }
     };
 
-    let error_output = match compiler::compile(&mut vm, source) {
+    let error_output = match compiler::compile(source) {
         Ok(f) => match vm.execute(f, &[]) {
             Ok(_) => Vec::new(),
             Err(e) => e.get_messages().clone(),

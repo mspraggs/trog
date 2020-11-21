@@ -17,15 +17,14 @@ use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::mem;
 
-use crate::chunk::{Chunk, OpCode};
+use crate::chunk::{self, Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::Root;
+use crate::memory::{Gc, Root};
 use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
-use crate::vm::Vm;
 
 #[derive(Copy, Clone)]
 enum Precedence {
@@ -102,6 +101,7 @@ struct Upvalue {
 
 struct Compiler {
     function: Root<ObjFunction>,
+    chunk: Gc<Chunk>,
     kind: FunctionKind,
 
     locals: Vec<Local>,
@@ -117,11 +117,13 @@ enum CompilerError {
 }
 
 impl Compiler {
-    fn new(vm: &mut Vm, kind: FunctionKind, name: &str) -> Self {
-        let function = new_root_obj_function_with_name(vm, name);
+    fn new(kind: FunctionKind, name: &str) -> Self {
+        let function = new_root_obj_function_with_name(name);
+        let chunk_index = function.chunk_index;
         Compiler {
             function: function,
             kind,
+            chunk: chunk::get_chunk(chunk_index),
             locals: if kind == FunctionKind::Function || kind == FunctionKind::Script {
                 vec![Local {
                     name: String::new(),
@@ -187,16 +189,16 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(source: String) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
 
-    let mut parser = Parser::new(vm, &mut scanner);
+    let mut parser = Parser::new(&mut scanner);
     parser.parse()
 }
 
-fn new_root_obj_function_with_name(vm: &mut Vm, name: &str) -> Root<ObjFunction> {
+fn new_root_obj_function_with_name(name: &str) -> Root<ObjFunction> {
     let name = object::new_root_obj_string(name);
-    let function = object::new_root_obj_function(name.as_gc(), vm.new_chunk());
+    let function = object::new_root_obj_function(name.as_gc(), chunk::new_chunk());
     function
 }
 
@@ -209,7 +211,6 @@ struct Parser<'a> {
     compilers: Vec<Compiler>,
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
-    vm: &'a mut Vm,
 }
 
 const RULES: [ParseRule; 47] = [
@@ -498,7 +499,7 @@ const RULES: [ParseRule; 47] = [
 ];
 
 impl<'a> Parser<'a> {
-    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
+    fn new(scanner: &'a mut Scanner) -> Parser<'a> {
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -508,7 +509,6 @@ impl<'a> Parser<'a> {
             compilers: Vec::new(),
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
-            vm: vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
         ret
@@ -600,7 +600,7 @@ impl<'a> Parser<'a> {
     }
 
     fn new_compiler(&mut self, kind: FunctionKind, name: &str) {
-        self.compilers.push(Compiler::new(self.vm, kind, name));
+        self.compilers.push(Compiler::new(kind, name));
     }
 
     fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Compiler) {
@@ -609,7 +609,8 @@ impl<'a> Parser<'a> {
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
             let func_name = format!("{}", *self.compiler().function);
             let chunk_index = self.compiler().function.chunk_index;
-            debug::disassemble_chunk(self.vm.get_chunk(chunk_index), func_name.as_str());
+            let chunk = chunk::get_chunk(chunk_index);
+            debug::disassemble_chunk(&chunk, func_name.as_str());
         }
 
         let upvalue_count = self.compiler().upvalues.len();
@@ -618,7 +619,7 @@ impl<'a> Parser<'a> {
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
         let function = mem::replace(
             &mut compiler.function,
-            new_root_obj_function_with_name(self.vm, ""),
+            new_root_obj_function_with_name(""),
         );
 
         (function, compiler)
@@ -1282,8 +1283,7 @@ impl<'a> Parser<'a> {
     }
 
     fn chunk(&mut self) -> &mut Chunk {
-        let index = self.compiler().function.chunk_index;
-        self.vm.get_chunk_mut(index)
+        &mut self.compiler_mut().chunk
     }
 
     fn grouping(s: &mut Parser, _can_assign: bool) {

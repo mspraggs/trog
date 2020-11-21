@@ -13,8 +13,28 @@
  * limitations under the License.
  */
 
-use crate::memory;
+use std::cell::RefCell;
+use std::mem::ManuallyDrop;
+
+use crate::memory::{self, Gc, Root};
 use crate::value;
+
+thread_local!{
+    static CHUNK_STORE: ManuallyDrop<RefCell<Vec<Root<Chunk>>>> =
+        ManuallyDrop::new(RefCell::new(Vec::new()));
+}
+
+pub(crate) fn new_chunk() -> usize {
+    CHUNK_STORE.with(|store| {
+        let root = memory::allocate_root(Chunk::new());
+        store.borrow_mut().push(root);
+        store.borrow().len() - 1
+    })
+}
+
+pub(crate) fn get_chunk(index: usize) -> Gc<Chunk> {
+    CHUNK_STORE.with(|store| store.borrow()[index].as_gc())
+}
 
 #[repr(u8)]
 pub enum OpCode {
