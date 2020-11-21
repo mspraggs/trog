@@ -617,10 +617,7 @@ impl<'a> Parser<'a> {
         self.compiler_mut().function.upvalue_count = upvalue_count;
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = mem::replace(
-            &mut compiler.function,
-            new_root_obj_function_with_name(""),
-        );
+        let function = mem::replace(&mut compiler.function, new_root_obj_function_with_name(""));
 
         (function, compiler)
     }
@@ -838,10 +835,7 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::Pop as u8);
 
         if self.match_token(TokenKind::Else) {
-            if !self.check_any(&[
-                TokenKind::If,
-                TokenKind::LeftBrace,
-            ]) {
+            if !self.check_any(&[TokenKind::If, TokenKind::LeftBrace]) {
                 self.error_at_current("Expected '{' after 'else'.");
             }
             self.statement();

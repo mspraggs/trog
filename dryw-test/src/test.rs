@@ -100,7 +100,7 @@ pub fn run_test(path: &str) -> Result<Success, Failure> {
         Ok(Value::None)
     };
 
-    let mut vm = vm::new_root_vm();
+    let mut vm = vm::new_root_vm_with_built_ins();
     vm.define_native("print", Box::new(local_print));
 
     let source = match fs::read_to_string(path) {

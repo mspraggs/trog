@@ -19,7 +19,7 @@ use std::mem::ManuallyDrop;
 use crate::memory::{self, Gc, Root};
 use crate::value;
 
-thread_local!{
+thread_local! {
     static CHUNK_STORE: ManuallyDrop<RefCell<Vec<Root<Chunk>>>> =
         ManuallyDrop::new(RefCell::new(Vec::new()));
 }

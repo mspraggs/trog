@@ -67,7 +67,7 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut vm = vm::new_root_vm();
+    let mut vm = vm::new_root_vm_with_built_ins();
 
     if args.len() == 1 {
         repl(&mut vm);

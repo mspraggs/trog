@@ -125,14 +125,22 @@ fn sentinel(args: &mut [Value]) -> Result<Value, Error> {
 }
 
 pub fn new_root_vm() -> Root<Vm> {
-    let mut vm = memory::allocate_root(Vm::new());
+    memory::allocate_root(Vm::new())
+}
+
+pub fn new_root_vm_with_built_ins() -> Root<Vm> {
+    let mut vm = new_root_vm();
     vm.define_native("clock", Box::new(clock_native));
     vm.define_native("print", Box::new(default_print));
     vm.define_native("String", Box::new(string));
     vm.define_native("sentinel", Box::new(sentinel));
-    let obj_vec_class = object::ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc());
+    let obj_iter_class = object::classes::get_gc_obj_iter_class();
+    vm.set_global("Iter", Value::ObjClass(obj_iter_class));
+    let obj_map_iter_class = object::classes::get_gc_obj_map_iter_class();
+    vm.set_global("MapIter", Value::ObjClass(obj_map_iter_class));
+    let obj_vec_class = object::classes::get_gc_obj_vec_class();
     vm.set_global("Vec", Value::ObjClass(obj_vec_class));
-    let obj_range_class = object::ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc());
+    let obj_range_class = object::classes::get_gc_obj_range_class();
     vm.set_global("Range", Value::ObjClass(obj_range_class));
     vm
 }
@@ -579,9 +587,7 @@ impl Vm {
                         return error!(ErrorKind::RuntimeError, "Superclass must be a class.");
                     };
                     let subclass = self.peek(0).try_as_obj_class().expect("Expected ObjClass.");
-                    for (name, value) in superclass.borrow().methods.iter() {
-                        subclass.borrow_mut().methods.insert(name.clone(), *value);
-                    }
+                    subclass.borrow_mut().add_superclass(superclass);
                     self.pop();
                 }
 

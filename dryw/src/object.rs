@@ -19,12 +19,16 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::ManuallyDrop;
+use std::sync::Once;
 
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Root};
 use crate::value::Value;
+use crate::vm;
+
+include!(concat!(env!("OUT_DIR"), "/core.dryw.rs"));
 
 type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
 
@@ -33,18 +37,6 @@ type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
 thread_local! {
     static OBJ_STRING_CACHE: ManuallyDrop<ObjStringCache> =
         ManuallyDrop::new(memory::allocate_root(RefCell::new(HashMap::new())));
-
-    pub static ROOT_OBJ_VEC_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-        ManuallyDrop::new(new_root_obj_vec_class());
-
-    pub static ROOT_OBJ_VEC_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-        ManuallyDrop::new(new_root_obj_vec_iter_class());
-
-    pub static ROOT_OBJ_RANGE_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-        ManuallyDrop::new(new_root_obj_range_class());
-
-    pub static ROOT_OBJ_RANGE_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-        ManuallyDrop::new(new_root_obj_range_iter_class());
 }
 
 pub struct ObjString {
@@ -323,6 +315,12 @@ impl ObjClass {
             methods: HashMap::with_hasher(BuildPassThroughHasher::default()),
         }
     }
+
+    pub fn add_superclass(&mut self, superclass: memory::Gc<RefCell<ObjClass>>) {
+        for (name, value) in superclass.borrow().methods.iter() {
+            self.methods.insert(name.clone(), *value);
+        }
+    }
 }
 
 fn add_native_method_to_class(class: Gc<RefCell<ObjClass>>, name: &str, native: NativeFn) {
@@ -465,12 +463,15 @@ pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
     add_native_method_to_class(class.as_gc(), "len", Box::new(vec_len));
     add_native_method_to_class(class.as_gc(), "__iter__", Box::new(vec_iter));
     class
+        .borrow_mut()
+        .add_superclass(classes::get_gc_obj_iter_class());
+    class
 }
 
 impl ObjVec {
     fn new() -> Self {
         ObjVec {
-            class: ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc()),
+            class: classes::get_gc_obj_vec_class(),
             elements: Vec::new(),
         }
     }
@@ -632,7 +633,7 @@ pub fn new_root_obj_vec_iter(vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIte
 impl ObjVecIter {
     fn new(iterable: Gc<RefCell<ObjVec>>) -> Self {
         ObjVecIter {
-            class: ROOT_OBJ_VEC_ITER_CLASS.with(|c| c.as_gc()),
+            class: classes::get_gc_obj_vec_iter_class(),
             iterable,
             current: 0,
         }
@@ -725,17 +726,21 @@ pub fn new_root_obj_range(begin: isize, end: isize) -> Root<ObjRange> {
 }
 
 pub fn new_root_obj_range_class() -> Root<RefCell<ObjClass>> {
+    classes::get_gc_obj_iter_class();
     let class_name = new_gc_obj_string("Range");
     let class = new_root_obj_class(class_name);
     add_native_method_to_class(class.as_gc(), "__init__", Box::new(range_init));
     add_native_method_to_class(class.as_gc(), "__iter__", Box::new(range_iter));
+    class
+        .borrow_mut()
+        .add_superclass(classes::get_gc_obj_iter_class());
     class
 }
 
 impl ObjRange {
     fn new(begin: isize, end: isize) -> Self {
         ObjRange {
-            class: ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc()),
+            class: classes::get_gc_obj_range_class(),
             begin,
             end,
         }
@@ -822,7 +827,7 @@ impl ObjRangeIter {
     fn new(iterable: Gc<ObjRange>) -> Self {
         let current = iterable.begin;
         ObjRangeIter {
-            class: ROOT_OBJ_RANGE_ITER_CLASS.with(|c| c.as_gc()),
+            class: classes::get_gc_obj_range_iter_class(),
             iterable,
             current,
             step: if iterable.begin < iterable.end { 1 } else { -1 },
@@ -869,4 +874,89 @@ pub fn new_root_obj_range_iter_class() -> Root<RefCell<ObjClass>> {
     let class = new_root_obj_class(class_name);
     add_native_method_to_class(class.as_gc(), "__next__", Box::new(range_iter_next));
     class
+}
+
+pub(crate) mod classes {
+    use super::*;
+
+    thread_local! {
+        static ROOT_OBJ_ITER_CLASS: RefCell<Option<ManuallyDrop<Root<RefCell<ObjClass>>>>> =
+            RefCell::new(None);
+
+        static ROOT_OBJ_MAP_ITER_CLASS: RefCell<Option<ManuallyDrop<Root<RefCell<ObjClass>>>>> =
+            RefCell::new(None);
+
+        static ROOT_OBJ_VEC_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+            ManuallyDrop::new(new_root_obj_vec_class());
+
+        static ROOT_OBJ_VEC_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+            ManuallyDrop::new(new_root_obj_vec_iter_class());
+
+        static ROOT_OBJ_RANGE_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+            ManuallyDrop::new(new_root_obj_range_class());
+
+        static ROOT_OBJ_RANGE_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
+            ManuallyDrop::new(new_root_obj_range_iter_class());
+    }
+
+    static START: Once = Once::new();
+    fn init_core_static_classes() {
+        START.call_once(|| {
+            let mut vm = vm::new_root_vm();
+            let source = String::from(CORE_SOURCE);
+            let result = vm::interpret(&mut vm, source);
+            match result {
+                Ok(_) => {}
+                Err(error) => eprint!("{}", error),
+            }
+            ROOT_OBJ_ITER_CLASS.with(|v| {
+                *v.borrow_mut() = Some(ManuallyDrop::new(
+                    vm.get_global("Iter")
+                        .unwrap()
+                        .try_as_obj_class()
+                        .expect("Expected ObjClass.")
+                        .as_root(),
+                ));
+            });
+            ROOT_OBJ_MAP_ITER_CLASS.with(|v| {
+                *v.borrow_mut() = Some(ManuallyDrop::new(
+                    vm.get_global("MapIter")
+                        .unwrap()
+                        .try_as_obj_class()
+                        .expect("Expected ObjClass.")
+                        .as_root(),
+                ));
+            });
+        });
+    }
+
+    pub(crate) fn get_gc_obj_iter_class() -> Gc<RefCell<ObjClass>> {
+        init_core_static_classes();
+        ROOT_OBJ_ITER_CLASS.with(|c| c.borrow().as_ref().unwrap().as_gc())
+    }
+
+    pub(crate) fn get_gc_obj_map_iter_class() -> Gc<RefCell<ObjClass>> {
+        init_core_static_classes();
+        ROOT_OBJ_MAP_ITER_CLASS.with(|c| c.borrow().as_ref().unwrap().as_gc())
+    }
+
+    pub(crate) fn get_gc_obj_vec_class() -> Gc<RefCell<ObjClass>> {
+        init_core_static_classes();
+        ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc())
+    }
+
+    pub(crate) fn get_gc_obj_vec_iter_class() -> Gc<RefCell<ObjClass>> {
+        init_core_static_classes();
+        ROOT_OBJ_VEC_ITER_CLASS.with(|c| c.as_gc())
+    }
+
+    pub(crate) fn get_gc_obj_range_class() -> Gc<RefCell<ObjClass>> {
+        init_core_static_classes();
+        ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc())
+    }
+
+    pub(crate) fn get_gc_obj_range_iter_class() -> Gc<RefCell<ObjClass>> {
+        init_core_static_classes();
+        ROOT_OBJ_RANGE_ITER_CLASS.with(|c| c.as_gc())
+    }
 }

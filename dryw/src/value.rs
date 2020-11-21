@@ -240,6 +240,7 @@ impl cmp::PartialEq for Value {
             (Value::ObjVecIter(first), Value::ObjVecIter(second)) => *first == *second,
             (Value::ObjRange(first), Value::ObjRange(second)) => *first == *second,
             (Value::ObjRangeIter(first), Value::ObjRangeIter(second)) => *first == *second,
+            (Value::Sentinel, Value::Sentinel) => true,
             (Value::None, Value::None) => true,
             _ => false,
         }
