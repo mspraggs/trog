@@ -1,4 +1,3 @@
-// [line 4] Error at '{': Expected expression.
-// [line 4] Error at ')': Expected ';' after expression.
+// [line 3] Error at '{': Expected loop variable name.
 // 65
-for ({}; a < 2; a = a + 1) {}
+for ({} in 0..1}) {}

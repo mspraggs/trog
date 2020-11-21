@@ -4,7 +4,7 @@
 {
   var sum = 0;
   var string;
-  for (var i = 0; i < 100; i = i + 1) {
+  for (i in 0..100) {
     if (i == 4) {
       string = "yes";
     }

@@ -783,7 +783,11 @@ fn range_iter(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
 
-    let iter = new_root_obj_range_iter(args[0].try_as_obj_range().expect("Expected ObjRange instance."));
+    let iter = new_root_obj_range_iter(
+        args[0]
+            .try_as_obj_range()
+            .expect("Expected ObjRange instance."),
+    );
     Ok(Value::ObjRangeIter(iter.as_gc()))
 }
 
@@ -802,7 +806,8 @@ pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
 pub struct ObjRangeIter {
     pub class: Gc<RefCell<ObjClass>>,
     pub iterable: Gc<ObjRange>,
-    pub current: isize,
+    current: isize,
+    step: isize,
 }
 
 pub fn new_gc_obj_range_iter(range: Gc<ObjRange>) -> Gc<RefCell<ObjRangeIter>> {
@@ -820,15 +825,16 @@ impl ObjRangeIter {
             class: ROOT_OBJ_RANGE_ITER_CLASS.with(|c| c.as_gc()),
             iterable,
             current,
+            step: if iterable.begin < iterable.end { 1 } else { -1 },
         }
     }
 
     fn next(&mut self) -> Value {
-        if self.current >= self.iterable.end {
+        if self.current == self.iterable.end {
             return Value::Sentinel;
         }
         let ret = Value::Number(self.current as f64);
-        self.current += 1;
+        self.current += self.step;
         ret
     }
 }

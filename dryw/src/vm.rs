@@ -116,11 +116,22 @@ fn string(args: &mut [Value]) -> Result<Value, Error> {
     )))
 }
 
+fn sentinel(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected no arguments to 'sentinel'."
+        );
+    }
+    Ok(Value::Sentinel)
+}
+
 pub fn new_root_vm() -> Root<Vm> {
     let mut vm = memory::allocate_root(Vm::new());
     vm.define_native("clock", Box::new(clock_native));
     vm.define_native("print", Box::new(default_print));
     vm.define_native("String", Box::new(string));
+    vm.define_native("sentinel", Box::new(sentinel));
     let obj_vec_class = object::ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc());
     vm.set_global("Vec", Value::ObjClass(obj_vec_class));
     let obj_range_class = object::ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc());
@@ -485,6 +496,13 @@ impl Vm {
                 OpCode::JumpIfFalse => {
                     let offset = read_short!();
                     if !self.peek(0).as_bool() {
+                        self.ip = unsafe { self.ip.offset(offset as isize) };
+                    }
+                }
+
+                OpCode::JumpIfSentinel => {
+                    let offset = read_short!();
+                    if let Value::Sentinel = self.peek(0) {
                         self.ip = unsafe { self.ip.offset(offset as isize) };
                     }
                 }

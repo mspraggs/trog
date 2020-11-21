@@ -212,7 +212,7 @@ struct Parser<'a> {
     vm: &'a mut Vm,
 }
 
-const RULES: [ParseRule; 46] = [
+const RULES: [ParseRule; 47] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -430,6 +430,12 @@ const RULES: [ParseRule; 46] = [
         precedence: Precedence::None,
     },
     // If
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // In
     ParseRule {
         prefix: None,
         infix: None,
@@ -747,51 +753,66 @@ impl<'a> Parser<'a> {
     fn for_statement(&mut self) {
         self.begin_scope();
 
+        let loop_iter_name = "... temp-iter-var ...";
+
+        // For loops take the following form:
+        // for (v in [1, 2, 3]) {
+        //     ... loop body ...
+        // }
+        //
+        // To support this we generate code equivalent to the following:
+        // var v;
+        // var it = [1, 2, 3].__iter__();
+        // while ((v = it.__next__()) != <sentinel>) {
+        //     ... loop body ...
+        // }
+
         self.consume(TokenKind::LeftParen, "Expected '(' after 'for'.");
-        if self.match_token(TokenKind::SemiColon) {
-            // No initialiser
-        } else if self.match_token(TokenKind::Var) {
-            self.var_declaration();
-        } else {
-            self.expression_statement();
-        }
 
-        let mut loop_start = self.chunk().code.len();
+        // Set up loop variable
+        self.consume(TokenKind::Identifier, "Expected loop variable name.");
+        self.declare_variable();
+        self.emit_byte(OpCode::Nil as u8);
+        self.mark_initialised();
 
-        let mut exit_jump: Option<usize> = None;
+        let (loop_var, _) = self
+            .resolve_local(&Token::from_string(self.previous.source.as_str()))
+            .expect("Expected to resolve local.");
 
-        if !self.match_token(TokenKind::SemiColon) {
-            self.expression();
-            self.consume(TokenKind::SemiColon, "Expected ';' after loop condition.");
+        // Parse for loop syntax
+        self.consume(TokenKind::In, "Expected 'in' after loop variable.");
 
-            // We'll need to jump out of the loop if the condition is false, so
-            // we add a conditional jump here.
-            exit_jump = Some(self.emit_jump(OpCode::JumpIfFalse));
-            self.emit_byte(OpCode::Pop as u8);
-        }
+        // Parse iterable object
+        self.expression();
+        self.compiler_mut()
+            .add_local(&Token::from_string(loop_iter_name));
+        let iter_method_name = self.identifier_constant(&Token::from_string("__iter__"));
+        // Fetch the iterator itself
+        self.emit_bytes([OpCode::Invoke as u8, iter_method_name]);
+        self.emit_byte(0);
+        self.mark_initialised();
 
-        if !self.match_token(TokenKind::RightParen) {
-            let body_jump = self.emit_jump(OpCode::Jump);
+        let loop_start = self.chunk().code.len();
+        let (iter_var, _) = self
+            .resolve_local(&Token::from_string(loop_iter_name))
+            .expect("Expected to resolve local.");
+        self.emit_bytes([OpCode::GetLocal as u8, iter_var]);
+        let next_method_name = self.identifier_constant(&Token::from_string("__next__"));
+        self.emit_bytes([OpCode::Invoke as u8, next_method_name]);
+        self.emit_byte(0);
+        self.emit_bytes([OpCode::SetLocal as u8, loop_var]);
 
-            let increment_start = self.chunk().code.len();
-            self.expression();
-            self.emit_byte(OpCode::Pop as u8);
-            self.consume(TokenKind::RightParen, "Expected ')' after for clauses.");
+        let exit_jump = self.emit_jump(OpCode::JumpIfSentinel);
 
-            self.emit_loop(loop_start);
-            loop_start = increment_start;
-            self.patch_jump(body_jump);
-        }
+        self.consume(TokenKind::RightParen, "Expected ')' after loop expression.");
 
+        self.emit_byte(OpCode::Pop as u8);
         self.statement();
 
         self.emit_loop(loop_start);
 
-        if let Some(offset) = exit_jump {
-            self.patch_jump(offset);
-            self.emit_byte(OpCode::Pop as u8);
-        }
-
+        self.patch_jump(exit_jump);
+        self.emit_byte(OpCode::Pop as u8);
         self.end_scope();
     }
 

@@ -67,6 +67,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::BuildVec => byte_instruction("BUILD_VEC", chunk, offset),
         OpCode::Jump => jump_instruction("JUMP", 1, chunk, offset),
         OpCode::JumpIfFalse => jump_instruction("JUMP_IF_FALSE", 1, chunk, offset),
+        OpCode::JumpIfSentinel => jump_instruction("JUMP_IF_SENTINEL", 1, chunk, offset),
         OpCode::Loop => jump_instruction("LOOP", -1, chunk, offset),
         OpCode::Call => byte_instruction("CALL", chunk, offset),
         OpCode::Invoke => invoke_instruction("INVOKE", chunk, offset),
@@ -125,7 +126,7 @@ fn byte_instruction(name: &str, chunk: &Chunk, offset: usize) -> usize {
 }
 
 fn jump_instruction(name: &str, sign: i32, chunk: &Chunk, offset: usize) -> usize {
-    let jump = ((chunk.code[offset + 1] as u16) << 8) | (chunk.code[offset + 2] as u16);
+    let jump = u16::from_ne_bytes([chunk.code[offset + 1], chunk.code[offset + 2]]);
     let target = (offset + 3) as isize + sign as isize * jump as isize;
     println!("{:16} {:4} -> {}", name, offset, target);
     offset + 3

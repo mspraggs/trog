@@ -5,7 +5,7 @@
 var f1;
 var f2;
 var f3;
-for (var i = 1; i < 4; i = i + 1) {
+for (i in 1..4) {
   var j = i;
   fn f() { print(j); }
   if (j == 1) f1 = f;
