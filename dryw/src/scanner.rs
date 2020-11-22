@@ -44,6 +44,7 @@ pub enum TokenKind {
     GreaterEqual,
     Less,
     LessEqual,
+    Bar,
     Identifier,
     Str,
     Interpolation,
@@ -237,6 +238,7 @@ impl Scanner {
                     TokenKind::Greater
                 })
             }
+            "|" => self.make_token(TokenKind::Bar),
             "\"" => self.string(),
             c => {
                 let msg = format!("Unexpected character: '{}'.", c);

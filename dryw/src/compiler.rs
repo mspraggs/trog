@@ -107,6 +107,7 @@ struct Compiler {
     locals: Vec<Local>,
     upvalues: Vec<Upvalue>,
     scope_depth: usize,
+    lambda_count: usize,
 }
 
 enum CompilerError {
@@ -136,6 +137,7 @@ impl Compiler {
             },
             upvalues: Vec::new(),
             scope_depth: 0,
+            lambda_count: 0,
         }
     }
 
@@ -213,7 +215,7 @@ struct Parser<'a> {
     errors: RefCell<Vec<String>>,
 }
 
-const RULES: [ParseRule; 47] = [
+const RULES: [ParseRule; 48] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -369,6 +371,12 @@ const RULES: [ParseRule; 47] = [
         prefix: None,
         infix: Some(Parser::binary),
         precedence: Precedence::Comparison,
+    },
+    // Bar
+    ParseRule {
+        prefix: Some(Parser::lambda),
+        infix: None,
+        precedence: Precedence::None,
     },
     // Identifier
     ParseRule {
@@ -628,21 +636,11 @@ impl<'a> Parser<'a> {
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expected '(' after function name.");
-        if !self.check(TokenKind::RightParen) {
-            loop {
-                self.compiler_mut().function.arity += 1;
-                if self.compiler().function.arity > 256 {
-                    self.error_at_current("Cannot have more than 255 parameters.");
-                }
-
-                let param_constant = self.parse_variable("Expected parameter name.");
-                self.define_variable(param_constant);
-
-                if !self.match_token(TokenKind::Comma) {
-                    break;
-                }
-            }
-        }
+        self.parameter_list(
+            TokenKind::RightParen,
+            "Cannot have more than 255 parameters.",
+            "Expected parameter name.",
+        );
         if kind != FunctionKind::Function {
             self.compiler_mut().function.arity -= 1;
             self.compiler_mut().locals[0].can_assign = false;
@@ -1133,6 +1131,24 @@ impl<'a> Parser<'a> {
         arg_count as u8
     }
 
+    fn parameter_list(&mut self, right_delim: TokenKind, count_msg: &str, param_msg: &str) {
+        if !self.check(right_delim) {
+            loop {
+                self.compiler_mut().function.arity += 1;
+                if self.compiler().function.arity > 256 {
+                    self.error_at_current(count_msg);
+                }
+
+                let param_constant = self.parse_variable(param_msg);
+                self.define_variable(param_constant);
+
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+    }
+
     fn get_rule(&self, kind: TokenKind) -> &ParseRule {
         &RULES[kind as usize]
     }
@@ -1356,6 +1372,37 @@ impl<'a> Parser<'a> {
         };
         s.emit_bytes([OpCode::Invoke as u8, name]);
         s.emit_byte(num_args as u8);
+    }
+
+    fn lambda(s: &mut Parser, _can_assign: bool) {
+        let lambda_count = s.compiler().lambda_count;
+        s.compiler_mut().lambda_count += 1;
+        s.new_compiler(FunctionKind::Function, format!("lambda-{}", lambda_count).as_str());
+        s.begin_scope();
+
+        s.parameter_list(
+            TokenKind::Bar,
+            "Cannot have more than 255 parameters.",
+            "Expected parameter name.",
+        );
+        s.consume(TokenKind::Bar, "Expected ')' after parameters.");
+
+        if s.match_token(TokenKind::LeftBrace) {
+            s.block();
+        } else {
+            s.expression();
+            s.emit_byte(OpCode::Return as u8);
+        }
+
+        let (function, compiler) = s.finalise_compiler();
+
+        let constant = s.make_constant(value::Value::ObjFunction(function.as_gc()));
+        s.emit_bytes([OpCode::Closure as u8, constant]);
+
+        for upvalue in compiler.upvalues.iter() {
+            s.emit_byte(upvalue.is_local as u8);
+            s.emit_byte(upvalue.index as u8);
+        }
     }
 
     fn vector(s: &mut Parser, _can_assign: bool) {
