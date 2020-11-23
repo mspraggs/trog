@@ -1,4 +1,4 @@
 language: rust
 script:
   - cargo build
-  - cargo run -p dryw-test
+  - cargo run -p yarel-test

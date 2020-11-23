@@ -1,5 +1,5 @@
 [package]
-name = "dryw-cli"
+name = "yarel-test"
 version = "0.1.0"
 authors = ["Matt Spraggs <matthew.spraggs@gmail.com>"]
 edition = "2018"
@@ -7,4 +7,5 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dryw = { path = "../dryw" }
+yarel = { path = "../yarel" }
+crossterm = "*"

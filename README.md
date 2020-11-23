@@ -1,1 +1,1 @@
-# Dryw Lang
+# YAREL: Yet Another Rust-Embeddable Language

@@ -21,10 +21,10 @@ use std::mem;
 use crossterm::queue;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 
-use dryw::compiler;
-use dryw::error::{Error, ErrorKind};
-use dryw::value::Value;
-use dryw::vm;
+use yarel::compiler;
+use yarel::error::{Error, ErrorKind};
+use yarel::value::Value;
+use yarel::vm;
 
 #[derive(Debug)]
 pub struct Success {

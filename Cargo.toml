@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "dryw",
-    "dryw-cli",
-    "dryw-test",
+    "yarel",
+    "yarel-cli",
+    "yarel-test",
 ]

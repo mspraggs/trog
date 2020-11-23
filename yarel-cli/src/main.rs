@@ -18,8 +18,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
-use dryw::error::ErrorKind;
-use dryw::vm;
+use yarel::error::ErrorKind;
+use yarel::vm;
 
 fn repl(vm: &mut vm::Vm) {
     loop {
@@ -74,7 +74,7 @@ fn main() {
     } else if args.len() == 2 {
         run_file(&mut vm, &args[1]);
     } else {
-        eprintln!("Usage: ./dryw [path]");
+        eprintln!("Usage: ./yarel-cli [path]");
         process::exit(64);
     }
 }

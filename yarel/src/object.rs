@@ -28,7 +28,7 @@ use crate::memory::{self, Gc, Root};
 use crate::value::Value;
 use crate::vm;
 
-include!(concat!(env!("OUT_DIR"), "/core.dryw.rs"));
+include!(concat!(env!("OUT_DIR"), "/core.yrl.rs"));
 
 type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
 
