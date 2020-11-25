@@ -1,6 +1,6 @@
 // ok
 // 0
 if (false) {
-  print(notDefined);
+  print(not_defined);
 }
 print("ok");

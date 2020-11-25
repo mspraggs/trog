@@ -5,6 +5,6 @@ class Foo {
   fn method(self) {}
 }
 var foo = Foo();
-var fooMethod = foo.method;
-print(fooMethod == fooMethod);
+var foo_method = foo.method;
+print(foo_method == foo_method);
 print(foo.method == foo.method);

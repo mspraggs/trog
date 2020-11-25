@@ -1,12 +1,12 @@
 // true
 // true
 // 0
-fn isEven(n) {
+fn is_even(n) {
   if n == 0 { return true; }
-  return isOdd(n - 1);
+  return is_odd(n - 1);
 }
-fn isOdd(n) {
-  return isEven(n - 1);
+fn is_odd(n) {
+  return is_even(n - 1);
 }
-print(isEven(4));
-print(isOdd(3));
+print(is_even(4));
+print(is_odd(3));

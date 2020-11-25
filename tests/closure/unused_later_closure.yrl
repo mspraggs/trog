@@ -5,12 +5,12 @@ var closure;
   var a = "a";
   {
     var b = "b";
-    fn returnA() {
+    fn return_a() {
       return a;
     }
-    closure = returnA;
+    closure = return_a;
     if (false) {
-      fn returnB() {
+      fn return_b() {
         return b;
       }
     }

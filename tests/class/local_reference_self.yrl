@@ -1,8 +1,8 @@
 // Foo
 // 0
 class Foo {
-  fn returnSelf(self) {
+  fn return_self(self) {
     return Foo;
   }
 }
-print(Foo().returnSelf());
+print(Foo().return_self());

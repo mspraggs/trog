@@ -1,4 +1,4 @@
-// Undefined variable 'notDefined'.
+// Undefined variable 'not_defined'.
 // [line 4] in script
 // 70
-print(notDefined);
+print(not_defined);

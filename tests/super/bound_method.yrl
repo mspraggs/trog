@@ -6,12 +6,12 @@ class A {
   }
 }
 class B < A {
-  fn getClosure(self) {
+  fn get_closure(self) {
     return super.method;
   }
   fn method(self, arg) {
     print("B.method(" + arg + ")");
   }
 }
-var closure = B().getClosure();
+var closure = B().get_closure();
 closure("arg");

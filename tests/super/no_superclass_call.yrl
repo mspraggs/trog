@@ -2,7 +2,7 @@
 // 65
 class Base {
   fn foo(self) {
-    super.doesNotExist(1);
+    super.does_not_exist(1);
   }
 }
 Base().foo();

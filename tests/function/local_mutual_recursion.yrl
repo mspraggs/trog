@@ -1,14 +1,14 @@
-// Undefined variable 'isOdd'.
-// [line 8] in isEven()
+// Undefined variable 'is_odd'.
+// [line 8] in is_even()
 // [line 13] in script
 // 70
 {
-  fn isEven(n) {
+  fn is_even(n) {
     if n == 0 { return true; }
-    return isOdd(n - 1);
+    return is_odd(n - 1);
   }
-  fn isOdd(n) {
-    return isEven(n - 1);
+  fn is_odd(n) {
+    return is_even(n - 1);
   }
-  isEven(4);
+  is_even(4);
 }

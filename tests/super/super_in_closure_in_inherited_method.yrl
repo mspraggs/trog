@@ -6,7 +6,7 @@ class A {
   }
 }
 class B < A {
-  fn getClosure(self) {
+  fn get_closure(self) {
     fn closure() {
       super.say();
     }
@@ -21,4 +21,4 @@ class C < B {
     print("C");
   }
 }
-C().getClosure()();
+C().get_closure()();
