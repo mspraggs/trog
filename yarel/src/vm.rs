@@ -25,7 +25,7 @@ use crate::compiler;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::hash::BuildPassThroughHasher;
-use crate::memory::{self, Gc, GcManaged, Root};
+use crate::memory::{self, Gc, GcManaged, Root, UniqueRoot};
 use crate::object::{
     self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjString, ObjUpvalue,
 };
@@ -124,16 +124,16 @@ fn sentinel(args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::Sentinel)
 }
 
-pub fn new_root_vm() -> Root<Vm> {
-    memory::allocate_root(Vm::new())
+pub fn new_root_vm() -> UniqueRoot<Vm> {
+    memory::allocate_unique_root(Vm::new())
 }
 
-pub fn new_root_vm_with_built_ins() -> Root<Vm> {
+pub fn new_root_vm_with_built_ins() -> UniqueRoot<Vm> {
     let mut vm = new_root_vm();
-    vm.define_native("clock", Box::new(clock_native));
-    vm.define_native("print", Box::new(default_print));
-    vm.define_native("String", Box::new(string));
-    vm.define_native("sentinel", Box::new(sentinel));
+    vm.define_native("clock", clock_native);
+    vm.define_native("print", default_print);
+    vm.define_native("String", string);
+    vm.define_native("sentinel", sentinel);
     let obj_iter_class = object::classes::get_gc_obj_iter_class();
     vm.set_global("Iter", Value::ObjClass(obj_iter_class));
     let obj_map_iter_class = object::classes::get_gc_obj_map_iter_class();
@@ -715,8 +715,8 @@ impl Vm {
         Ok(())
     }
 
-    fn call_native(&mut self, mut native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
-        let function = native.function.as_mut();
+    fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
+        let function = native.function;
         let frame_begin = self.stack.len() - arg_count - 1;
         let result = function(&mut self.stack[frame_begin..frame_begin + arg_count + 1])?;
         self.stack.truncate(frame_begin);

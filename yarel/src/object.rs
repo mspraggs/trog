@@ -180,19 +180,34 @@ pub struct ObjFunction {
     pub name: memory::Gc<ObjString>,
 }
 
-pub fn new_gc_obj_function(name: Gc<ObjString>, chunk_index: usize) -> Gc<ObjFunction> {
-    memory::allocate(ObjFunction::new(name, chunk_index))
+pub fn new_gc_obj_function(
+    name: Gc<ObjString>,
+    arity: u32,
+    upvalue_count: usize,
+    chunk_index: usize,
+) -> Gc<ObjFunction> {
+    memory::allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
 }
 
-pub fn new_root_obj_function(name: Gc<ObjString>, chunk_index: usize) -> Root<ObjFunction> {
-    new_gc_obj_function(name, chunk_index).as_root()
+pub fn new_root_obj_function(
+    name: Gc<ObjString>,
+    arity: u32,
+    upvalue_count: usize,
+    chunk_index: usize,
+) -> Root<ObjFunction> {
+    new_gc_obj_function(name, arity, upvalue_count, chunk_index).as_root()
 }
 
 impl ObjFunction {
-    fn new(name: memory::Gc<ObjString>, chunk_index: usize) -> Self {
+    fn new(
+        name: memory::Gc<ObjString>,
+        arity: u32,
+        upvalue_count: usize,
+        chunk_index: usize,
+    ) -> Self {
         ObjFunction {
-            arity: 1,
-            upvalue_count: 0,
+            arity,
+            upvalue_count,
             chunk_index: chunk_index,
             name,
         }
@@ -218,7 +233,8 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = Box<dyn FnMut(&mut [Value]) -> Result<Value, Error>>;
+//Box<dyn FnMut(&mut [Value]) -> Result<Value, Error>>;
+pub type NativeFn = fn(&mut [Value]) -> Result<Value, Error>;
 
 pub struct ObjNative {
     pub function: NativeFn,
@@ -427,15 +443,15 @@ impl<T: 'static + memory::GcManaged> memory::GcManaged for ObjBoundMethod<T> {
     }
 }
 
-impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", *self.method.borrow())
-    }
-}
-
 impl fmt::Display for ObjBoundMethod<ObjNative> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", *self.method)
+    }
+}
+
+impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.method.borrow())
     }
 }
 
@@ -455,13 +471,13 @@ pub fn new_root_obj_vec() -> Root<RefCell<ObjVec>> {
 pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
     let class_name = new_gc_obj_string("Vec");
     let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__init__", Box::new(vec_init));
-    add_native_method_to_class(class.as_gc(), "push", Box::new(vec_push));
-    add_native_method_to_class(class.as_gc(), "pop", Box::new(vec_pop));
-    add_native_method_to_class(class.as_gc(), "__getitem__", Box::new(vec_get));
-    add_native_method_to_class(class.as_gc(), "__setitem__", Box::new(vec_set));
-    add_native_method_to_class(class.as_gc(), "len", Box::new(vec_len));
-    add_native_method_to_class(class.as_gc(), "__iter__", Box::new(vec_iter));
+    add_native_method_to_class(class.as_gc(), "__init__", vec_init);
+    add_native_method_to_class(class.as_gc(), "push", vec_push);
+    add_native_method_to_class(class.as_gc(), "pop", vec_pop);
+    add_native_method_to_class(class.as_gc(), "__getitem__", vec_get);
+    add_native_method_to_class(class.as_gc(), "__setitem__", vec_set);
+    add_native_method_to_class(class.as_gc(), "len", vec_len);
+    add_native_method_to_class(class.as_gc(), "__iter__", vec_iter);
     class
         .borrow_mut()
         .add_superclass(classes::get_gc_obj_iter_class());
@@ -678,7 +694,7 @@ fn vec_iter_next(args: &mut [Value]) -> Result<Value, Error> {
 pub fn new_root_obj_vec_iter_class() -> Root<RefCell<ObjClass>> {
     let class_name = new_gc_obj_string("VecIter");
     let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__next__", Box::new(vec_iter_next));
+    add_native_method_to_class(class.as_gc(), "__next__", vec_iter_next);
     class
 }
 
@@ -729,8 +745,8 @@ pub fn new_root_obj_range_class() -> Root<RefCell<ObjClass>> {
     classes::get_gc_obj_iter_class();
     let class_name = new_gc_obj_string("Range");
     let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__init__", Box::new(range_init));
-    add_native_method_to_class(class.as_gc(), "__iter__", Box::new(range_iter));
+    add_native_method_to_class(class.as_gc(), "__init__", range_init);
+    add_native_method_to_class(class.as_gc(), "__iter__", range_iter);
     class
         .borrow_mut()
         .add_superclass(classes::get_gc_obj_iter_class());
@@ -872,7 +888,7 @@ fn range_iter_next(args: &mut [Value]) -> Result<Value, Error> {
 pub fn new_root_obj_range_iter_class() -> Root<RefCell<ObjClass>> {
     let class_name = new_gc_obj_string("IterVec");
     let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__next__", Box::new(range_iter_next));
+    add_native_method_to_class(class.as_gc(), "__next__", range_iter_next);
     class
 }
 

@@ -25,20 +25,33 @@ use std::ptr::NonNull;
 
 use crate::common;
 
-pub fn allocate<T: 'static + GcManaged>(data: T) -> Gc<T> {
-    let ptr = HEAP.with(|heap| {
+fn allocate_ptr<T: 'static + GcManaged>(data: T) -> GcBoxPtr<T> {
+    HEAP.with(|heap| {
         if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
             heap.borrow_mut().collect();
         } else {
             heap.borrow_mut().collect_if_required();
         }
         heap.borrow_mut().allocate(data)
-    });
-    Gc { ptr }
+    })
+}
+
+pub(crate) fn allocate<T: 'static + GcManaged>(data: T) -> Gc<T> {
+    Gc {
+        ptr: allocate_ptr(data),
+    }
 }
 
 pub fn allocate_root<T: 'static + GcManaged>(data: T) -> Root<T> {
     allocate(data).as_root()
+}
+
+pub fn allocate_unique_root<T: 'static + GcManaged>(data: T) -> UniqueRoot<T> {
+    let mut ret = UniqueRoot {
+        ptr: allocate_ptr(data),
+    };
+    ret.inc_num_roots();
+    ret
 }
 
 thread_local!(static HEAP: RefCell<Heap> = RefCell::new(Heap::new()));
@@ -88,9 +101,77 @@ impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
         }
         self.data.blacken();
     }
+
+    fn inc_num_roots(&mut self) {
+        *self.num_roots.get_mut() += 1;
+    }
+
+    fn dec_num_roots(&mut self) {
+        *self.num_roots.get_mut() -= 1;
+    }
 }
 
-pub struct Root<T: GcManaged + ?Sized> {
+pub struct UniqueRoot<T: 'static + GcManaged + ?Sized> {
+    ptr: GcBoxPtr<T>,
+}
+
+impl<T: GcManaged> UniqueRoot<T> {
+    pub fn as_gc(&self) -> Gc<T> {
+        Gc { ptr: self.ptr }
+    }
+}
+
+impl<T: 'static + GcManaged + ?Sized> UniqueRoot<T> {
+    fn inc_num_roots(&mut self) {
+        self.gc_box_mut().inc_num_roots();
+    }
+
+    fn dec_num_roots(&mut self) {
+        self.gc_box_mut().dec_num_roots();
+    }
+}
+
+impl<T: GcManaged + ?Sized> UniqueRoot<T> {
+    fn gc_box(&self) -> &GcBox<T> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
+        unsafe { self.ptr.as_mut() }
+    }
+}
+
+impl<T: 'static + GcManaged + ?Sized> GcManaged for UniqueRoot<T> {
+    fn mark(&self) {
+        self.gc_box().mark();
+    }
+
+    fn blacken(&self) {
+        self.gc_box().blacken();
+    }
+}
+
+impl<T: 'static + GcManaged> Deref for UniqueRoot<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.gc_box().data
+    }
+}
+
+impl<T: 'static + GcManaged> DerefMut for UniqueRoot<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.gc_box_mut().data
+    }
+}
+
+impl<T: 'static + GcManaged + ?Sized> Drop for UniqueRoot<T> {
+    fn drop(&mut self) {
+        self.dec_num_roots();
+    }
+}
+
+pub struct Root<T: 'static + GcManaged + ?Sized> {
     ptr: GcBoxPtr<T>,
 }
 
@@ -100,13 +181,13 @@ impl<T: GcManaged> Root<T> {
     }
 }
 
-impl<T: GcManaged + ?Sized> Root<T> {
+impl<T: 'static + GcManaged + ?Sized> Root<T> {
     fn inc_num_roots(&mut self) {
-        *self.gc_box_mut().num_roots.get_mut() += 1;
+        self.gc_box_mut().inc_num_roots();
     }
 
     fn dec_num_roots(&mut self) {
-        *self.gc_box_mut().num_roots.get_mut() -= 1;
+        self.gc_box_mut().dec_num_roots();
     }
 }
 
@@ -130,7 +211,7 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for Root<T> {
     }
 }
 
-impl<T: GcManaged + ?Sized> Clone for Root<T> {
+impl<T: 'static + GcManaged + ?Sized> Clone for Root<T> {
     fn clone(&self) -> Root<T> {
         let mut ret = Root { ptr: self.ptr };
         ret.inc_num_roots();
@@ -146,13 +227,7 @@ impl<T: 'static + GcManaged> Deref for Root<T> {
     }
 }
 
-impl<T: 'static + GcManaged> DerefMut for Root<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.gc_box_mut().data
-    }
-}
-
-impl<T: GcManaged + ?Sized> Drop for Root<T> {
+impl<T: 'static + GcManaged + ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
         self.dec_num_roots();
     }
@@ -180,10 +255,6 @@ impl<T: 'static + GcManaged + ?Sized> Gc<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }
     }
-
-    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
-        unsafe { self.ptr.as_mut() }
-    }
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcManaged for Gc<T> {
@@ -209,12 +280,6 @@ impl<T: 'static + GcManaged> Deref for Gc<T> {
 
     fn deref(&self) -> &T {
         &self.gc_box().data
-    }
-}
-
-impl<T: 'static + GcManaged> DerefMut for Gc<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.gc_box_mut().data
     }
 }
 

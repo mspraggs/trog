@@ -38,6 +38,8 @@ pub struct Failure {
     pub actual: Vec<String>,
 }
 
+thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
+
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         queue!(
@@ -83,25 +85,23 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
+fn local_print(args: &mut [Value]) -> Result<Value, Error> {
+    if args.len() != 2 {
+        return Err(Error::with_message(
+            ErrorKind::RuntimeError,
+            "Expected one argument to 'print'.",
+        ));
+    }
+    let lines = format!("{}", args[1]);
+    for line in lines.as_str().lines() {
+        OUTPUT.with(|output| output.borrow_mut().push(format!("{}", line)));
+    }
+    Ok(Value::None)
+}
+
 pub fn run_test(path: &str) -> Result<Success, Failure> {
-    thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
-
-    let local_print = |args: &mut [Value]| -> Result<Value, Error> {
-        if args.len() != 2 {
-            return Err(Error::with_message(
-                ErrorKind::RuntimeError,
-                "Expected one argument to 'print'.",
-            ));
-        }
-        let lines = format!("{}", args[1]);
-        for line in lines.as_str().lines() {
-            OUTPUT.with(|output| output.borrow_mut().push(format!("{}", line)));
-        }
-        Ok(Value::None)
-    };
-
     let mut vm = vm::new_root_vm_with_built_ins();
-    vm.define_native("print", Box::new(local_print));
+    vm.define_native("print", local_print);
 
     let source = match fs::read_to_string(path) {
         Ok(contents) => contents,

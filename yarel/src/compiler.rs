@@ -21,7 +21,7 @@ use crate::chunk::{self, Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, Root};
+use crate::memory::Root;
 use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
@@ -100,9 +100,10 @@ struct Upvalue {
 }
 
 struct Compiler {
-    function: Root<ObjFunction>,
-    chunk: Gc<Chunk>,
     kind: FunctionKind,
+    func_arity: u32,
+    func_name: String,
+    chunk: Chunk,
 
     locals: Vec<Local>,
     upvalues: Vec<Upvalue>,
@@ -119,12 +120,11 @@ enum CompilerError {
 
 impl Compiler {
     fn new(kind: FunctionKind, name: &str) -> Self {
-        let function = new_root_obj_function_with_name(name);
-        let chunk_index = function.chunk_index;
         Compiler {
-            function: function,
             kind,
-            chunk: chunk::get_chunk(chunk_index),
+            func_arity: 1,
+            func_name: name.to_owned(),
+            chunk: Chunk::new(),
             locals: if kind == FunctionKind::Function || kind == FunctionKind::Script {
                 vec![Local {
                     name: String::new(),
@@ -139,6 +139,14 @@ impl Compiler {
             scope_depth: 0,
             lambda_count: 0,
         }
+    }
+
+    fn make_function(&mut self) -> Root<ObjFunction> {
+        let name = object::new_root_obj_string(self.func_name.as_str());
+        let num_upvalues = self.upvalues.len();
+        let chunk = mem::replace(&mut self.chunk, Chunk::new());
+        let chunk_index = chunk::add_chunk(chunk);
+        object::new_root_obj_function(name.as_gc(), self.func_arity, num_upvalues, chunk_index)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -198,12 +206,6 @@ pub fn compile(source: String) -> Result<Root<ObjFunction>, Error> {
     parser.parse()
 }
 
-fn new_root_obj_function_with_name(name: &str) -> Root<ObjFunction> {
-    let name = object::new_root_obj_string(name);
-    let function = object::new_root_obj_function(name.as_gc(), chunk::new_chunk());
-    function
-}
-
 struct Parser<'a> {
     current: Token,
     previous: Token,
@@ -213,6 +215,7 @@ struct Parser<'a> {
     compilers: Vec<Compiler>,
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
+    compiled_functions: Vec<Root<ObjFunction>>,
 }
 
 const RULES: [ParseRule; 48] = [
@@ -517,6 +520,7 @@ impl<'a> Parser<'a> {
             compilers: Vec::new(),
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
+            compiled_functions: Vec::new(),
         };
         ret.new_compiler(FunctionKind::Script, "");
         ret
@@ -611,23 +615,19 @@ impl<'a> Parser<'a> {
         self.compilers.push(Compiler::new(kind, name));
     }
 
-    fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Compiler) {
+    fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Vec<Upvalue>) {
         self.emit_return();
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
-            let func_name = format!("{}", *self.compiler().function);
-            let chunk_index = self.compiler().function.chunk_index;
-            let chunk = chunk::get_chunk(chunk_index);
-            debug::disassemble_chunk(&chunk, func_name.as_str());
+            let compiler = self.compiler();
+            debug::disassemble_chunk(&compiler.chunk, compiler.func_name.as_str());
         }
 
-        let upvalue_count = self.compiler().upvalues.len();
-        self.compiler_mut().function.upvalue_count = upvalue_count;
-
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = mem::replace(&mut compiler.function, new_root_obj_function_with_name(""));
+        let function = compiler.make_function();
+        self.compiled_functions.push(function.clone());
 
-        (function, compiler)
+        (function, compiler.upvalues)
     }
 
     fn function(&mut self, kind: FunctionKind) {
@@ -642,7 +642,7 @@ impl<'a> Parser<'a> {
             "Expected parameter name.",
         );
         if kind != FunctionKind::Function {
-            self.compiler_mut().function.arity -= 1;
+            self.compiler_mut().func_arity -= 1;
             self.compiler_mut().locals[0].can_assign = false;
         }
         self.consume(TokenKind::RightParen, "Expected ')' after parameters.");
@@ -650,12 +650,12 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::LeftBrace, "Expected '{' before function body.");
         self.block();
 
-        let (function, compiler) = self.finalise_compiler();
+        let (function, upvalues) = self.finalise_compiler();
 
         let constant = self.make_constant(value::Value::ObjFunction(function.as_gc()));
         self.emit_bytes([OpCode::Closure as u8, constant]);
 
-        for upvalue in compiler.upvalues.iter() {
+        for upvalue in upvalues.iter() {
             self.emit_byte(upvalue.is_local as u8);
             self.emit_byte(upvalue.index as u8);
         }
@@ -1134,8 +1134,8 @@ impl<'a> Parser<'a> {
     fn parameter_list(&mut self, right_delim: TokenKind, count_msg: &str, param_msg: &str) {
         if !self.check(right_delim) {
             loop {
-                self.compiler_mut().function.arity += 1;
-                if self.compiler().function.arity > 256 {
+                self.compiler_mut().func_arity += 1;
+                if self.compiler().func_arity > 256 {
                     self.error_at_current(count_msg);
                 }
 
@@ -1377,7 +1377,10 @@ impl<'a> Parser<'a> {
     fn lambda(s: &mut Parser, _can_assign: bool) {
         let lambda_count = s.compiler().lambda_count;
         s.compiler_mut().lambda_count += 1;
-        s.new_compiler(FunctionKind::Function, format!("lambda-{}", lambda_count).as_str());
+        s.new_compiler(
+            FunctionKind::Function,
+            format!("lambda-{}", lambda_count).as_str(),
+        );
         s.begin_scope();
 
         s.parameter_list(
@@ -1394,12 +1397,12 @@ impl<'a> Parser<'a> {
             s.emit_byte(OpCode::Return as u8);
         }
 
-        let (function, compiler) = s.finalise_compiler();
+        let (function, upvalues) = s.finalise_compiler();
 
         let constant = s.make_constant(value::Value::ObjFunction(function.as_gc()));
         s.emit_bytes([OpCode::Closure as u8, constant]);
 
-        for upvalue in compiler.upvalues.iter() {
+        for upvalue in upvalues.iter() {
             s.emit_byte(upvalue.is_local as u8);
             s.emit_byte(upvalue.index as u8);
         }

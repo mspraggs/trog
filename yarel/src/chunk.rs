@@ -24,9 +24,9 @@ thread_local! {
         ManuallyDrop::new(RefCell::new(Vec::new()));
 }
 
-pub(crate) fn new_chunk() -> usize {
+pub(crate) fn add_chunk(chunk: Chunk) -> usize {
     CHUNK_STORE.with(|store| {
-        let root = memory::allocate_root(Chunk::new());
+        let root = memory::allocate_root(chunk);
         store.borrow_mut().push(root);
         store.borrow().len() - 1
     })
