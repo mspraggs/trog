@@ -18,6 +18,10 @@ use std::{io, process};
 mod test;
 mod utils;
 
+use yarel::chunk;
+use yarel::class_store;
+use yarel::memory;
+
 fn main() {
     let paths = match utils::get_paths("tests", Some(".yrl")) {
         Ok(p) => p,
@@ -32,10 +36,14 @@ fn main() {
     let mut num_failed = 0;
     let mut stdout = io::stdout();
 
+    let heap = memory::new_heap();
+    let chunk_store = chunk::new_chunk_store();
+    let class_store = class_store::new_class_store(heap.clone(), chunk_store.clone());
+
     let failures: Vec<test::Failure> = paths
         .iter()
         .map(|p| {
-            let ret = test::run_test(p);
+            let ret = test::run_test(heap.clone(), chunk_store.clone(), &class_store, p);
             match ret {
                 Ok(ref success) => {
                     if !success.skipped {

@@ -18,7 +18,10 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
+use yarel::chunk;
+use yarel::class_store;
 use yarel::error::ErrorKind;
+use yarel::memory;
 use yarel::vm;
 
 fn repl(vm: &mut vm::Vm) {
@@ -67,7 +70,10 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let mut vm = vm::new_root_vm_with_built_ins();
+    let heap = memory::new_heap();
+    let chunk_store = chunk::new_chunk_store();
+    let class_store = class_store::new_class_store(heap.clone(), chunk_store.clone());
+    let mut vm = vm::new_root_vm_with_built_ins(heap, chunk_store, class_store);
 
     if args.len() == 1 {
         repl(&mut vm);

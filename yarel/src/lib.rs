@@ -13,7 +13,8 @@
  * limitations under the License.
  */
 
-mod chunk;
+pub mod chunk;
+pub mod class_store;
 mod common;
 pub mod compiler;
 mod debug;

@@ -17,12 +17,16 @@ use std::cell::RefCell;
 use std::fmt;
 use std::fs;
 use std::mem;
+use std::rc::Rc;
 
 use crossterm::queue;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 
+use yarel::chunk::ChunkStore;
+use yarel::class_store::CoreClassStore;
 use yarel::compiler;
 use yarel::error::{Error, ErrorKind};
+use yarel::memory::Heap;
 use yarel::value::Value;
 use yarel::vm;
 
@@ -47,7 +51,7 @@ impl fmt::Display for Failure {
             SetForegroundColor(Color::DarkBlue),
             Print(format!("Test {}\n", self.path)),
             SetForegroundColor(Color::DarkGreen),
-            Print(format!("  Expected:\n")),
+            Print("  Expected:\n".to_string()),
             ResetColor,
         )
         .unwrap();
@@ -85,7 +89,11 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn local_print(args: &mut [Value]) -> Result<Value, Error> {
+fn local_print(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 2 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
@@ -94,13 +102,22 @@ fn local_print(args: &mut [Value]) -> Result<Value, Error> {
     }
     let lines = format!("{}", args[1]);
     for line in lines.as_str().lines() {
-        OUTPUT.with(|output| output.borrow_mut().push(format!("{}", line)));
+        OUTPUT.with(|output| output.borrow_mut().push(line.to_string()));
     }
     Ok(Value::None)
 }
 
-pub fn run_test(path: &str) -> Result<Success, Failure> {
-    let mut vm = vm::new_root_vm_with_built_ins();
+pub fn run_test(
+    heap: Rc<RefCell<Heap>>,
+    chunk_store: Rc<RefCell<ChunkStore>>,
+    class_store: &CoreClassStore,
+    path: &str,
+) -> Result<Success, Failure> {
+    let mut vm = vm::new_root_vm_with_built_ins(
+        heap.clone(),
+        chunk_store.clone(),
+        Box::new(class_store.clone()),
+    );
     vm.define_native("print", local_print);
 
     let source = match fs::read_to_string(path) {
@@ -118,7 +135,12 @@ pub fn run_test(path: &str) -> Result<Success, Failure> {
         }
     };
 
-    let error_output = match compiler::compile(source) {
+    let result = compiler::compile(
+        &mut heap.borrow_mut(),
+        &mut chunk_store.borrow_mut(),
+        source,
+    );
+    let error_output = match result {
         Ok(f) => match vm.execute(f, &[]) {
             Ok(_) => Vec::new(),
             Err(e) => e.get_messages().clone(),

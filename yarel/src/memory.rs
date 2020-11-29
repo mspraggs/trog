@@ -22,39 +22,9 @@ use std::collections::HashMap;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::ptr::NonNull;
+use std::rc::Rc;
 
 use crate::common;
-
-fn allocate_ptr<T: 'static + GcManaged>(data: T) -> GcBoxPtr<T> {
-    HEAP.with(|heap| {
-        if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
-            heap.borrow_mut().collect();
-        } else {
-            heap.borrow_mut().collect_if_required();
-        }
-        heap.borrow_mut().allocate(data)
-    })
-}
-
-pub(crate) fn allocate<T: 'static + GcManaged>(data: T) -> Gc<T> {
-    Gc {
-        ptr: allocate_ptr(data),
-    }
-}
-
-pub fn allocate_root<T: 'static + GcManaged>(data: T) -> Root<T> {
-    allocate(data).as_root()
-}
-
-pub fn allocate_unique_root<T: 'static + GcManaged>(data: T) -> UniqueRoot<T> {
-    let mut ret = UniqueRoot {
-        ptr: allocate_ptr(data),
-    };
-    ret.inc_num_roots();
-    ret
-}
-
-thread_local!(static HEAP: RefCell<Heap> = RefCell::new(Heap::new()));
 
 #[derive(Copy, Clone, PartialEq)]
 enum Colour {
@@ -305,7 +275,28 @@ impl Heap {
         }
     }
 
-    fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+    pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
+        Gc {
+            ptr: self.allocate_ptr(data),
+        }
+    }
+    pub fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
+        self.allocate(data).as_root()
+    }
+    pub fn allocate_unique_root<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
+        let mut ret = UniqueRoot {
+            ptr: self.allocate_ptr(data),
+        };
+        ret.inc_num_roots();
+        ret
+    }
+
+    fn allocate_ptr<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+        if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
+            self.collect();
+        } else {
+            self.collect_if_required();
+        }
         let mut obj = Box::new(GcBox {
             colour: Cell::new(Colour::White),
             num_roots: Cell::new(0),
@@ -381,6 +372,7 @@ impl Heap {
             .iter()
             .filter(|obj| obj.colour.get() == Colour::Grey)
             .count();
+        #[allow(clippy::suspicious_map)]
         while num_greys > 0 {
             num_greys = self
                 .objects
@@ -408,6 +400,10 @@ impl Heap {
 
         bytes_marked
     }
+}
+
+pub fn new_heap() -> Rc<RefCell<Heap>> {
+    Rc::new(RefCell::new(Heap::new()))
 }
 
 impl<T: GcManaged> GcManaged for RefCell<T> {

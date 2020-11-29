@@ -17,15 +17,17 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::ptr;
+use std::rc::Rc;
 use std::time;
 
-use crate::chunk::{self, Chunk, OpCode};
+use crate::chunk::{Chunk, ChunkStore, OpCode};
+use crate::class_store::{self, CoreClassStore};
 use crate::common;
 use crate::compiler;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::hash::BuildPassThroughHasher;
-use crate::memory::{self, Gc, GcManaged, Root, UniqueRoot};
+use crate::memory::{Gc, GcManaged, Heap, Root, UniqueRoot};
 use crate::object::{
     self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjString, ObjUpvalue,
 };
@@ -35,7 +37,11 @@ const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
-    let compile_result = compiler::compile(source);
+    let compile_result = compiler::compile(
+        &mut vm.heap.borrow_mut(),
+        &mut vm.chunk_store.borrow_mut(),
+        source,
+    );
     match compile_result {
         Ok(function) => vm.execute(function, &[]),
         Err(error) => Err(error),
@@ -66,23 +72,16 @@ pub struct Vm {
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     init_string: Gc<ObjString>,
+    class_store: Box<CoreClassStore>,
+    chunk_store: Rc<RefCell<ChunkStore>>,
+    heap: Rc<RefCell<Heap>>,
 }
 
-impl Default for Vm {
-    fn default() -> Self {
-        Vm {
-            ip: ptr::null(),
-            active_chunk: memory::allocate(Chunk::new()),
-            frames: Vec::with_capacity(FRAMES_MAX),
-            stack: Vec::with_capacity(STACK_MAX),
-            globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
-            open_upvalues: Vec::new(),
-            init_string: object::new_gc_obj_string("__init__"),
-        }
-    }
-}
-
-fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
+fn clock_native(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _args: &mut [Value],
+) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
@@ -94,7 +93,11 @@ fn clock_native(_args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::Number(seconds + nanos))
 }
 
-fn default_print(args: &mut [Value]) -> Result<Value, Error> {
+fn default_print(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 2 {
         return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
     }
@@ -102,7 +105,11 @@ fn default_print(args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::None)
 }
 
-fn string(args: &mut [Value]) -> Result<Value, Error> {
+fn string(
+    heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 2 {
         return error!(
             ErrorKind::RuntimeError,
@@ -110,11 +117,16 @@ fn string(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
     Ok(Value::ObjString(object::new_gc_obj_string(
+        heap,
         format!("{}", args[1]).as_str(),
     )))
 }
 
-fn sentinel(args: &mut [Value]) -> Result<Value, Error> {
+fn sentinel(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 1 {
         return error!(
             ErrorKind::RuntimeError,
@@ -124,34 +136,61 @@ fn sentinel(args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::Sentinel)
 }
 
-pub fn new_root_vm() -> UniqueRoot<Vm> {
-    memory::allocate_unique_root(Vm::new())
+pub fn new_root_vm(
+    heap: Rc<RefCell<Heap>>,
+    chunk_store: Rc<RefCell<ChunkStore>>,
+) -> UniqueRoot<Vm> {
+    let class_store = class_store::new_empty_class_store(&mut heap.borrow_mut());
+    let vm = Vm::new(heap.clone(), chunk_store, class_store);
+    heap.borrow_mut().allocate_unique_root(vm)
 }
 
-pub fn new_root_vm_with_built_ins() -> UniqueRoot<Vm> {
-    let mut vm = new_root_vm();
+pub fn new_root_vm_with_built_ins(
+    heap: Rc<RefCell<Heap>>,
+    chunk_store: Rc<RefCell<ChunkStore>>,
+    class_store: Box<CoreClassStore>,
+) -> UniqueRoot<Vm> {
+    let vm = Vm::new(heap.clone(), chunk_store, class_store);
+    let mut vm = heap.borrow_mut().allocate_unique_root(vm);
     vm.define_native("clock", clock_native);
     vm.define_native("print", default_print);
     vm.define_native("String", string);
     vm.define_native("sentinel", sentinel);
-    let obj_iter_class = object::classes::get_gc_obj_iter_class();
+    let obj_iter_class = vm.class_store.get_obj_iter_class();
     vm.set_global("Iter", Value::ObjClass(obj_iter_class));
-    let obj_map_iter_class = object::classes::get_gc_obj_map_iter_class();
+    let obj_map_iter_class = vm.class_store.get_obj_map_iter_class();
     vm.set_global("MapIter", Value::ObjClass(obj_map_iter_class));
-    let obj_vec_class = object::classes::get_gc_obj_vec_class();
+    let obj_vec_class = vm.class_store.get_obj_vec_class();
     vm.set_global("Vec", Value::ObjClass(obj_vec_class));
-    let obj_range_class = object::classes::get_gc_obj_range_class();
+    let obj_range_class = vm.class_store.get_obj_range_class();
     vm.set_global("Range", Value::ObjClass(obj_range_class));
     vm
 }
 
 impl Vm {
-    fn new() -> Self {
-        Default::default()
+    fn new(
+        heap: Rc<RefCell<Heap>>,
+        chunk_store: Rc<RefCell<ChunkStore>>,
+        class_store: Box<CoreClassStore>,
+    ) -> Self {
+        let empty_chunk = heap.borrow_mut().allocate(Chunk::new());
+        let init_string = object::new_gc_obj_string(&mut heap.borrow_mut(), "__init__");
+        Vm {
+            ip: ptr::null(),
+            active_chunk: empty_chunk,
+            frames: Vec::with_capacity(FRAMES_MAX),
+            stack: Vec::with_capacity(STACK_MAX),
+            globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
+            open_upvalues: Vec::new(),
+            init_string,
+            class_store,
+            chunk_store,
+            heap,
+        }
     }
 
     pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
-        let closure = object::new_gc_obj_closure(function.as_gc());
+        let closure = object::new_gc_obj_closure(&mut self.heap.borrow_mut(), function.as_gc());
         self.push(Value::ObjClosure(closure));
         self.stack.extend_from_slice(args);
         self.call_value(Value::ObjClosure(closure), args.len())?;
@@ -162,18 +201,18 @@ impl Vm {
     }
 
     pub fn get_global(&self, name: &str) -> Option<Value> {
-        let name = object::new_gc_obj_string(name);
-        self.globals.get(&name).map(|v| *v)
+        let name = object::new_gc_obj_string(&mut self.heap.borrow_mut(), name);
+        self.globals.get(&name).copied()
     }
 
     pub fn set_global(&mut self, name: &str, value: Value) {
-        let name = object::new_gc_obj_string(name);
+        let name = object::new_gc_obj_string(&mut self.heap.borrow_mut(), name);
         self.globals.insert(name, value);
     }
 
     pub fn define_native(&mut self, name: &str, function: NativeFn) {
-        let native = object::new_root_obj_native(function);
-        let name = object::new_gc_obj_string(name);
+        let native = object::new_root_obj_native(&mut self.heap.borrow_mut(), function);
+        let name = object::new_gc_obj_string(&mut self.heap.borrow_mut(), name);
         self.globals.insert(name, Value::ObjNative(native.as_gc()));
     }
 
@@ -401,6 +440,7 @@ impl Vm {
                     match (a, b) {
                         (Value::ObjString(a), Value::ObjString(b)) => {
                             let value = Value::ObjString(object::new_gc_obj_string(
+                                &mut self.heap.borrow_mut(),
                                 format!("{}{}", *a, *b).as_str(),
                             ));
                             self.stack.push(value)
@@ -440,18 +480,26 @@ impl Vm {
                 }
 
                 OpCode::FormatString => {
-                    let value = self.peek_mut(0);
-                    if let Some(_) = value.try_as_obj_string() {
+                    let value = self.peek(0);
+                    if value.try_as_obj_string().is_some() {
                         continue;
                     }
-                    *value =
-                        Value::ObjString(object::new_gc_obj_string(format!("{}", value).as_str()));
+                    let obj = Value::ObjString(object::new_gc_obj_string(
+                        &mut self.heap.borrow_mut(),
+                        format!("{}", value).as_str(),
+                    ));
+                    *self.peek_mut(0) = obj;
                 }
 
                 OpCode::BuildRange => {
                     let end = object::validate_integer(self.pop())?;
                     let begin = object::validate_integer(self.pop())?;
-                    let range = object::new_root_obj_range(begin, end);
+                    let range = object::new_root_obj_range(
+                        &mut self.heap.borrow_mut(),
+                        self.class_store.get_obj_range_class(),
+                        begin,
+                        end,
+                    );
                     self.push(Value::ObjRange(range.as_gc()));
                 }
 
@@ -466,17 +514,22 @@ impl Vm {
                     }
                     let new_stack_size = self.stack.len() - num_operands;
                     self.stack.truncate(new_stack_size);
-                    self.push(Value::ObjString(object::new_gc_obj_string(
+                    let value = Value::ObjString(object::new_gc_obj_string(
+                        &mut self.heap.borrow_mut(),
                         new_string.as_str(),
-                    )))
+                    ));
+                    self.push(value);
                 }
 
                 OpCode::BuildVec => {
                     let num_operands = read_byte!() as usize;
-                    let vec = object::new_root_obj_vec();
+                    let vec = object::new_root_obj_vec(
+                        &mut self.heap.borrow_mut(),
+                        self.class_store.get_obj_vec_class(),
+                    );
                     let begin = self.stack.len() - num_operands;
                     let end = self.stack.len();
-                    vec.borrow_mut().elements = self.stack[begin..end].iter().map(|v| *v).collect();
+                    vec.borrow_mut().elements = self.stack[begin..end].iter().copied().collect();
                     self.stack.truncate(begin);
                     self.push(Value::ObjVec(vec.as_gc()));
                 }
@@ -534,7 +587,7 @@ impl Vm {
 
                     let upvalue_count = function.upvalue_count;
 
-                    let closure = object::new_gc_obj_closure(function);
+                    let closure = object::new_gc_obj_closure(&mut self.heap.borrow_mut(), function);
                     self.push(Value::ObjClosure(closure));
 
                     for i in 0..upvalue_count {
@@ -567,7 +620,7 @@ impl Vm {
                         return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
-                    self.active_chunk = chunk::get_chunk(prev_chunk_index);
+                    self.active_chunk = self.chunk_store.borrow().get_chunk(prev_chunk_index);
                     self.ip = prev_ip;
 
                     self.stack.truncate(prev_stack_size);
@@ -576,7 +629,7 @@ impl Vm {
 
                 OpCode::Class => {
                     let string = read_string!();
-                    let class = object::new_gc_obj_class(string);
+                    let class = object::new_gc_obj_class(&mut self.heap.borrow_mut(), string);
                     self.push(Value::ObjClass(class));
                 }
 
@@ -612,7 +665,7 @@ impl Vm {
             }
 
             Value::ObjClass(class) => {
-                let instance = object::new_gc_obj_instance(class);
+                let instance = object::new_gc_obj_instance(&mut self.heap.borrow_mut(), class);
                 *self.peek_mut(arg_count) = Value::ObjInstance(instance);
 
                 let borrowed_class = class.borrow();
@@ -705,7 +758,7 @@ impl Vm {
         }
 
         let chunk_index = closure.borrow().function.chunk_index;
-        self.active_chunk = chunk::get_chunk(chunk_index);
+        self.active_chunk = self.chunk_store.borrow().get_chunk(chunk_index);
         self.frames.push(CallFrame {
             closure,
             prev_ip: self.ip,
@@ -718,7 +771,11 @@ impl Vm {
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
         let function = native.function;
         let frame_begin = self.stack.len() - arg_count - 1;
-        let result = function(&mut self.stack[frame_begin..frame_begin + arg_count + 1])?;
+        let result = function(
+            &mut self.heap.borrow_mut(),
+            &self.class_store,
+            &mut self.stack[frame_begin..frame_begin + arg_count + 1],
+        )?;
         self.stack.truncate(frame_begin);
         self.push(result);
         Ok(())
@@ -737,7 +794,10 @@ impl Vm {
             let function = frame.closure.borrow().function;
 
             let mut new_msg = String::new();
-            let chunk = chunk::get_chunk(frame.closure.borrow().function.chunk_index);
+            let chunk = self
+                .chunk_store
+                .borrow()
+                .get_chunk(frame.closure.borrow().function.chunk_index);
             let instruction = chunk.code_offset(ips[i]) - 1;
             write!(new_msg, "[line {}] in ", chunk.lines[instruction])
                 .expect("Unable to write error to buffer.");
@@ -773,18 +833,19 @@ impl Vm {
     ) -> Result<(), Error> {
         let borrowed_class = class.borrow();
         let instance = *self.peek(0);
-        let bound = match borrowed_class.methods.get(&name) {
-            Some(Value::ObjClosure(ptr)) => {
-                Value::ObjBoundMethod(object::new_gc_obj_bound_method(instance, *ptr))
-            }
-            Some(Value::ObjNative(ptr)) => {
-                Value::ObjBoundNative(object::new_gc_obj_bound_method(instance, *ptr))
-            }
-            None => {
-                return error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
-            }
-            _ => unreachable!(),
-        };
+        let bound =
+            match borrowed_class.methods.get(&name) {
+                Some(Value::ObjClosure(ptr)) => Value::ObjBoundMethod(
+                    object::new_gc_obj_bound_method(&mut self.heap.borrow_mut(), instance, *ptr),
+                ),
+                Some(Value::ObjNative(ptr)) => Value::ObjBoundNative(
+                    object::new_gc_obj_bound_method(&mut self.heap.borrow_mut(), instance, *ptr),
+                ),
+                None => {
+                    return error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
+                }
+                _ => unreachable!(),
+            };
         self.pop();
         self.push(bound);
         Ok(())
@@ -799,7 +860,7 @@ impl Vm {
         let upvalue = if let Some(upvalue) = result {
             *upvalue
         } else {
-            object::new_gc_obj_upvalue(location)
+            object::new_gc_obj_upvalue(&mut self.heap.borrow_mut(), location)
         };
 
         self.open_upvalues.push(upvalue);

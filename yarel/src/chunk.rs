@@ -14,27 +14,10 @@
  */
 
 use std::cell::RefCell;
-use std::mem::ManuallyDrop;
+use std::rc::Rc;
 
-use crate::memory::{self, Gc, Root};
+use crate::memory::{self, Gc, Heap, Root};
 use crate::value;
-
-thread_local! {
-    static CHUNK_STORE: ManuallyDrop<RefCell<Vec<Root<Chunk>>>> =
-        ManuallyDrop::new(RefCell::new(Vec::new()));
-}
-
-pub(crate) fn add_chunk(chunk: Chunk) -> usize {
-    CHUNK_STORE.with(|store| {
-        let root = memory::allocate_root(chunk);
-        store.borrow_mut().push(root);
-        store.borrow().len() - 1
-    })
-}
-
-pub(crate) fn get_chunk(index: usize) -> Gc<Chunk> {
-    CHUNK_STORE.with(|store| store.borrow()[index].as_gc())
-}
 
 #[repr(u8)]
 pub enum OpCode {
@@ -167,4 +150,28 @@ impl memory::GcManaged for Chunk {
     fn blacken(&self) {
         self.constants.blacken();
     }
+}
+
+pub struct ChunkStore {
+    chunks: Vec<Root<Chunk>>,
+}
+
+impl ChunkStore {
+    fn new() -> Self {
+        ChunkStore { chunks: Vec::new() }
+    }
+
+    pub(crate) fn add_chunk(&mut self, heap: &mut Heap, chunk: Chunk) -> usize {
+        let root = heap.allocate_root(chunk);
+        self.chunks.push(root);
+        self.chunks.len() - 1
+    }
+
+    pub(crate) fn get_chunk(&self, index: usize) -> Gc<Chunk> {
+        self.chunks[index].as_gc()
+    }
+}
+
+pub fn new_chunk_store() -> Rc<RefCell<ChunkStore>> {
+    Rc::new(RefCell::new(ChunkStore::new()))
 }

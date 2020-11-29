@@ -19,54 +19,56 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem::ManuallyDrop;
-use std::sync::Once;
 
+use crate::class_store::CoreClassStore;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
-use crate::memory::{self, Gc, Root};
+use crate::memory::{self, Gc, Heap, Root};
 use crate::value::Value;
-use crate::vm;
 
-include!(concat!(env!("OUT_DIR"), "/core.yrl.rs"));
-
-type ObjStringCache = Root<RefCell<HashMap<u64, Gc<ObjString>>>>;
-
-// The use of ManuallyDrop here is sadly necessary, otherwise the Root may try
-// to read memory that's been free'd when the Root is dropped.
-thread_local! {
-    static OBJ_STRING_CACHE: ManuallyDrop<ObjStringCache> =
-        ManuallyDrop::new(memory::allocate_root(RefCell::new(HashMap::new())));
-}
+type ObjStringCache = RefCell<HashMap<u64, ManuallyDrop<Root<ObjString>>>>;
 
 pub struct ObjString {
     string: String,
     pub(crate) hash: u64,
 }
 
-pub fn new_gc_obj_string(data: &str) -> Gc<ObjString> {
+pub fn new_gc_obj_string(heap: &mut Heap, data: &str) -> Gc<ObjString> {
+    // The use of ManuallyDrop here is sadly necessary, otherwise the Root may try
+    // to read memory that's been free'd when the Root is dropped.
+    thread_local! {
+        static OBJ_STRING_CACHE: ObjStringCache = RefCell::new(HashMap::new());
+    }
+
     let hash = {
         let mut hasher = FnvHasher::new();
         (*data).hash(&mut hasher);
         hasher.finish()
     };
-    if let Some(gc_string) = OBJ_STRING_CACHE.with(|cache| cache.borrow().get(&hash).map(|v| *v)) {
+    if let Some(gc_string) =
+        OBJ_STRING_CACHE.with(|cache| cache.borrow().get(&hash).map(|v| v.as_gc()))
+    {
         return gc_string;
     }
-    let ret = memory::allocate(ObjString::new(data, hash));
-    OBJ_STRING_CACHE.with(|cache| cache.borrow_mut().insert(hash, ret));
+    let ret = heap.allocate(ObjString::new(data, hash));
+    OBJ_STRING_CACHE.with(|cache| {
+        cache
+            .borrow_mut()
+            .insert(hash, ManuallyDrop::new(ret.as_root()))
+    });
     ret
 }
 
-pub fn new_root_obj_string(data: &str) -> Root<ObjString> {
-    new_gc_obj_string(data).as_root()
+pub fn new_root_obj_string(heap: &mut Heap, data: &str) -> Root<ObjString> {
+    new_gc_obj_string(heap, data).as_root()
 }
 
 impl ObjString {
     fn new(string: &str, hash: u64) -> Self {
         ObjString {
             string: String::from(string),
-            hash: hash,
+            hash,
         }
     }
 
@@ -120,12 +122,12 @@ pub enum ObjUpvalue {
     Open(usize),
 }
 
-pub fn new_gc_obj_upvalue(index: usize) -> Gc<RefCell<ObjUpvalue>> {
-    memory::allocate(RefCell::new(ObjUpvalue::new(index)))
+pub fn new_gc_obj_upvalue(heap: &mut Heap, index: usize) -> Gc<RefCell<ObjUpvalue>> {
+    heap.allocate(RefCell::new(ObjUpvalue::new(index)))
 }
 
-pub fn new_root_obj_upvalue(index: usize) -> Root<RefCell<ObjUpvalue>> {
-    new_gc_obj_upvalue(index).as_root()
+pub fn new_root_obj_upvalue(heap: &mut Heap, index: usize) -> Root<RefCell<ObjUpvalue>> {
+    new_gc_obj_upvalue(heap, index).as_root()
 }
 
 impl ObjUpvalue {
@@ -181,21 +183,23 @@ pub struct ObjFunction {
 }
 
 pub fn new_gc_obj_function(
+    heap: &mut Heap,
     name: Gc<ObjString>,
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
 ) -> Gc<ObjFunction> {
-    memory::allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
+    heap.allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
 }
 
 pub fn new_root_obj_function(
+    heap: &mut Heap,
     name: Gc<ObjString>,
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(name, arity, upvalue_count, chunk_index).as_root()
+    new_gc_obj_function(heap, name, arity, upvalue_count, chunk_index).as_root()
 }
 
 impl ObjFunction {
@@ -208,7 +212,7 @@ impl ObjFunction {
         ObjFunction {
             arity,
             upvalue_count,
-            chunk_index: chunk_index,
+            chunk_index,
             name,
         }
     }
@@ -233,19 +237,18 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-//Box<dyn FnMut(&mut [Value]) -> Result<Value, Error>>;
-pub type NativeFn = fn(&mut [Value]) -> Result<Value, Error>;
+pub type NativeFn = fn(&mut Heap, &CoreClassStore, &mut [Value]) -> Result<Value, Error>;
 
 pub struct ObjNative {
     pub function: NativeFn,
 }
 
-pub fn new_gc_obj_native(function: NativeFn) -> Gc<ObjNative> {
-    memory::allocate(ObjNative::new(function))
+pub fn new_gc_obj_native(heap: &mut Heap, function: NativeFn) -> Gc<ObjNative> {
+    heap.allocate(ObjNative::new(function))
 }
 
-pub fn new_root_obj_native(function: NativeFn) -> Root<ObjNative> {
-    new_gc_obj_native(function).as_root()
+pub fn new_root_obj_native(heap: &mut Heap, function: NativeFn) -> Root<ObjNative> {
+    new_gc_obj_native(heap, function).as_root()
 }
 
 impl ObjNative {
@@ -271,17 +274,20 @@ pub struct ObjClosure {
     pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
 }
 
-pub fn new_gc_obj_closure(function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
+pub fn new_gc_obj_closure(heap: &mut Heap, function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
     let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
-        .map(|_| memory::allocate_root(RefCell::new(ObjUpvalue::new(0))))
+        .map(|_| heap.allocate_root(RefCell::new(ObjUpvalue::new(0))))
         .collect();
     let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
 
-    memory::allocate(RefCell::new(ObjClosure::new(function, upvalues)))
+    heap.allocate(RefCell::new(ObjClosure::new(function, upvalues)))
 }
 
-pub fn new_root_obj_closure(function: Gc<ObjFunction>) -> Root<RefCell<ObjClosure>> {
-    new_gc_obj_closure(function).as_root()
+pub fn new_root_obj_closure(
+    heap: &mut Heap,
+    function: Gc<ObjFunction>,
+) -> Root<RefCell<ObjClosure>> {
+    new_gc_obj_closure(heap, function).as_root()
 }
 
 impl ObjClosure {
@@ -316,12 +322,12 @@ pub struct ObjClass {
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_class(name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
-    memory::allocate(RefCell::new(ObjClass::new(name)))
+pub fn new_gc_obj_class(heap: &mut Heap, name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
+    heap.allocate(RefCell::new(ObjClass::new(name)))
 }
 
-pub fn new_root_obj_class(name: Gc<ObjString>) -> Root<RefCell<ObjClass>> {
-    new_gc_obj_class(name).as_root()
+pub fn new_root_obj_class(heap: &mut Heap, name: Gc<ObjString>) -> Root<RefCell<ObjClass>> {
+    new_gc_obj_class(heap, name).as_root()
 }
 
 impl ObjClass {
@@ -334,14 +340,19 @@ impl ObjClass {
 
     pub fn add_superclass(&mut self, superclass: memory::Gc<RefCell<ObjClass>>) {
         for (name, value) in superclass.borrow().methods.iter() {
-            self.methods.insert(name.clone(), *value);
+            self.methods.insert(*name, *value);
         }
     }
 }
 
-fn add_native_method_to_class(class: Gc<RefCell<ObjClass>>, name: &str, native: NativeFn) {
-    let name = new_gc_obj_string(name);
-    let obj_native = new_root_obj_native(native);
+fn add_native_method_to_class(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    name: &str,
+    native: NativeFn,
+) {
+    let name = new_gc_obj_string(heap, name);
+    let obj_native = new_root_obj_native(heap, native);
     class
         .borrow_mut()
         .methods
@@ -371,12 +382,18 @@ pub struct ObjInstance {
     pub fields: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_instance(class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjInstance>> {
-    memory::allocate(RefCell::new(ObjInstance::new(class)))
+pub fn new_gc_obj_instance(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+) -> Gc<RefCell<ObjInstance>> {
+    heap.allocate(RefCell::new(ObjInstance::new(class)))
 }
 
-pub fn new_root_obj_instance(class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjInstance>> {
-    new_gc_obj_instance(class).as_root()
+pub fn new_root_obj_instance(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+) -> Root<RefCell<ObjInstance>> {
+    new_gc_obj_instance(heap, class).as_root()
 }
 
 impl ObjInstance {
@@ -412,17 +429,19 @@ pub struct ObjBoundMethod<T: memory::GcManaged> {
 }
 
 pub fn new_gc_obj_bound_method<T: 'static + memory::GcManaged>(
+    heap: &mut Heap,
     receiver: Value,
     method: Gc<T>,
 ) -> Gc<RefCell<ObjBoundMethod<T>>> {
-    memory::allocate(RefCell::new(ObjBoundMethod::new(receiver, method)))
+    heap.allocate(RefCell::new(ObjBoundMethod::new(receiver, method)))
 }
 
 pub fn new_root_obj_bound_method<T: 'static + memory::GcManaged>(
+    heap: &mut Heap,
     receiver: Value,
     method: Gc<T>,
 ) -> Root<RefCell<ObjBoundMethod<T>>> {
-    new_gc_obj_bound_method(receiver, method).as_root()
+    new_gc_obj_bound_method(heap, receiver, method).as_root()
 }
 
 impl<T: memory::GcManaged> ObjBoundMethod<T> {
@@ -460,34 +479,35 @@ pub struct ObjVec {
     pub elements: Vec<Value>,
 }
 
-pub fn new_gc_obj_vec() -> Gc<RefCell<ObjVec>> {
-    memory::allocate(RefCell::new(ObjVec::new()))
+pub fn new_gc_obj_vec(heap: &mut Heap, class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjVec>> {
+    heap.allocate(RefCell::new(ObjVec::new(class)))
 }
 
-pub fn new_root_obj_vec() -> Root<RefCell<ObjVec>> {
-    new_gc_obj_vec().as_root()
+pub fn new_root_obj_vec(heap: &mut Heap, class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjVec>> {
+    new_gc_obj_vec(heap, class).as_root()
 }
 
-pub fn new_root_obj_vec_class() -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string("Vec");
-    let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__init__", vec_init);
-    add_native_method_to_class(class.as_gc(), "push", vec_push);
-    add_native_method_to_class(class.as_gc(), "pop", vec_pop);
-    add_native_method_to_class(class.as_gc(), "__getitem__", vec_get);
-    add_native_method_to_class(class.as_gc(), "__setitem__", vec_set);
-    add_native_method_to_class(class.as_gc(), "len", vec_len);
-    add_native_method_to_class(class.as_gc(), "__iter__", vec_iter);
-    class
-        .borrow_mut()
-        .add_superclass(classes::get_gc_obj_iter_class());
+pub fn new_root_obj_vec_class(
+    heap: &mut Heap,
+    iter_class: Gc<RefCell<ObjClass>>,
+) -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string(heap, "Vec");
+    let class = new_root_obj_class(heap, class_name);
+    add_native_method_to_class(heap, class.as_gc(), "__init__", vec_init);
+    add_native_method_to_class(heap, class.as_gc(), "push", vec_push);
+    add_native_method_to_class(heap, class.as_gc(), "pop", vec_pop);
+    add_native_method_to_class(heap, class.as_gc(), "__getitem__", vec_get);
+    add_native_method_to_class(heap, class.as_gc(), "__setitem__", vec_set);
+    add_native_method_to_class(heap, class.as_gc(), "len", vec_len);
+    add_native_method_to_class(heap, class.as_gc(), "__iter__", vec_iter);
+    class.borrow_mut().add_superclass(iter_class);
     class
 }
 
 impl ObjVec {
-    fn new() -> Self {
+    fn new(class: Gc<RefCell<ObjClass>>) -> Self {
         ObjVec {
-            class: classes::get_gc_obj_vec_class(),
+            class,
             elements: Vec::new(),
         }
     }
@@ -534,12 +554,20 @@ impl cmp::PartialEq for ObjVec {
     }
 }
 
-fn vec_init(_args: &mut [Value]) -> Result<Value, Error> {
-    let vec = new_root_obj_vec();
+fn vec_init(
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
+    _args: &mut [Value],
+) -> Result<Value, Error> {
+    let vec = new_root_obj_vec(heap, class_store.get_obj_vec_class());
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
-fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_push(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 2 {
         return error!(
             ErrorKind::RuntimeError,
@@ -559,7 +587,11 @@ fn vec_push(args: &mut [Value]) -> Result<Value, Error> {
     Ok(args[0])
 }
 
-fn vec_pop(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_pop(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 1 {
         return error!(
             ErrorKind::RuntimeError,
@@ -570,13 +602,19 @@ fn vec_pop(args: &mut [Value]) -> Result<Value, Error> {
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let mut borrowed_vec = vec.borrow_mut();
-    borrowed_vec.elements.pop().ok_or(Error::with_message(
-        ErrorKind::RuntimeError,
-        "Cannot pop from empty Vec instance.",
-    ))
+    borrowed_vec.elements.pop().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::RuntimeError,
+            "Cannot pop from empty Vec instance.",
+        )
+    })
 }
 
-fn vec_get(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_get(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 2 {
         let msg = format!("Expected 1 parameters but got {}", args.len() - 1);
         return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
@@ -589,7 +627,11 @@ fn vec_get(args: &mut [Value]) -> Result<Value, Error> {
     Ok(borrowed_vec.elements[index])
 }
 
-fn vec_set(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_set(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 3 {
         return error!(
             ErrorKind::RuntimeError,
@@ -605,7 +647,11 @@ fn vec_set(args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::None)
 }
 
-fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_len(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 1 {
         return error!(
             ErrorKind::RuntimeError,
@@ -619,7 +665,11 @@ fn vec_len(args: &mut [Value]) -> Result<Value, Error> {
     Ok(Value::from(borrowed_vec.elements.len() as f64))
 }
 
-fn vec_iter(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_iter(
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 1 {
         return error!(
             ErrorKind::RuntimeError,
@@ -628,7 +678,11 @@ fn vec_iter(args: &mut [Value]) -> Result<Value, Error> {
         );
     }
 
-    let iter = new_root_obj_vec_iter(args[0].try_as_obj_vec().expect("Expected ObjVec instance."));
+    let iter = new_root_obj_vec_iter(
+        heap,
+        class_store.get_obj_vec_iter_class(),
+        args[0].try_as_obj_vec().expect("Expected ObjVec instance."),
+    );
     Ok(Value::ObjVecIter(iter.as_gc()))
 }
 
@@ -638,18 +692,26 @@ pub struct ObjVecIter {
     pub current: usize,
 }
 
-pub fn new_gc_obj_vec_iter(vec: Gc<RefCell<ObjVec>>) -> Gc<RefCell<ObjVecIter>> {
-    memory::allocate(RefCell::new(ObjVecIter::new(vec)))
+pub fn new_gc_obj_vec_iter(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    vec: Gc<RefCell<ObjVec>>,
+) -> Gc<RefCell<ObjVecIter>> {
+    heap.allocate(RefCell::new(ObjVecIter::new(class, vec)))
 }
 
-pub fn new_root_obj_vec_iter(vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIter>> {
-    new_gc_obj_vec_iter(vec).as_root()
+pub fn new_root_obj_vec_iter(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    vec: Gc<RefCell<ObjVec>>,
+) -> Root<RefCell<ObjVecIter>> {
+    new_gc_obj_vec_iter(heap, class, vec).as_root()
 }
 
 impl ObjVecIter {
-    fn new(iterable: Gc<RefCell<ObjVec>>) -> Self {
+    fn new(class: Gc<RefCell<ObjClass>>, iterable: Gc<RefCell<ObjVec>>) -> Self {
         ObjVecIter {
-            class: classes::get_gc_obj_vec_iter_class(),
+            class,
             iterable,
             current: 0,
         }
@@ -682,7 +744,11 @@ impl fmt::Display for ObjVecIter {
     }
 }
 
-fn vec_iter_next(args: &mut [Value]) -> Result<Value, Error> {
+fn vec_iter_next(
+    _heap: &mut Heap,
+    _context: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     assert!(args.len() == 1);
     let iter = args[0]
         .try_as_obj_vec_iter()
@@ -691,28 +757,28 @@ fn vec_iter_next(args: &mut [Value]) -> Result<Value, Error> {
     Ok(borrowed_iter.next())
 }
 
-pub fn new_root_obj_vec_iter_class() -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string("VecIter");
-    let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__next__", vec_iter_next);
+pub fn new_root_obj_vec_iter_class(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string(heap, "VecIter");
+    let class = new_root_obj_class(heap, class_name);
+    add_native_method_to_class(heap, class.as_gc(), "__next__", vec_iter_next);
     class
 }
 
 fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error> {
     let vec_len = vec.borrow_mut().elements.len() as isize;
     let index = if let Value::Number(n) = value {
+        #[allow(clippy::float_cmp)]
         if n.trunc() != n {
             return error!(
                 ErrorKind::ValueError,
                 "Expected an integer but found '{}'.", n
             );
         }
-        let n = if n < 0.0 {
+        if n < 0.0 {
             n as isize + vec_len
         } else {
             n as isize
-        };
-        n
+        }
     } else {
         return error!(
             ErrorKind::ValueError,
@@ -733,33 +799,39 @@ pub struct ObjRange {
     pub end: isize,
 }
 
-pub fn new_gc_obj_range(begin: isize, end: isize) -> Gc<ObjRange> {
-    memory::allocate(ObjRange::new(begin, end))
+pub fn new_gc_obj_range(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    begin: isize,
+    end: isize,
+) -> Gc<ObjRange> {
+    heap.allocate(ObjRange::new(class, begin, end))
 }
 
-pub fn new_root_obj_range(begin: isize, end: isize) -> Root<ObjRange> {
-    new_gc_obj_range(begin, end).as_root()
+pub fn new_root_obj_range(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    begin: isize,
+    end: isize,
+) -> Root<ObjRange> {
+    new_gc_obj_range(heap, class, begin, end).as_root()
 }
 
-pub fn new_root_obj_range_class() -> Root<RefCell<ObjClass>> {
-    classes::get_gc_obj_iter_class();
-    let class_name = new_gc_obj_string("Range");
-    let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__init__", range_init);
-    add_native_method_to_class(class.as_gc(), "__iter__", range_iter);
-    class
-        .borrow_mut()
-        .add_superclass(classes::get_gc_obj_iter_class());
+pub fn new_root_obj_range_class(
+    heap: &mut Heap,
+    iter_class: Gc<RefCell<ObjClass>>,
+) -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string(heap, "Range");
+    let class = new_root_obj_class(heap, class_name);
+    add_native_method_to_class(heap, class.as_gc(), "__init__", range_init);
+    add_native_method_to_class(heap, class.as_gc(), "__iter__", range_iter);
+    class.borrow_mut().add_superclass(iter_class);
     class
 }
 
 impl ObjRange {
-    fn new(begin: isize, end: isize) -> Self {
-        ObjRange {
-            class: classes::get_gc_obj_range_class(),
-            begin,
-            end,
-        }
+    fn new(class: Gc<RefCell<ObjClass>>, begin: isize, end: isize) -> Self {
+        ObjRange { class, begin, end }
     }
 }
 
@@ -779,7 +851,11 @@ impl fmt::Display for ObjRange {
     }
 }
 
-fn range_init(args: &mut [Value]) -> Result<Value, Error> {
+fn range_init(
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 3 {
         return error!(
             ErrorKind::RuntimeError,
@@ -791,11 +867,20 @@ fn range_init(args: &mut [Value]) -> Result<Value, Error> {
     for i in 0..2 {
         bounds[i] = validate_integer(args[i + 1])?;
     }
-    let range = new_root_obj_range(bounds[0], bounds[1]);
+    let range = new_root_obj_range(
+        heap,
+        class_store.get_obj_range_class(),
+        bounds[0],
+        bounds[1],
+    );
     Ok(Value::ObjRange(range.as_gc()))
 }
 
-fn range_iter(args: &mut [Value]) -> Result<Value, Error> {
+fn range_iter(
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     if args.len() != 1 {
         return error!(
             ErrorKind::RuntimeError,
@@ -805,6 +890,8 @@ fn range_iter(args: &mut [Value]) -> Result<Value, Error> {
     }
 
     let iter = new_root_obj_range_iter(
+        heap,
+        class_store.get_obj_range_iter_class(),
         args[0]
             .try_as_obj_range()
             .expect("Expected ObjRange instance."),
@@ -815,6 +902,7 @@ fn range_iter(args: &mut [Value]) -> Result<Value, Error> {
 pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
     match value {
         Value::Number(n) => {
+            #[allow(clippy::float_cmp)]
             if n.trunc() != n {
                 return error!(ErrorKind::ValueError, "Expected integer value.");
             }
@@ -831,19 +919,27 @@ pub struct ObjRangeIter {
     step: isize,
 }
 
-pub fn new_gc_obj_range_iter(range: Gc<ObjRange>) -> Gc<RefCell<ObjRangeIter>> {
-    memory::allocate(RefCell::new(ObjRangeIter::new(range)))
+pub fn new_gc_obj_range_iter(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    range: Gc<ObjRange>,
+) -> Gc<RefCell<ObjRangeIter>> {
+    heap.allocate(RefCell::new(ObjRangeIter::new(class, range)))
 }
 
-pub fn new_root_obj_range_iter(range: Gc<ObjRange>) -> Root<RefCell<ObjRangeIter>> {
-    new_gc_obj_range_iter(range).as_root()
+pub fn new_root_obj_range_iter(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    range: Gc<ObjRange>,
+) -> Root<RefCell<ObjRangeIter>> {
+    new_gc_obj_range_iter(heap, class, range).as_root()
 }
 
 impl ObjRangeIter {
-    fn new(iterable: Gc<ObjRange>) -> Self {
+    fn new(class: Gc<RefCell<ObjClass>>, iterable: Gc<ObjRange>) -> Self {
         let current = iterable.begin;
         ObjRangeIter {
-            class: classes::get_gc_obj_range_iter_class(),
+            class,
             iterable,
             current,
             step: if iterable.begin < iterable.end { 1 } else { -1 },
@@ -876,7 +972,11 @@ impl fmt::Display for ObjRangeIter {
     }
 }
 
-fn range_iter_next(args: &mut [Value]) -> Result<Value, Error> {
+fn range_iter_next(
+    _heap: &mut Heap,
+    _context: &CoreClassStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
     assert!(args.len() == 1);
     let iter = args[0]
         .try_as_obj_range_iter()
@@ -885,94 +985,11 @@ fn range_iter_next(args: &mut [Value]) -> Result<Value, Error> {
     Ok(borrowed_iter.next())
 }
 
-pub fn new_root_obj_range_iter_class() -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string("IterVec");
-    let class = new_root_obj_class(class_name);
-    add_native_method_to_class(class.as_gc(), "__next__", range_iter_next);
+pub fn new_root_obj_range_iter_class(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
+    let class_name = new_gc_obj_string(heap, "IterVec");
+    let class = new_root_obj_class(heap, class_name);
+    add_native_method_to_class(heap, class.as_gc(), "__next__", range_iter_next);
     class
 }
 
-pub(crate) mod classes {
-    use super::*;
-
-    thread_local! {
-        static ROOT_OBJ_ITER_CLASS: RefCell<Option<ManuallyDrop<Root<RefCell<ObjClass>>>>> =
-            RefCell::new(None);
-
-        static ROOT_OBJ_MAP_ITER_CLASS: RefCell<Option<ManuallyDrop<Root<RefCell<ObjClass>>>>> =
-            RefCell::new(None);
-
-        static ROOT_OBJ_VEC_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-            ManuallyDrop::new(new_root_obj_vec_class());
-
-        static ROOT_OBJ_VEC_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-            ManuallyDrop::new(new_root_obj_vec_iter_class());
-
-        static ROOT_OBJ_RANGE_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-            ManuallyDrop::new(new_root_obj_range_class());
-
-        static ROOT_OBJ_RANGE_ITER_CLASS: ManuallyDrop<Root<RefCell<ObjClass>>> =
-            ManuallyDrop::new(new_root_obj_range_iter_class());
-    }
-
-    static START: Once = Once::new();
-    fn init_core_static_classes() {
-        START.call_once(|| {
-            let mut vm = vm::new_root_vm();
-            let source = String::from(CORE_SOURCE);
-            let result = vm::interpret(&mut vm, source);
-            match result {
-                Ok(_) => {}
-                Err(error) => eprint!("{}", error),
-            }
-            ROOT_OBJ_ITER_CLASS.with(|v| {
-                *v.borrow_mut() = Some(ManuallyDrop::new(
-                    vm.get_global("Iter")
-                        .unwrap()
-                        .try_as_obj_class()
-                        .expect("Expected ObjClass.")
-                        .as_root(),
-                ));
-            });
-            ROOT_OBJ_MAP_ITER_CLASS.with(|v| {
-                *v.borrow_mut() = Some(ManuallyDrop::new(
-                    vm.get_global("MapIter")
-                        .unwrap()
-                        .try_as_obj_class()
-                        .expect("Expected ObjClass.")
-                        .as_root(),
-                ));
-            });
-        });
-    }
-
-    pub(crate) fn get_gc_obj_iter_class() -> Gc<RefCell<ObjClass>> {
-        init_core_static_classes();
-        ROOT_OBJ_ITER_CLASS.with(|c| c.borrow().as_ref().unwrap().as_gc())
-    }
-
-    pub(crate) fn get_gc_obj_map_iter_class() -> Gc<RefCell<ObjClass>> {
-        init_core_static_classes();
-        ROOT_OBJ_MAP_ITER_CLASS.with(|c| c.borrow().as_ref().unwrap().as_gc())
-    }
-
-    pub(crate) fn get_gc_obj_vec_class() -> Gc<RefCell<ObjClass>> {
-        init_core_static_classes();
-        ROOT_OBJ_VEC_CLASS.with(|c| c.as_gc())
-    }
-
-    pub(crate) fn get_gc_obj_vec_iter_class() -> Gc<RefCell<ObjClass>> {
-        init_core_static_classes();
-        ROOT_OBJ_VEC_ITER_CLASS.with(|c| c.as_gc())
-    }
-
-    pub(crate) fn get_gc_obj_range_class() -> Gc<RefCell<ObjClass>> {
-        init_core_static_classes();
-        ROOT_OBJ_RANGE_CLASS.with(|c| c.as_gc())
-    }
-
-    pub(crate) fn get_gc_obj_range_iter_class() -> Gc<RefCell<ObjClass>> {
-        init_core_static_classes();
-        ROOT_OBJ_RANGE_ITER_CLASS.with(|c| c.as_gc())
-    }
-}
+pub(crate) mod classes {}

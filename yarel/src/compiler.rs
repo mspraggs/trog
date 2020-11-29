@@ -17,11 +17,11 @@ use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::mem;
 
-use crate::chunk::{self, Chunk, OpCode};
+use crate::chunk::{Chunk, ChunkStore, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::Root;
+use crate::memory::{Heap, Root};
 use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
@@ -141,12 +141,22 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self) -> Root<ObjFunction> {
-        let name = object::new_root_obj_string(self.func_name.as_str());
+    fn make_function(
+        &mut self,
+        heap: &mut Heap,
+        chunk_store: &mut ChunkStore,
+    ) -> Root<ObjFunction> {
+        let name = object::new_root_obj_string(heap, self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
-        let chunk_index = chunk::add_chunk(chunk);
-        object::new_root_obj_function(name.as_gc(), self.func_arity, num_upvalues, chunk_index)
+        let chunk_index = chunk_store.add_chunk(heap, chunk);
+        object::new_root_obj_function(
+            heap,
+            name.as_gc(),
+            self.func_arity,
+            num_upvalues,
+            chunk_index,
+        )
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -199,10 +209,14 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(source: String) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(
+    heap: &mut Heap,
+    chunk_store: &mut ChunkStore,
+    source: String,
+) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
 
-    let mut parser = Parser::new(&mut scanner);
+    let mut parser = Parser::new(heap, &mut scanner, chunk_store);
     parser.parse()
 }
 
@@ -216,6 +230,8 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
+    chunk_store: &'a mut ChunkStore,
+    heap: &'a mut Heap,
 }
 
 const RULES: [ParseRule; 48] = [
@@ -510,7 +526,11 @@ const RULES: [ParseRule; 48] = [
 ];
 
 impl<'a> Parser<'a> {
-    fn new(scanner: &'a mut Scanner) -> Parser<'a> {
+    fn new(
+        heap: &'a mut Heap,
+        scanner: &'a mut Scanner,
+        chunk_store: &'a mut ChunkStore,
+    ) -> Parser<'a> {
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -521,6 +541,8 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
+            chunk_store,
+            heap,
         };
         ret.new_compiler(FunctionKind::Script, "");
         ret
@@ -618,14 +640,15 @@ impl<'a> Parser<'a> {
     fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Vec<Upvalue>) {
         self.emit_return();
 
-        if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
-            let compiler = self.compiler();
-            debug::disassemble_chunk(&compiler.chunk, compiler.func_name.as_str());
-        }
-
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function();
+        let function = compiler.make_function(self.heap, self.chunk_store);
         self.compiled_functions.push(function.clone());
+
+        if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
+            let func_name = format!("{}", *function);
+            let chunk = self.chunk_store.get_chunk(function.chunk_index);
+            debug::disassemble_chunk(&chunk, func_name.as_str());
+        }
 
         (function, compiler.upvalues)
     }
@@ -1056,7 +1079,7 @@ impl<'a> Parser<'a> {
     }
 
     fn identifier_constant(&mut self, token: &Token) -> u8 {
-        let value = Value::ObjString(object::new_gc_obj_string(token.source.as_str()));
+        let value = Value::ObjString(object::new_gc_obj_string(self.heap, token.source.as_str()));
         self.make_constant(value)
     }
 
@@ -1450,7 +1473,10 @@ impl<'a> Parser<'a> {
     }
 
     fn string(s: &mut Parser, _can_assign: bool) {
-        let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
+        let value = Value::ObjString(object::new_gc_obj_string(
+            s.heap,
+            s.previous.source.as_str(),
+        ));
         s.emit_constant(value);
     }
 
@@ -1458,7 +1484,10 @@ impl<'a> Parser<'a> {
         let mut arg_count = 0;
         loop {
             if !s.previous.source.is_empty() {
-                let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
+                let value = Value::ObjString(object::new_gc_obj_string(
+                    s.heap,
+                    s.previous.source.as_str(),
+                ));
                 s.emit_constant(value);
                 arg_count += 1;
             }
@@ -1472,7 +1501,10 @@ impl<'a> Parser<'a> {
 
         s.advance();
         if !s.previous.source.is_empty() {
-            let value = Value::ObjString(object::new_gc_obj_string(s.previous.source.as_str()));
+            let value = Value::ObjString(object::new_gc_obj_string(
+                s.heap,
+                s.previous.source.as_str(),
+            ));
             s.emit_constant(value);
             arg_count += 1;
         }
