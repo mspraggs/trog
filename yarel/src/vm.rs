@@ -72,6 +72,7 @@ pub struct Vm {
     globals: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     init_string: Gc<ObjString>,
+    next_string: Gc<ObjString>,
     class_store: Box<CoreClassStore>,
     chunk_store: Rc<RefCell<ChunkStore>>,
     heap: Rc<RefCell<Heap>>,
@@ -175,6 +176,7 @@ impl Vm {
     ) -> Self {
         let empty_chunk = heap.borrow_mut().allocate(Chunk::new());
         let init_string = object::new_gc_obj_string(&mut heap.borrow_mut(), "__init__");
+        let next_string = object::new_gc_obj_string(&mut heap.borrow_mut(), "__next__");
         Vm {
             ip: ptr::null(),
             active_chunk: empty_chunk,
@@ -183,6 +185,7 @@ impl Vm {
             globals: HashMap::with_hasher(BuildPassThroughHasher::default()),
             open_upvalues: Vec::new(),
             init_string,
+            next_string,
             class_store,
             chunk_store,
             heap,
@@ -534,6 +537,12 @@ impl Vm {
                     self.push(Value::ObjVec(vec.as_gc()));
                 }
 
+                OpCode::IterNext => {
+                    let iter = *self.peek(0);
+                    self.push(iter);
+                    self.invoke(self.next_string, 0)?;
+                }
+
                 OpCode::Jump => {
                     let offset = read_short!();
                     self.ip = unsafe { self.ip.offset(offset as isize) };
@@ -720,7 +729,7 @@ impl Vm {
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
             }
             Value::ObjVec(vec) => {
-                let class = { vec.borrow().class };
+                let class = vec.borrow().class;
                 self.invoke_from_class(class, name, arg_count)
             }
             Value::ObjVecIter(iter) => {
@@ -728,7 +737,7 @@ impl Vm {
                 self.invoke_from_class(class, name, arg_count)
             }
             Value::ObjRange(range) => {
-                let class = { range.class };
+                let class = range.class;
                 self.invoke_from_class(class, name, arg_count)
             }
             Value::ObjRangeIter(iter) => {

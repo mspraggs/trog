@@ -814,13 +814,7 @@ impl<'a> Parser<'a> {
         self.mark_initialised();
 
         let loop_start = self.chunk().code.len();
-        let (iter_var, _) = self
-            .resolve_local(&Token::from_string(loop_iter_name))
-            .expect("Expected to resolve local.");
-        self.emit_bytes([OpCode::GetLocal as u8, iter_var]);
-        let next_method_name = self.identifier_constant(&Token::from_string("__next__"));
-        self.emit_bytes([OpCode::Invoke as u8, next_method_name]);
-        self.emit_byte(0);
+        self.emit_byte(OpCode::IterNext as u8);
         self.emit_bytes([OpCode::SetLocal as u8, loop_var]);
 
         let exit_jump = self.emit_jump(OpCode::JumpIfSentinel);
