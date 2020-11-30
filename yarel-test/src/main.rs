@@ -23,7 +23,7 @@ use yarel::class_store;
 use yarel::memory;
 
 fn main() {
-    let paths = match utils::get_paths("tests", Some(".yrl")) {
+    let paths = match utils::get_paths("tests", Some(".yl")) {
         Ok(p) => p,
         Err(_) => {
             eprintln!("Error reading test paths");

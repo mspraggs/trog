@@ -21,7 +21,7 @@ use crate::memory::{Gc, Heap, Root};
 use crate::object::{self, ObjClass};
 use crate::vm;
 
-include!(concat!(env!("OUT_DIR"), "/core.yrl.rs"));
+include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 
 #[derive(Clone)]
 pub struct CoreClassStore {
