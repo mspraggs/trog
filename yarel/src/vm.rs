@@ -286,49 +286,49 @@ impl Vm {
                 let offset = self.active_chunk.code_offset(self.ip);
                 debug::disassemble_instruction(&self.active_chunk, offset);
             }
-            let instruction = OpCode::from(read_byte!());
+            let byte = read_byte!();
 
-            match instruction {
-                OpCode::Constant => {
+            match byte {
+                byte if byte == OpCode::Constant as u8 => {
                     let constant = read_constant!();
                     self.push(constant);
                 }
 
-                OpCode::Nil => {
+                byte if byte == OpCode::Nil as u8 => {
                     self.push(Value::None);
                 }
 
-                OpCode::True => {
+                byte if byte == OpCode::True as u8 => {
                     self.push(Value::Boolean(true));
                 }
 
-                OpCode::False => {
+                byte if byte == OpCode::False as u8 => {
                     self.push(Value::Boolean(false));
                 }
 
-                OpCode::Pop => {
+                byte if byte == OpCode::Pop as u8 => {
                     self.pop();
                 }
 
-                OpCode::CopyTop => {
+                byte if byte == OpCode::CopyTop as u8 => {
                     let top = *self.peek(0);
                     self.push(top);
                 }
 
-                OpCode::GetLocal => {
+                byte if byte == OpCode::GetLocal as u8 => {
                     let slot = read_byte!() as usize;
                     let slot_base = self.frame().slot_base;
                     let value = self.stack[slot_base + slot];
                     self.push(value);
                 }
 
-                OpCode::SetLocal => {
+                byte if byte == OpCode::SetLocal as u8 => {
                     let slot = read_byte!() as usize;
                     let slot_base = self.frame().slot_base;
                     self.stack[slot_base + slot] = *self.peek(0);
                 }
 
-                OpCode::GetGlobal => {
+                byte if byte == OpCode::GetGlobal as u8 => {
                     let name = read_string!();
                     let value = match self.globals.get(&name) {
                         Some(value) => *value,
@@ -342,14 +342,14 @@ impl Vm {
                     self.push(value);
                 }
 
-                OpCode::DefineGlobal => {
+                byte if byte == OpCode::DefineGlobal as u8 => {
                     let name = read_string!();
                     let value = *self.peek(0);
                     self.globals.insert(name, value);
                     self.pop();
                 }
 
-                OpCode::SetGlobal => {
+                byte if byte == OpCode::SetGlobal as u8 => {
                     let name = read_string!();
                     let value = *self.peek(0);
                     let prev = self.globals.insert(name, value);
@@ -359,7 +359,7 @@ impl Vm {
                     }
                 }
 
-                OpCode::GetUpvalue => {
+                byte if byte == OpCode::GetUpvalue as u8 => {
                     let upvalue_index = read_byte!() as usize;
                     let upvalue =
                         match *self.frame().closure.borrow().upvalues[upvalue_index].borrow() {
@@ -369,7 +369,7 @@ impl Vm {
                     self.push(upvalue);
                 }
 
-                OpCode::SetUpvalue => {
+                byte if byte == OpCode::SetUpvalue as u8 => {
                     let upvalue_index = read_byte!() as usize;
                     let stack_value = *self.peek(0);
                     let closure = self.frame().closure;
@@ -383,7 +383,7 @@ impl Vm {
                     };
                 }
 
-                OpCode::GetProperty => {
+                byte if byte == OpCode::GetProperty as u8 => {
                     if let Value::ObjVec(vec) = *self.peek(0) {
                         let name = read_string!();
                         self.bind_method(vec.borrow().class, name)?;
@@ -405,7 +405,7 @@ impl Vm {
                     }
                 }
 
-                OpCode::SetProperty => {
+                byte if byte == OpCode::SetProperty as u8 => {
                     let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
                         ptr
                     } else {
@@ -420,24 +420,24 @@ impl Vm {
                     self.push(value);
                 }
 
-                OpCode::GetSuper => {
+                byte if byte == OpCode::GetSuper as u8 => {
                     let name = read_string!();
                     let superclass = self.pop().try_as_obj_class().expect("Expected ObjClass.");
 
                     self.bind_method(superclass, name)?;
                 }
 
-                OpCode::Equal => {
+                byte if byte == OpCode::Equal as u8 => {
                     let b = self.pop();
                     let a = self.pop();
                     self.push(Value::Boolean(a == b));
                 }
 
-                OpCode::Greater => binary_op!(Value::Boolean, >),
+                byte if byte == OpCode::Greater as u8 => binary_op!(Value::Boolean, >),
 
-                OpCode::Less => binary_op!(Value::Boolean, <),
+                byte if byte == OpCode::Less as u8 => binary_op!(Value::Boolean, <),
 
-                OpCode::Add => {
+                byte if byte == OpCode::Add as u8 => {
                     let b = self.pop();
                     let a = self.pop();
                     match (a, b) {
@@ -462,18 +462,18 @@ impl Vm {
                     }
                 }
 
-                OpCode::Subtract => binary_op!(Value::Number, -),
+                byte if byte == OpCode::Subtract as u8 => binary_op!(Value::Number, -),
 
-                OpCode::Multiply => binary_op!(Value::Number, *),
+                byte if byte == OpCode::Multiply as u8 => binary_op!(Value::Number, *),
 
-                OpCode::Divide => binary_op!(Value::Number, /),
+                byte if byte == OpCode::Divide as u8 => binary_op!(Value::Number, /),
 
-                OpCode::Not => {
+                byte if byte == OpCode::Not as u8 => {
                     let value = self.pop();
                     self.push(Value::Boolean(!value.as_bool()));
                 }
 
-                OpCode::Negate => {
+                byte if byte == OpCode::Negate as u8 => {
                     let value = self.pop();
                     if let Some(num) = value.try_as_number() {
                         self.push(Value::Number(-num));
@@ -482,7 +482,7 @@ impl Vm {
                     }
                 }
 
-                OpCode::FormatString => {
+                byte if byte == OpCode::FormatString as u8 => {
                     let value = self.peek(0);
                     if value.try_as_obj_string().is_some() {
                         continue;
@@ -494,7 +494,7 @@ impl Vm {
                     *self.peek_mut(0) = obj;
                 }
 
-                OpCode::BuildRange => {
+                byte if byte == OpCode::BuildRange as u8 => {
                     let end = object::validate_integer(self.pop())?;
                     let begin = object::validate_integer(self.pop())?;
                     let range = object::new_root_obj_range(
@@ -506,7 +506,7 @@ impl Vm {
                     self.push(Value::ObjRange(range.as_gc()));
                 }
 
-                OpCode::BuildString => {
+                byte if byte == OpCode::BuildString as u8 => {
                     let num_operands = read_byte!() as usize;
                     if num_operands == 1 {
                         continue;
@@ -524,7 +524,7 @@ impl Vm {
                     self.push(value);
                 }
 
-                OpCode::BuildVec => {
+                byte if byte == OpCode::BuildVec as u8 => {
                     let num_operands = read_byte!() as usize;
                     let vec = object::new_root_obj_vec(
                         &mut self.heap.borrow_mut(),
@@ -537,48 +537,48 @@ impl Vm {
                     self.push(Value::ObjVec(vec.as_gc()));
                 }
 
-                OpCode::IterNext => {
+                byte if byte == OpCode::IterNext as u8 => {
                     let iter = *self.peek(0);
                     self.push(iter);
                     self.invoke(self.next_string, 0)?;
                 }
 
-                OpCode::Jump => {
+                byte if byte == OpCode::Jump as u8 => {
                     let offset = read_short!();
                     self.ip = unsafe { self.ip.offset(offset as isize) };
                 }
 
-                OpCode::JumpIfFalse => {
+                byte if byte == OpCode::JumpIfFalse as u8 => {
                     let offset = read_short!();
                     if !self.peek(0).as_bool() {
                         self.ip = unsafe { self.ip.offset(offset as isize) };
                     }
                 }
 
-                OpCode::JumpIfSentinel => {
+                byte if byte == OpCode::JumpIfSentinel as u8 => {
                     let offset = read_short!();
                     if let Value::Sentinel = self.peek(0) {
                         self.ip = unsafe { self.ip.offset(offset as isize) };
                     }
                 }
 
-                OpCode::Loop => {
+                byte if byte == OpCode::Loop as u8 => {
                     let offset = read_short!();
                     self.ip = unsafe { self.ip.offset(-(offset as isize)) };
                 }
 
-                OpCode::Call => {
+                byte if byte == OpCode::Call as u8 => {
                     let arg_count = read_byte!() as usize;
                     self.call_value(*self.peek(arg_count), arg_count)?;
                 }
 
-                OpCode::Invoke => {
+                byte if byte == OpCode::Invoke as u8 => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
                     self.invoke(method, arg_count)?;
                 }
 
-                OpCode::SuperInvoke => {
+                byte if byte == OpCode::SuperInvoke as u8 => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
                     let superclass = match self.pop() {
@@ -588,7 +588,7 @@ impl Vm {
                     self.invoke_from_class(superclass, method, arg_count)?;
                 }
 
-                OpCode::Closure => {
+                byte if byte == OpCode::Closure as u8 => {
                     let function = match read_constant!() {
                         Value::ObjFunction(underlying) => underlying,
                         _ => panic!("Expected ObjFunction."),
@@ -611,12 +611,12 @@ impl Vm {
                     }
                 }
 
-                OpCode::CloseUpvalue => {
+                byte if byte == OpCode::CloseUpvalue as u8 => {
                     self.close_upvalues(self.stack.len() - 1, *self.peek(0));
                     self.pop();
                 }
 
-                OpCode::Return => {
+                byte if byte == OpCode::Return as u8 => {
                     let result = self.pop();
                     for i in self.frame().slot_base..self.stack.len() {
                         self.close_upvalues(i, self.stack[i])
@@ -636,13 +636,13 @@ impl Vm {
                     self.push(result);
                 }
 
-                OpCode::Class => {
+                byte if byte == OpCode::Class as u8 => {
                     let string = read_string!();
                     let class = object::new_gc_obj_class(&mut self.heap.borrow_mut(), string);
                     self.push(Value::ObjClass(class));
                 }
 
-                OpCode::Inherit => {
+                byte if byte == OpCode::Inherit as u8 => {
                     let superclass = if let Some(ptr) = self.peek(1).try_as_obj_class() {
                         ptr
                     } else {
@@ -653,9 +653,13 @@ impl Vm {
                     self.pop();
                 }
 
-                OpCode::Method => {
+                byte if byte == OpCode::Method as u8 => {
                     let name = read_string!();
                     self.define_method(name)?;
+                }
+
+                _ => {
+                    panic!("Unknown opcode {}", byte);
                 }
             }
         }
