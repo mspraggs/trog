@@ -1,4 +1,5 @@
-// value
+// [line 4] Error at 'self': Expected variable name.
+// [line 5] Error at 'self': Cannot use 'self' outside of a class.
 // 0
 var self = "value";
 print(self);

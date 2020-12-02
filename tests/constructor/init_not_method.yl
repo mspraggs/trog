@@ -1,8 +1,8 @@
 // not initializer
 // 0
 class Foo {
-  fn __init__(arg) {
-    print("Foo.__init__(" + arg + ")");
+  fn __init__(self) {
+    print("Foo.__init__(" + self + ")");
     this.field = "__init__";
   }
 }

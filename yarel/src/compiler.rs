@@ -70,6 +70,16 @@ enum FunctionKind {
     Script,
 }
 
+impl FunctionKind {
+    fn is_bound(&self) -> bool {
+        match self {
+            FunctionKind::Initialiser => true,
+            FunctionKind::Method => true,
+            _ => false,
+        }
+    }
+}
+
 impl Default for FunctionKind {
     fn default() -> Self {
         FunctionKind::Script
@@ -89,7 +99,6 @@ struct ParseRule {
 struct Local {
     name: String,
     depth: Option<usize>,
-    can_assign: bool,
     is_captured: bool,
 }
 
@@ -125,16 +134,16 @@ impl Compiler {
             func_arity: 1,
             func_name: name.to_owned(),
             chunk: Chunk::new(),
-            locals: if kind == FunctionKind::Function || kind == FunctionKind::Script {
-                vec![Local {
-                    name: String::new(),
-                    depth: Some(0),
-                    can_assign: true,
-                    is_captured: false,
-                }]
-            } else {
-                Vec::new()
-            },
+            locals: vec![Local {
+                name: if kind != FunctionKind::Function {
+                    "self"
+                } else {
+                    ""
+                }
+                .to_owned(),
+                depth: Some(0),
+                is_captured: false,
+            }],
             upvalues: Vec::new(),
             scope_depth: 0,
             lambda_count: 0,
@@ -167,20 +176,19 @@ impl Compiler {
         self.locals.push(Local {
             name: name.source.clone(),
             depth: None,
-            can_assign: true,
             is_captured: false,
         });
 
         true
     }
 
-    fn resolve_local(&self, name: &Token) -> Result<(u8, bool), CompilerError> {
+    fn resolve_local(&self, name: &Token) -> Result<u8, CompilerError> {
         for (i, local) in self.locals.iter().enumerate().rev() {
             if local.name == name.source {
                 if local.depth.is_none() {
                     return Err(CompilerError::ReadVarInInitialiser);
                 }
-                return Ok((i as u8, local.can_assign));
+                return Ok(i as u8);
             }
         }
 
@@ -234,7 +242,7 @@ struct Parser<'a> {
     heap: &'a mut Heap,
 }
 
-const RULES: [ParseRule; 48] = [
+const RULES: [ParseRule; 49] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -487,6 +495,12 @@ const RULES: [ParseRule; 48] = [
         infix: None,
         precedence: Precedence::None,
     },
+    // Self
+    ParseRule {
+        prefix: Some(Parser::self_),
+        infix: None,
+        precedence: Precedence::None,
+    },
     // Super
     ParseRule {
         prefix: Some(Parser::super_),
@@ -658,15 +672,15 @@ impl<'a> Parser<'a> {
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expected '(' after function name.");
+        if kind.is_bound() {
+            self.consume(TokenKind::Self_, "Expected 'self' as first parameter in method.");
+            self.match_token(TokenKind::Comma);
+        }
         self.parameter_list(
             TokenKind::RightParen,
             "Cannot have more than 255 parameters.",
             "Expected parameter name.",
         );
-        if kind != FunctionKind::Function {
-            self.compiler_mut().func_arity -= 1;
-            self.compiler_mut().locals[0].can_assign = false;
-        }
         self.consume(TokenKind::RightParen, "Expected ')' after parameters.");
 
         self.consume(TokenKind::LeftBrace, "Expected '{' before function body.");
@@ -795,7 +809,7 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::Nil as u8);
         self.mark_initialised();
 
-        let (loop_var, _) = self
+        let loop_var = self
             .resolve_local(&Token::from_string(self.previous.source.as_str()))
             .expect("Expected to resolve local.");
 
@@ -1209,9 +1223,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_local(&mut self, name: &Token) -> Option<(u8, bool)> {
+    fn resolve_local(&mut self, name: &Token) -> Option<u8> {
         match self.compiler_mut().resolve_local(name) {
-            Ok((index, can_assign)) => Some((index, can_assign)),
+            Ok(index) => Some(index),
             Err(error) => {
                 self.compiler_error(error);
                 None
@@ -1219,7 +1233,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn resolve_upvalue(&mut self, name: &Token) -> Option<(u8, bool)> {
+    fn resolve_upvalue(&mut self, name: &Token) -> Option<u8> {
         if self.compilers.len() < 2 {
             // If there's only one scope then we're not going to find an upvalue.
             self.compiler_error(CompilerError::InvalidCompilerKind);
@@ -1230,7 +1244,7 @@ impl<'a> Parser<'a> {
         for enclosing in (0..self.compilers.len() - 1).rev() {
             let current = enclosing + 1;
             // Try and resolve the local in the enclosing compiler's scope.
-            if let Ok((index, can_assign)) = self.compilers[enclosing].resolve_local(name) {
+            if let Ok(index) = self.compilers[enclosing].resolve_local(name) {
                 // If we found it, mark as captured and propagate the upvalue to the compilers that
                 // are enclosed by the current one.
                 self.compilers[enclosing].locals[index as usize].is_captured = true;
@@ -1244,7 +1258,7 @@ impl<'a> Parser<'a> {
                         }
                     };
                 }
-                return Some((index, can_assign));
+                return Some(index);
             }
         }
         None
@@ -1266,26 +1280,23 @@ impl<'a> Parser<'a> {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
-        let (get_op, set_op, arg, can_assign) = if let Some(result) = self.resolve_local(&name) {
+        let (get_op, set_op, arg) = if let Some(result) = self.resolve_local(&name) {
             (
                 OpCode::GetLocal,
                 OpCode::SetLocal,
-                result.0,
-                can_assign && result.1,
+                result
             )
         } else if let Some(result) = self.resolve_upvalue(&name) {
             (
                 OpCode::GetUpvalue,
                 OpCode::SetUpvalue,
-                result.0,
-                can_assign && result.1,
+                result
             )
         } else {
             (
                 OpCode::GetGlobal,
                 OpCode::SetGlobal,
-                self.identifier_constant(&name),
-                can_assign,
+                self.identifier_constant(&name)
             )
         };
 
@@ -1507,6 +1518,14 @@ impl<'a> Parser<'a> {
 
     fn variable(s: &mut Parser, can_assign: bool) {
         s.named_variable(s.previous.clone(), can_assign);
+    }
+
+    fn self_(s: &mut Parser, _can_assign: bool) {
+        if s.class_compilers.is_empty() {
+            s.error("Cannot use 'self' outside of a class.");
+            return;
+        }
+        Parser::variable(s, false);
     }
 
     fn super_(s: &mut Parser, _can_assign: bool) {
