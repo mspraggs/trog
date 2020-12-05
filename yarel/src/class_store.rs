@@ -27,6 +27,7 @@ include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 pub struct CoreClassStore {
     root_obj_iter_class: Root<RefCell<ObjClass>>,
     root_obj_map_iter_class: Root<RefCell<ObjClass>>,
+    root_obj_filter_iter_class: Root<RefCell<ObjClass>>,
     root_obj_vec_class: Root<RefCell<ObjClass>>,
     root_obj_vec_iter_class: Root<RefCell<ObjClass>>,
     root_obj_range_class: Root<RefCell<ObjClass>>,
@@ -38,6 +39,7 @@ impl CoreClassStore {
         let empty = object::new_root_obj_string(heap, "");
         let root_obj_iter_class = object::new_root_obj_class(heap, empty.as_gc());
         let root_obj_map_iter_class = object::new_root_obj_class(heap, empty.as_gc());
+        let root_obj_filter_iter_class = object::new_root_obj_class(heap, empty.as_gc());
         let root_obj_vec_class = object::new_root_obj_class(heap, empty.as_gc());
         let root_obj_vec_iter_class = object::new_root_obj_class(heap, empty.as_gc());
         let root_obj_range_class = object::new_root_obj_class(heap, empty.as_gc());
@@ -45,6 +47,7 @@ impl CoreClassStore {
         CoreClassStore {
             root_obj_iter_class,
             root_obj_map_iter_class,
+            root_obj_filter_iter_class,
             root_obj_vec_class,
             root_obj_vec_iter_class,
             root_obj_range_class,
@@ -58,6 +61,10 @@ impl CoreClassStore {
 
     pub(crate) fn get_obj_map_iter_class(&self) -> Gc<RefCell<ObjClass>> {
         self.root_obj_map_iter_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_filter_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+        self.root_obj_filter_iter_class.as_gc()
     }
 
     pub(crate) fn get_obj_vec_class(&self) -> Gc<RefCell<ObjClass>> {
@@ -104,6 +111,12 @@ pub fn new_class_store(
         .try_as_obj_class()
         .expect("Expected ObjClass.")
         .as_root();
+        let root_obj_filter_iter_class = vm
+            .get_global("FilterIter")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
     let borrowed_heap = &mut heap.borrow_mut();
     let root_obj_vec_class =
         object::new_root_obj_vec_class(borrowed_heap, root_obj_iter_class.as_gc());
@@ -114,6 +127,7 @@ pub fn new_class_store(
     Box::new(CoreClassStore {
         root_obj_iter_class,
         root_obj_map_iter_class,
+        root_obj_filter_iter_class,
         root_obj_vec_class,
         root_obj_vec_iter_class,
         root_obj_range_class,

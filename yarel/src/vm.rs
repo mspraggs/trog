@@ -161,6 +161,8 @@ pub fn new_root_vm_with_built_ins(
     vm.set_global("Iter", Value::ObjClass(obj_iter_class));
     let obj_map_iter_class = vm.class_store.get_obj_map_iter_class();
     vm.set_global("MapIter", Value::ObjClass(obj_map_iter_class));
+    let obj_filter_iter_class = vm.class_store.get_obj_filter_iter_class();
+    vm.set_global("FilterIter", Value::ObjClass(obj_filter_iter_class));
     let obj_vec_class = vm.class_store.get_obj_vec_class();
     vm.set_global("Vec", Value::ObjClass(obj_vec_class));
     let obj_range_class = vm.class_store.get_obj_range_class();

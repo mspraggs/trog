@@ -10,12 +10,17 @@ class Iter {
         }
         return ret;
     }
+
+    fn filter(self, pred) {
+        return FilterIter(self.__iter__(), pred);
+    }
 }
 
 class MapIter < Iter {
     fn __init__(self, iterable, func) {
         self.iterable = iterable;
         self.func = func;
+        self.sentinel = sentinel();
     }
 
     fn __iter__(self) {
@@ -24,9 +29,30 @@ class MapIter < Iter {
 
     fn __next__(self) {
         var next = self.iterable.__next__();
-        if next == sentinel() {
-            return sentinel();
+        if next == self.sentinel {
+            return self.sentinel;
         }
         return self.func(next);
+    }
+}
+
+class FilterIter < Iter {
+    fn __init__(self, iterable, predicate) {
+        self.iterable = iterable;
+        self.predicate = predicate;
+        self.sentinel = sentinel();
+    }
+
+    fn __iter__(self) {
+        return self;
+    }
+
+    fn __next__(self) {
+        var sentinel = self.sentinel;
+        var next = self.iterable.__next__();
+        while next != sentinel and !self.predicate(next) {
+            next = self.iterable.__next__();
+        }
+        return next;
     }
 }
