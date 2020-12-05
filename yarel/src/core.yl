@@ -14,6 +14,14 @@ class Iter {
     fn filter(self, pred) {
         return FilterIter(self.__iter__(), pred);
     }
+
+    fn reduce(self, func, init) {
+        var ret = init;
+        for v in self {
+            ret = func(ret, v);
+        }
+        return ret;
+    }
 }
 
 class MapIter < Iter {

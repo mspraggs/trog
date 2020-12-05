@@ -1,0 +1,7 @@
+// 4950
+// Hello, World!
+// 0
+print((0..100).reduce(|m, n| m + n, 0));
+print(
+    ["Hello, ", "World!"].reduce(|r, s| r + s, "")
+);
