@@ -21,8 +21,7 @@ use std::hash::{Hash, Hasher};
 use std::mem::ManuallyDrop;
 
 use crate::class_store::CoreClassStore;
-use crate::common;
-use crate::error::{Error, ErrorKind};
+use crate::error::{Error};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Heap, Root};
 use crate::value::Value;
@@ -345,20 +344,6 @@ impl ObjClass {
     }
 }
 
-fn add_native_method_to_class(
-    heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
-    name: &str,
-    native: NativeFn,
-) {
-    let name = new_gc_obj_string(heap, name);
-    let obj_native = new_root_obj_native(heap, native);
-    class
-        .borrow_mut()
-        .methods
-        .insert(name, Value::ObjNative(obj_native.as_gc()));
-}
-
 impl memory::GcManaged for ObjClass {
     fn mark(&self) {
         self.name.mark();
@@ -487,23 +472,6 @@ pub fn new_root_obj_vec(heap: &mut Heap, class: Gc<RefCell<ObjClass>>) -> Root<R
     new_gc_obj_vec(heap, class).as_root()
 }
 
-pub fn new_root_obj_vec_class(
-    heap: &mut Heap,
-    iter_class: Gc<RefCell<ObjClass>>,
-) -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string(heap, "Vec");
-    let class = new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__init__", vec_init);
-    add_native_method_to_class(heap, class.as_gc(), "push", vec_push);
-    add_native_method_to_class(heap, class.as_gc(), "pop", vec_pop);
-    add_native_method_to_class(heap, class.as_gc(), "__getitem__", vec_get);
-    add_native_method_to_class(heap, class.as_gc(), "__setitem__", vec_set);
-    add_native_method_to_class(heap, class.as_gc(), "len", vec_len);
-    add_native_method_to_class(heap, class.as_gc(), "__iter__", vec_iter);
-    class.borrow_mut().add_superclass(iter_class);
-    class
-}
-
 impl ObjVec {
     fn new(class: Gc<RefCell<ObjClass>>) -> Self {
         ObjVec {
@@ -554,138 +522,6 @@ impl cmp::PartialEq for ObjVec {
     }
 }
 
-fn vec_init(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _args: &mut [Value],
-) -> Result<Value, Error> {
-    let vec = new_root_obj_vec(heap, class_store.get_obj_vec_class());
-    Ok(Value::ObjVec(vec.as_gc()))
-}
-
-fn vec_push(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 2 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 1 parameter but got {}",
-            args.len() - 1
-        );
-    }
-
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
-
-    if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
-        return error!(ErrorKind::RuntimeError, "Vec max capcity reached.");
-    }
-
-    vec.borrow_mut().elements.push(args[1]);
-
-    Ok(args[0])
-}
-
-fn vec_pop(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}",
-            args.len() - 1
-        );
-    }
-
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
-    let mut borrowed_vec = vec.borrow_mut();
-    borrowed_vec.elements.pop().ok_or_else(|| {
-        Error::with_message(
-            ErrorKind::RuntimeError,
-            "Cannot pop from empty Vec instance.",
-        )
-    })
-}
-
-fn vec_get(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 2 {
-        let msg = format!("Expected 1 parameters but got {}", args.len() - 1);
-        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
-    }
-
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
-
-    let index = get_vec_index(vec, args[1])?;
-    let borrowed_vec = vec.borrow();
-    Ok(borrowed_vec.elements[index])
-}
-
-fn vec_set(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 3 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 2 parameters but got {}",
-            args.len() - 1
-        );
-    }
-
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
-    let index = get_vec_index(vec, args[1])?;
-    let mut borrowed_vec = vec.borrow_mut();
-    borrowed_vec.elements[index] = args[2];
-    Ok(Value::None)
-}
-
-fn vec_len(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}",
-            args.len() - 1
-        );
-    }
-
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
-    let borrowed_vec = vec.borrow();
-    Ok(Value::from(borrowed_vec.elements.len() as f64))
-}
-
-fn vec_iter(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}.",
-            args.len() - 1
-        );
-    }
-
-    let iter = new_root_obj_vec_iter(
-        heap,
-        class_store.get_obj_vec_iter_class(),
-        args[0].try_as_obj_vec().expect("Expected ObjVec instance."),
-    );
-    Ok(Value::ObjVecIter(iter.as_gc()))
-}
-
 pub struct ObjVecIter {
     pub class: Gc<RefCell<ObjClass>>,
     pub iterable: Gc<RefCell<ObjVec>>,
@@ -717,7 +553,7 @@ impl ObjVecIter {
         }
     }
 
-    fn next(&mut self) -> Value {
+    pub(crate) fn next(&mut self) -> Value {
         let borrowed_vec = self.iterable.borrow();
         if self.current >= borrowed_vec.elements.len() {
             return Value::Sentinel;
@@ -744,55 +580,6 @@ impl fmt::Display for ObjVecIter {
     }
 }
 
-fn vec_iter_next(
-    _heap: &mut Heap,
-    _context: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    assert!(args.len() == 1);
-    let iter = args[0]
-        .try_as_obj_vec_iter()
-        .expect("Expected ObjVecIter instance.");
-    let mut borrowed_iter = iter.borrow_mut();
-    Ok(borrowed_iter.next())
-}
-
-pub fn new_root_obj_vec_iter_class(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string(heap, "VecIter");
-    let class = new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__next__", vec_iter_next);
-    class
-}
-
-fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error> {
-    let vec_len = vec.borrow_mut().elements.len() as isize;
-    let index = if let Value::Number(n) = value {
-        #[allow(clippy::float_cmp)]
-        if n.trunc() != n {
-            return error!(
-                ErrorKind::ValueError,
-                "Expected an integer but found '{}'.", n
-            );
-        }
-        if n < 0.0 {
-            n as isize + vec_len
-        } else {
-            n as isize
-        }
-    } else {
-        return error!(
-            ErrorKind::ValueError,
-            "Expected an integer but found '{}'.", value
-        );
-    };
-
-    if index < 0 || index >= vec_len {
-        return error!(ErrorKind::IndexError, "Vec index parameter out of bounds");
-    }
-
-    Ok(index as usize)
-}
-
 pub struct ObjRange {
     pub class: Gc<RefCell<ObjClass>>,
     pub begin: isize,
@@ -817,18 +604,6 @@ pub fn new_root_obj_range(
     new_gc_obj_range(heap, class, begin, end).as_root()
 }
 
-pub fn new_root_obj_range_class(
-    heap: &mut Heap,
-    iter_class: Gc<RefCell<ObjClass>>,
-) -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string(heap, "Range");
-    let class = new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__init__", range_init);
-    add_native_method_to_class(heap, class.as_gc(), "__iter__", range_iter);
-    class.borrow_mut().add_superclass(iter_class);
-    class
-}
-
 impl ObjRange {
     fn new(class: Gc<RefCell<ObjClass>>, begin: isize, end: isize) -> Self {
         ObjRange { class, begin, end }
@@ -848,67 +623,6 @@ impl memory::GcManaged for ObjRange {
 impl fmt::Display for ObjRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Range({}, {})", self.begin, self.end)
-    }
-}
-
-fn range_init(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 3 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 2 parameters but got {}",
-            args.len() - 1
-        );
-    }
-    let mut bounds: [isize; 2] = [0; 2];
-    for i in 0..2 {
-        bounds[i] = validate_integer(args[i + 1])?;
-    }
-    let range = new_root_obj_range(
-        heap,
-        class_store.get_obj_range_class(),
-        bounds[0],
-        bounds[1],
-    );
-    Ok(Value::ObjRange(range.as_gc()))
-}
-
-fn range_iter(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}.",
-            args.len() - 1
-        );
-    }
-
-    let iter = new_root_obj_range_iter(
-        heap,
-        class_store.get_obj_range_iter_class(),
-        args[0]
-            .try_as_obj_range()
-            .expect("Expected ObjRange instance."),
-    );
-    Ok(Value::ObjRangeIter(iter.as_gc()))
-}
-
-pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
-    match value {
-        Value::Number(n) => {
-            #[allow(clippy::float_cmp)]
-            if n.trunc() != n {
-                return error!(ErrorKind::ValueError, "Expected integer value.");
-            }
-            Ok(n as isize)
-        }
-        _ => return error!(ErrorKind::TypeError, "Expected integer value."),
     }
 }
 
@@ -946,7 +660,7 @@ impl ObjRangeIter {
         }
     }
 
-    fn next(&mut self) -> Value {
+    pub(crate) fn next(&mut self) -> Value {
         if self.current == self.iterable.end {
             return Value::Sentinel;
         }
@@ -971,25 +685,3 @@ impl fmt::Display for ObjRangeIter {
         write!(f, "ObjRangeIter instance")
     }
 }
-
-fn range_iter_next(
-    _heap: &mut Heap,
-    _context: &CoreClassStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
-    assert!(args.len() == 1);
-    let iter = args[0]
-        .try_as_obj_range_iter()
-        .expect("Expected ObjIter instance.");
-    let mut borrowed_iter = iter.borrow_mut();
-    Ok(borrowed_iter.next())
-}
-
-pub fn new_root_obj_range_iter_class(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
-    let class_name = new_gc_obj_string(heap, "IterVec");
-    let class = new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__next__", range_iter_next);
-    class
-}
-
-pub(crate) mod classes {}

@@ -17,6 +17,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::chunk::ChunkStore;
+use crate::core;
 use crate::memory::{Gc, Heap, Root};
 use crate::object::{self, ObjClass};
 use crate::vm;
@@ -119,11 +120,11 @@ pub fn new_class_store(
             .as_root();
     let borrowed_heap = &mut heap.borrow_mut();
     let root_obj_vec_class =
-        object::new_root_obj_vec_class(borrowed_heap, root_obj_iter_class.as_gc());
-    let root_obj_vec_iter_class = object::new_root_obj_vec_iter_class(borrowed_heap);
+        core::new_root_obj_vec_class(borrowed_heap, root_obj_iter_class.as_gc());
+    let root_obj_vec_iter_class = core::new_root_obj_vec_iter_class(borrowed_heap);
     let root_obj_range_class =
-        object::new_root_obj_range_class(borrowed_heap, root_obj_iter_class.as_gc());
-    let root_obj_range_iter_class = object::new_root_obj_range_iter_class(borrowed_heap);
+        core::new_root_obj_range_class(borrowed_heap, root_obj_iter_class.as_gc());
+    let root_obj_range_iter_class = core::new_root_obj_range_iter_class(borrowed_heap);
     Box::new(CoreClassStore {
         root_obj_iter_class,
         root_obj_map_iter_class,

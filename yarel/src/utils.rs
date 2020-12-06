@@ -13,18 +13,18 @@
  * limitations under the License.
  */
 
-#[macro_use]
-pub mod error;
-pub mod chunk;
-pub mod class_store;
-mod common;
-pub mod compiler;
-mod core;
-mod debug;
-mod hash;
-pub mod memory;
-pub mod object;
-mod scanner;
-mod utils;
-pub mod value;
-pub mod vm;
+use crate::error::{Error, ErrorKind};
+use crate::value::Value;
+
+pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
+    match value {
+        Value::Number(n) => {
+            #[allow(clippy::float_cmp)]
+            if n.trunc() != n {
+                return error!(ErrorKind::ValueError, "Expected integer value.");
+            }
+            Ok(n as isize)
+        }
+        _ => return error!(ErrorKind::TypeError, "Expected integer value."),
+    }
+}

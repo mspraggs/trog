@@ -31,6 +31,7 @@ use crate::memory::{Gc, GcManaged, Heap, Root, UniqueRoot};
 use crate::object::{
     self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjString, ObjUpvalue,
 };
+use crate::utils;
 use crate::value::Value;
 
 const FRAMES_MAX: usize = 64;
@@ -497,8 +498,8 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::BuildRange as u8 => {
-                    let end = object::validate_integer(self.pop())?;
-                    let begin = object::validate_integer(self.pop())?;
+                    let end = utils::validate_integer(self.pop())?;
+                    let begin = utils::validate_integer(self.pop())?;
                     let range = object::new_root_obj_range(
                         &mut self.heap.borrow_mut(),
                         self.class_store.get_obj_range_class(),
