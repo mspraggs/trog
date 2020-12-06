@@ -362,14 +362,15 @@ impl<'a> Parser<'a> {
     fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Vec<Upvalue>) {
         self.emit_return();
 
-        if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
-            let compiler = self.compiler();
-            debug::disassemble_chunk(&compiler.chunk, compiler.func_name.as_str());
-        }
-
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
         let function = compiler.make_function(self.heap, self.string_store, self.chunk_store);
         self.compiled_functions.push(function.clone());
+
+        if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
+            let chunk = self.chunk_store.get_chunk(function.chunk_index);
+            let func_name = format!("{}", *function);
+            debug::disassemble_chunk(&chunk, &func_name);
+        }
 
         (function, compiler.upvalues)
     }
