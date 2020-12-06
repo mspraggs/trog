@@ -21,6 +21,7 @@ mod utils;
 use yarel::chunk;
 use yarel::class_store;
 use yarel::memory;
+use yarel::object;
 
 fn main() {
     let paths = match utils::get_paths("tests", Some(".yl")) {
@@ -37,13 +38,21 @@ fn main() {
     let mut stdout = io::stdout();
 
     let heap = memory::new_heap();
+    let string_store = object::new_obj_string_store(&mut heap.borrow_mut());
     let chunk_store = chunk::new_chunk_store();
-    let class_store = class_store::new_class_store(heap.clone(), chunk_store.clone());
+    let class_store =
+        class_store::new_class_store(heap.clone(), string_store.clone(), chunk_store.clone());
 
     let failures: Vec<test::Failure> = paths
         .iter()
         .map(|p| {
-            let ret = test::run_test(heap.clone(), chunk_store.clone(), &class_store, p);
+            let ret = test::run_test(
+                heap.clone(),
+                string_store.clone(),
+                chunk_store.clone(),
+                &class_store,
+                p,
+            );
             match ret {
                 Ok(ref success) => {
                     if !success.skipped {

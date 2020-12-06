@@ -19,17 +19,18 @@ use crate::class_store::CoreClassStore;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Heap, Root};
-use crate::object::{self, NativeFn, ObjClass, ObjVec};
+use crate::object::{self, NativeFn, ObjClass, ObjStringStore, ObjVec};
 use crate::utils;
 use crate::value::Value;
 
 fn add_native_method_to_class(
     heap: &mut Heap,
+    string_store: &mut ObjStringStore,
     class: Gc<RefCell<ObjClass>>,
     name: &str,
     native: NativeFn,
 ) {
-    let name = object::new_gc_obj_string(heap, name);
+    let name = string_store.new_gc_obj_string(heap, name);
     let obj_native = object::new_root_obj_native(heap, native);
     class
         .borrow_mut()
@@ -37,21 +38,58 @@ fn add_native_method_to_class(
         .insert(name, Value::ObjNative(obj_native.as_gc()));
 }
 
+// String implementation
+
+pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringStore) {
+    let string_class = string_store.get_obj_string_class();
+    add_native_method_to_class(heap, string_store, string_class, "__init__", string_init);
+}
+
+fn string_init(
+    heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    if args.len() != 2 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected one argument to 'String'."
+        );
+    }
+    Ok(Value::ObjString(
+        string_store.new_gc_obj_string(heap, format!("{}", args[1]).as_str()),
+    ))
+}
+
 /// Vec implemenation
 
 pub fn new_root_obj_vec_class(
     heap: &mut Heap,
+    string_store: &mut ObjStringStore,
     iter_class: Gc<RefCell<ObjClass>>,
 ) -> Root<RefCell<ObjClass>> {
-    let class_name = object::new_gc_obj_string(heap, "Vec");
+    let class_name = string_store.new_gc_obj_string(heap, "Vec");
     let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__init__", vec_init);
-    add_native_method_to_class(heap, class.as_gc(), "push", vec_push);
-    add_native_method_to_class(heap, class.as_gc(), "pop", vec_pop);
-    add_native_method_to_class(heap, class.as_gc(), "__getitem__", vec_get_item);
-    add_native_method_to_class(heap, class.as_gc(), "__setitem__", vec_set_item);
-    add_native_method_to_class(heap, class.as_gc(), "len", vec_len);
-    add_native_method_to_class(heap, class.as_gc(), "__iter__", vec_iter);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "__init__", vec_init);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "push", vec_push);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "pop", vec_pop);
+    add_native_method_to_class(
+        heap,
+        string_store,
+        class.as_gc(),
+        "__getitem__",
+        vec_get_item,
+    );
+    add_native_method_to_class(
+        heap,
+        string_store,
+        class.as_gc(),
+        "__setitem__",
+        vec_set_item,
+    );
+    add_native_method_to_class(heap, string_store, class.as_gc(), "len", vec_len);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "__iter__", vec_iter);
     class.borrow_mut().add_superclass(iter_class);
     class
 }
@@ -59,6 +97,7 @@ pub fn new_root_obj_vec_class(
 fn vec_init(
     heap: &mut Heap,
     class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     _args: &mut [Value],
 ) -> Result<Value, Error> {
     let vec = object::new_root_obj_vec(heap, class_store.get_obj_vec_class());
@@ -68,6 +107,7 @@ fn vec_init(
 fn vec_push(
     _heap: &mut Heap,
     _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 2 {
@@ -92,6 +132,7 @@ fn vec_push(
 fn vec_pop(
     _heap: &mut Heap,
     _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 1 {
@@ -115,6 +156,7 @@ fn vec_pop(
 fn vec_get_item(
     _heap: &mut Heap,
     _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 2 {
@@ -132,6 +174,7 @@ fn vec_get_item(
 fn vec_set_item(
     _heap: &mut Heap,
     _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 3 {
@@ -152,6 +195,7 @@ fn vec_set_item(
 fn vec_len(
     _heap: &mut Heap,
     _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 1 {
@@ -170,6 +214,7 @@ fn vec_len(
 fn vec_iter(
     heap: &mut Heap,
     class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 1 {
@@ -219,16 +264,20 @@ fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error>
 
 /// VecIter implementation
 
-pub fn new_root_obj_vec_iter_class(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
-    let class_name = object::new_gc_obj_string(heap, "VecIter");
+pub fn new_root_obj_vec_iter_class(
+    heap: &mut Heap,
+    string_store: &mut ObjStringStore,
+) -> Root<RefCell<ObjClass>> {
+    let class_name = string_store.new_gc_obj_string(heap, "VecIter");
     let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__next__", vec_iter_next);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "__next__", vec_iter_next);
     class
 }
 
 fn vec_iter_next(
     _heap: &mut Heap,
-    _context: &CoreClassStore,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     assert!(args.len() == 1);
@@ -243,12 +292,13 @@ fn vec_iter_next(
 
 pub fn new_root_obj_range_class(
     heap: &mut Heap,
+    string_store: &mut ObjStringStore,
     iter_class: Gc<RefCell<ObjClass>>,
 ) -> Root<RefCell<ObjClass>> {
-    let class_name = object::new_gc_obj_string(heap, "Range");
+    let class_name = string_store.new_gc_obj_string(heap, "Range");
     let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__init__", range_init);
-    add_native_method_to_class(heap, class.as_gc(), "__iter__", range_iter);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "__init__", range_init);
+    add_native_method_to_class(heap, string_store, class.as_gc(), "__iter__", range_iter);
     class.borrow_mut().add_superclass(iter_class);
     class
 }
@@ -256,6 +306,7 @@ pub fn new_root_obj_range_class(
 fn range_init(
     heap: &mut Heap,
     class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 3 {
@@ -281,6 +332,7 @@ fn range_init(
 fn range_iter(
     heap: &mut Heap,
     class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     if args.len() != 1 {
@@ -306,6 +358,7 @@ fn range_iter(
 fn range_iter_next(
     _heap: &mut Heap,
     _context: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
     assert!(args.len() == 1);
@@ -316,9 +369,18 @@ fn range_iter_next(
     Ok(borrowed_iter.next())
 }
 
-pub fn new_root_obj_range_iter_class(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
-    let class_name = object::new_gc_obj_string(heap, "RangeIter");
+pub fn new_root_obj_range_iter_class(
+    heap: &mut Heap,
+    string_store: &mut ObjStringStore,
+) -> Root<RefCell<ObjClass>> {
+    let class_name = string_store.new_gc_obj_string(heap, "RangeIter");
     let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, class.as_gc(), "__next__", range_iter_next);
+    add_native_method_to_class(
+        heap,
+        string_store,
+        class.as_gc(),
+        "__next__",
+        range_iter_next,
+    );
     class
 }

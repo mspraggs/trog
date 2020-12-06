@@ -386,7 +386,7 @@ impl Scanner {
                         "e" => self.check_keyword(2, "lf", TokenKind::Self_),
                         "u" => self.check_keyword(2, "per", TokenKind::Super),
                         _ => TokenKind::Identifier,
-                    }
+                    };
                 }
                 TokenKind::Identifier
             }

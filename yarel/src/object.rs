@@ -18,54 +18,24 @@ use std::cmp::{self, Eq};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::mem::ManuallyDrop;
+use std::rc::Rc;
 
 use crate::class_store::CoreClassStore;
-use crate::error::{Error};
+use crate::error::Error;
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Heap, Root};
 use crate::value::Value;
 
-type ObjStringCache = RefCell<HashMap<u64, ManuallyDrop<Root<ObjString>>>>;
-
 pub struct ObjString {
+    pub(crate) class: Gc<RefCell<ObjClass>>,
     string: String,
     pub(crate) hash: u64,
 }
 
-pub fn new_gc_obj_string(heap: &mut Heap, data: &str) -> Gc<ObjString> {
-    // The use of ManuallyDrop here is sadly necessary, otherwise the Root may try
-    // to read memory that's been free'd when the Root is dropped.
-    thread_local! {
-        static OBJ_STRING_CACHE: ObjStringCache = RefCell::new(HashMap::new());
-    }
-
-    let hash = {
-        let mut hasher = FnvHasher::new();
-        (*data).hash(&mut hasher);
-        hasher.finish()
-    };
-    if let Some(gc_string) =
-        OBJ_STRING_CACHE.with(|cache| cache.borrow().get(&hash).map(|v| v.as_gc()))
-    {
-        return gc_string;
-    }
-    let ret = heap.allocate(ObjString::new(data, hash));
-    OBJ_STRING_CACHE.with(|cache| {
-        cache
-            .borrow_mut()
-            .insert(hash, ManuallyDrop::new(ret.as_root()))
-    });
-    ret
-}
-
-pub fn new_root_obj_string(heap: &mut Heap, data: &str) -> Root<ObjString> {
-    new_gc_obj_string(heap, data).as_root()
-}
-
 impl ObjString {
-    fn new(string: &str, hash: u64) -> Self {
+    fn new(class: Gc<RefCell<ObjClass>>, string: &str, hash: u64) -> Self {
         ObjString {
+            class,
             string: String::from(string),
             hash,
         }
@@ -81,18 +51,6 @@ impl ObjString {
 
     pub fn as_str(&self) -> &str {
         self.string.as_str()
-    }
-}
-
-impl From<&str> for ObjString {
-    #[inline]
-    fn from(string: &str) -> ObjString {
-        let mut hasher = FnvHasher::new();
-        (*string).hash(&mut hasher);
-        ObjString {
-            string: String::from(string),
-            hash: hasher.finish(),
-        }
     }
 }
 
@@ -114,6 +72,50 @@ impl memory::GcManaged for ObjString {
     fn mark(&self) {}
 
     fn blacken(&self) {}
+}
+
+pub struct ObjStringStore {
+    class: Root<RefCell<ObjClass>>,
+    store: HashMap<u64, Root<ObjString>>,
+}
+
+pub fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
+    let class = new_root_obj_class_anon(heap);
+    let store = Rc::new(RefCell::new(ObjStringStore::new(class.clone())));
+    let name = store.borrow_mut().new_gc_obj_string(heap, "String");
+    class.borrow_mut().name = Some(name);
+    store
+}
+
+impl ObjStringStore {
+    pub fn new(class: Root<RefCell<ObjClass>>) -> Self {
+        ObjStringStore {
+            class,
+            store: HashMap::new(),
+        }
+    }
+
+    pub(crate) fn get_obj_string_class(&self) -> Gc<RefCell<ObjClass>> {
+        self.class.as_gc()
+    }
+
+    pub fn new_gc_obj_string(&mut self, heap: &mut Heap, data: &str) -> Gc<ObjString> {
+        let hash = {
+            let mut hasher = FnvHasher::new();
+            (*data).hash(&mut hasher);
+            hasher.finish()
+        };
+        if let Some(gc_string) = self.store.get(&hash).map(|v| v.as_gc()) {
+            return gc_string;
+        }
+        let ret = heap.allocate(ObjString::new(self.class.as_gc(), data, hash));
+        self.store.insert(hash, ret.as_root());
+        ret
+    }
+
+    pub fn new_root_obj_string(&mut self, heap: &mut Heap, data: &str) -> Root<ObjString> {
+        self.new_gc_obj_string(heap, data).as_root()
+    }
 }
 
 pub enum ObjUpvalue {
@@ -236,7 +238,12 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(&mut Heap, &CoreClassStore, &mut [Value]) -> Result<Value, Error>;
+pub type NativeFn = fn(
+    &mut Heap,
+    &CoreClassStore,
+    string_store: &mut ObjStringStore,
+    &mut [Value],
+) -> Result<Value, Error>;
 
 pub struct ObjNative {
     pub function: NativeFn,
@@ -317,22 +324,33 @@ impl fmt::Display for ObjClosure {
 }
 
 pub struct ObjClass {
-    pub name: memory::Gc<ObjString>,
+    pub name: Option<memory::Gc<ObjString>>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
 pub fn new_gc_obj_class(heap: &mut Heap, name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
-    heap.allocate(RefCell::new(ObjClass::new(name)))
+    heap.allocate(RefCell::new(ObjClass::with_name(name)))
 }
 
 pub fn new_root_obj_class(heap: &mut Heap, name: Gc<ObjString>) -> Root<RefCell<ObjClass>> {
     new_gc_obj_class(heap, name).as_root()
 }
 
+pub fn new_root_obj_class_anon(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
+    heap.allocate(RefCell::new(ObjClass::new())).as_root()
+}
+
 impl ObjClass {
-    fn new(name: memory::Gc<ObjString>) -> Self {
+    fn new() -> Self {
         ObjClass {
-            name,
+            name: None,
+            methods: HashMap::with_hasher(BuildPassThroughHasher::default()),
+        }
+    }
+
+    fn with_name(name: memory::Gc<ObjString>) -> Self {
+        ObjClass {
+            name: Some(name),
             methods: HashMap::with_hasher(BuildPassThroughHasher::default()),
         }
     }
@@ -346,19 +364,17 @@ impl ObjClass {
 
 impl memory::GcManaged for ObjClass {
     fn mark(&self) {
-        self.name.mark();
         self.methods.mark();
     }
 
     fn blacken(&self) {
-        self.name.blacken();
         self.methods.blacken();
     }
 }
 
 impl fmt::Display for ObjClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", *self.name)
+        write!(f, "{}", *self.name.unwrap())
     }
 }
 

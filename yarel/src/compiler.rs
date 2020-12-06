@@ -22,7 +22,7 @@ use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Heap, Root};
-use crate::object::{self, ObjFunction};
+use crate::object::{self, ObjFunction, ObjStringStore};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 
@@ -153,9 +153,10 @@ impl Compiler {
     fn make_function(
         &mut self,
         heap: &mut Heap,
+        string_store: &mut ObjStringStore,
         chunk_store: &mut ChunkStore,
     ) -> Root<ObjFunction> {
-        let name = object::new_root_obj_string(heap, self.func_name.as_str());
+        let name = string_store.new_root_obj_string(heap, self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = chunk_store.add_chunk(heap, chunk);
@@ -220,11 +221,12 @@ struct ClassCompiler {
 pub fn compile(
     heap: &mut Heap,
     chunk_store: &mut ChunkStore,
+    string_store: &mut ObjStringStore,
     source: String,
 ) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
 
-    let mut parser = Parser::new(heap, &mut scanner, chunk_store);
+    let mut parser = Parser::new(heap, &mut scanner, chunk_store, string_store);
     parser.parse()
 }
 
@@ -239,6 +241,7 @@ struct Parser<'a> {
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
     chunk_store: &'a mut ChunkStore,
+    string_store: &'a mut ObjStringStore,
     heap: &'a mut Heap,
 }
 
@@ -247,6 +250,7 @@ impl<'a> Parser<'a> {
         heap: &'a mut Heap,
         scanner: &'a mut Scanner,
         chunk_store: &'a mut ChunkStore,
+        string_store: &'a mut ObjStringStore,
     ) -> Parser<'a> {
         let mut ret = Parser {
             current: Token::new(),
@@ -259,6 +263,7 @@ impl<'a> Parser<'a> {
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
             chunk_store,
+            string_store,
             heap,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -363,7 +368,7 @@ impl<'a> Parser<'a> {
         }
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.heap, self.chunk_store);
+        let function = compiler.make_function(self.heap, self.string_store, self.chunk_store);
         self.compiled_functions.push(function.clone());
 
         (function, compiler.upvalues)
@@ -376,7 +381,10 @@ impl<'a> Parser<'a> {
 
         self.consume(TokenKind::LeftParen, "Expected '(' after function name.");
         if kind.is_bound() {
-            self.consume(TokenKind::Self_, "Expected 'self' as first parameter in method.");
+            self.consume(
+                TokenKind::Self_,
+                "Expected 'self' as first parameter in method.",
+            );
             self.match_token(TokenKind::Comma);
         }
         self.parameter_list(
@@ -789,7 +797,10 @@ impl<'a> Parser<'a> {
     }
 
     fn identifier_constant(&mut self, token: &Token) -> u8 {
-        let value = Value::ObjString(object::new_gc_obj_string(self.heap, token.source.as_str()));
+        let value = Value::ObjString(
+            self.string_store
+                .new_gc_obj_string(self.heap, &token.source),
+        );
         self.make_constant(value)
     }
 
@@ -984,22 +995,14 @@ impl<'a> Parser<'a> {
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
         let (get_op, set_op, arg) = if let Some(result) = self.resolve_local(&name) {
-            (
-                OpCode::GetLocal,
-                OpCode::SetLocal,
-                result
-            )
+            (OpCode::GetLocal, OpCode::SetLocal, result)
         } else if let Some(result) = self.resolve_upvalue(&name) {
-            (
-                OpCode::GetUpvalue,
-                OpCode::SetUpvalue,
-                result
-            )
+            (OpCode::GetUpvalue, OpCode::SetUpvalue, result)
         } else {
             (
                 OpCode::GetGlobal,
                 OpCode::SetGlobal,
-                self.identifier_constant(&name)
+                self.identifier_constant(&name),
             )
         };
 
@@ -1180,10 +1183,7 @@ impl<'a> Parser<'a> {
     }
 
     fn string(s: &mut Parser, _can_assign: bool) {
-        let value = Value::ObjString(object::new_gc_obj_string(
-            s.heap,
-            s.previous.source.as_str(),
-        ));
+        let value = Value::ObjString(s.string_store.new_gc_obj_string(s.heap, &s.previous.source));
         s.emit_constant(value);
     }
 
@@ -1191,10 +1191,8 @@ impl<'a> Parser<'a> {
         let mut arg_count = 0;
         loop {
             if !s.previous.source.is_empty() {
-                let value = Value::ObjString(object::new_gc_obj_string(
-                    s.heap,
-                    s.previous.source.as_str(),
-                ));
+                let value =
+                    Value::ObjString(s.string_store.new_gc_obj_string(s.heap, &s.previous.source));
                 s.emit_constant(value);
                 arg_count += 1;
             }
@@ -1208,10 +1206,10 @@ impl<'a> Parser<'a> {
 
         s.advance();
         if !s.previous.source.is_empty() {
-            let value = Value::ObjString(object::new_gc_obj_string(
-                s.heap,
-                s.previous.source.as_str(),
-            ));
+            let value = Value::ObjString(
+                s.string_store
+                    .new_gc_obj_string(s.heap, s.previous.source.as_str()),
+            );
             s.emit_constant(value);
             arg_count += 1;
         }

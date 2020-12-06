@@ -52,6 +52,14 @@ impl Value {
         }
     }
 
+    pub(crate) fn get_class(&self) -> Option<Gc<RefCell<ObjClass>>> {
+        match self {
+            Value::ObjString(s) => Some(s.class),
+            Value::ObjVec(v) => Some(v.borrow().class),
+            _ => None,
+        }
+    }
+
     pub fn try_as_bool(&self) -> Option<bool> {
         match self {
             Value::Boolean(inner) => Some(*inner),
