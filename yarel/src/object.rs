@@ -18,10 +18,11 @@ use std::cmp::{self, Eq};
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::class_store::CoreClassStore;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Heap, Root};
 use crate::value::Value;
@@ -29,7 +30,7 @@ use crate::value::Value;
 pub struct ObjString {
     pub(crate) class: Gc<RefCell<ObjClass>>,
     string: String,
-    pub(crate) hash: u64,
+    hash: u64,
 }
 
 impl ObjString {
@@ -39,14 +40,6 @@ impl ObjString {
             string: String::from(string),
             hash,
         }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.string.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.string.len()
     }
 
     pub fn as_str(&self) -> &str {
@@ -67,6 +60,14 @@ impl Hash for Gc<ObjString> {
 }
 
 impl Eq for Gc<ObjString> {}
+
+impl Deref for ObjString {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        self.string.as_str()
+    }
+}
 
 impl memory::GcManaged for ObjString {
     fn mark(&self) {}
@@ -111,10 +112,6 @@ impl ObjStringStore {
         let ret = heap.allocate(ObjString::new(self.class.as_gc(), data, hash));
         self.store.insert(hash, ret.as_root());
         ret
-    }
-
-    pub fn new_root_obj_string(&mut self, heap: &mut Heap, data: &str) -> Root<ObjString> {
-        self.new_gc_obj_string(heap, data).as_root()
     }
 }
 
@@ -623,6 +620,39 @@ pub fn new_root_obj_range(
 impl ObjRange {
     fn new(class: Gc<RefCell<ObjClass>>, begin: isize, end: isize) -> Self {
         ObjRange { class, begin, end }
+    }
+
+    pub(crate) fn get_bounded_range(
+        &self,
+        limit: isize,
+        type_name: &str,
+    ) -> Result<(usize, usize), Error> {
+        let begin = if self.begin < 0 {
+            self.begin + limit
+        } else {
+            self.begin
+        };
+        if begin < 0 || begin >= limit {
+            return error!(
+                ErrorKind::IndexError,
+                "{} slice start out of range.", type_name
+            );
+        }
+        let end = if self.end < 0 {
+            self.end + limit
+        } else {
+            self.end
+        };
+        if end < 0 || end > limit {
+            return error!(
+                ErrorKind::IndexError,
+                "{} slice end out of range.", type_name
+            );
+        }
+        Ok((
+            begin as usize,
+            if end >= begin { end } else { begin } as usize,
+        ))
     }
 }
 

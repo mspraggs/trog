@@ -1,0 +1,11 @@
+// true
+// true
+// false
+// false
+// false
+// 0
+print("".starts_with(""));
+print("🎁 Presents!".starts_with("🎁"));
+print("Presents!".starts_with("🎄"));
+print("🎄 Presents!".starts_with("Pres"));
+print("🎄 Presents!".starts_with("🎁"));

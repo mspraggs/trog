@@ -1,0 +1,4 @@
+// Cannot split using an empty string.
+// [line 4] in script
+// 70
+"".split("");

@@ -17,14 +17,19 @@ use crate::error::{Error, ErrorKind};
 use crate::value::Value;
 
 pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
-    match value {
-        Value::Number(n) => {
-            #[allow(clippy::float_cmp)]
-            if n.trunc() != n {
-                return error!(ErrorKind::ValueError, "Expected integer value.");
-            }
-            Ok(n as isize)
+    if let Value::Number(n) = value {
+        #[allow(clippy::float_cmp)]
+        if n.trunc() != n {
+            return error!(
+                ErrorKind::ValueError,
+                "Expected an integer value but found '{}'.", value
+            );
         }
-        _ => return error!(ErrorKind::TypeError, "Expected integer value."),
+        Ok(n as isize)
+    } else {
+        error!(
+            ErrorKind::TypeError,
+            "Expected an integer value but found '{}'.", value
+        )
     }
 }

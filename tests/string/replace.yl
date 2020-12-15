@@ -1,0 +1,6 @@
+// w00t! 🙂
+// wat!?
+// 0
+var s = "woot! 🙂";
+print(s.replace("o", "0"));
+print(s.replace("oo", "a").replace(" 🙂", "?"));

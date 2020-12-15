@@ -1,0 +1,4 @@
+// Provided string slice end is not on a character boundary.
+// [line 4] in script
+// 70
+"🙁😐🙂"[4..10];

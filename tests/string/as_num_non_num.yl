@@ -1,0 +1,4 @@
+// Unable to parse number from 'some string'.
+// [line 4] in script
+// 0
+"some string".as_num();

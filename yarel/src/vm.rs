@@ -703,7 +703,7 @@ impl Vm {
                 } else if arg_count != 0 {
                     return error!(
                         ErrorKind::TypeError,
-                        "Expected 0 arguments but got {}.", arg_count
+                        "Expected 0 arguments but found {}.", arg_count
                     );
                 }
 
@@ -774,7 +774,7 @@ impl Vm {
         if arg_count as u32 + 1 != closure.borrow().function.arity {
             return error!(
                 ErrorKind::TypeError,
-                "Expected {} arguments but got {}.",
+                "Expected {} arguments but found {}.",
                 closure.borrow().function.arity - 1,
                 arg_count
             );

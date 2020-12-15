@@ -19,7 +19,7 @@ use crate::class_store::CoreClassStore;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Heap, Root};
-use crate::object::{self, NativeFn, ObjClass, ObjStringStore, ObjVec};
+use crate::object::{self, NativeFn, ObjClass, ObjString, ObjStringStore};
 use crate::utils;
 use crate::value::Value;
 
@@ -38,11 +38,37 @@ fn add_native_method_to_class(
         .insert(name, Value::ObjNative(obj_native.as_gc()));
 }
 
+fn check_num_args(args: &mut [Value], expected: usize) -> Result<(), Error> {
+    if args.len() != expected + 1 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected {} parameter{} but found {}.",
+            expected,
+            if expected == 1 { "" } else { "s" },
+            args.len() - 1
+        );
+    }
+    Ok(())
+}
+
 // String implementation
 
 pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringStore) {
     let string_class = string_store.get_obj_string_class();
-    add_native_method_to_class(heap, string_store, string_class, "__init__", string_init);
+    let mut bind = |name, func| {
+        add_native_method_to_class(heap, string_store, string_class, name, func);
+    };
+    bind("__init__", string_init);
+    bind("__getitem__", string_get_item);
+    bind("len", string_len);
+    bind("count_chars", string_count_chars);
+    bind("char_byte_index", string_char_byte_index);
+    bind("find", string_find);
+    bind("replace", string_replace);
+    bind("split", string_split);
+    bind("starts_with", string_starts_with);
+    bind("ends_with", string_ends_with);
+    bind("as_num", string_as_num);
 }
 
 fn string_init(
@@ -51,15 +77,263 @@ fn string_init(
     string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 2 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected one argument to 'String'."
-        );
-    }
+    check_num_args(args, 1)?;
+
     Ok(Value::ObjString(
         string_store.new_gc_obj_string(heap, format!("{}", args[1]).as_str()),
     ))
+}
+
+fn string_get_item(
+    heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string_len = string.len() as isize;
+
+    let (begin, end) = match args[1] {
+        Value::Number(_) => {
+            let begin = get_bounded_index(args[1], string_len, "String index out of bounds.")?;
+            check_char_boundary(string, begin, "string index")?;
+            let mut end = begin + 1;
+            while end <= string.len() && !string.as_str().is_char_boundary(end) {
+                end += 1;
+            }
+            (begin, end)
+        }
+        Value::ObjRange(r) => {
+            let (begin, end) = r.get_bounded_range(string_len, "String")?;
+            check_char_boundary(string, begin, "string slice start")?;
+            check_char_boundary(string, end, "string slice end")?;
+            (begin, end)
+        }
+        _ => return error!(ErrorKind::TypeError, "Expected an integer or range."),
+    };
+
+    let new_string = string_store.new_gc_obj_string(heap, &string.as_str()[begin..end]);
+
+    Ok(Value::ObjString(new_string))
+}
+
+fn string_len(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    Ok(Value::Number(string.len() as f64))
+}
+
+fn string_count_chars(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    Ok(Value::Number(string.chars().count() as f64))
+}
+
+fn string_char_byte_index(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let char_index = get_bounded_index(
+        args[1],
+        string.as_str().chars().count() as isize,
+        "String index parameter out of bounds.",
+    )?;
+
+    let mut char_count = 0;
+    for i in 0..string.len() + 1 {
+        if string.as_str().is_char_boundary(i) {
+            if char_count == char_index {
+                return Ok(Value::Number(i as f64));
+            }
+            char_count += 1;
+        }
+    }
+    error!(
+        ErrorKind::IndexError,
+        "Provided character index out of range."
+    )
+}
+
+fn string_find(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 2)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let substring = args[1].try_as_obj_string().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::RuntimeError,
+            &format!("Expected a string but found '{}'.", args[1]),
+        )
+    })?;
+    if substring.is_empty() {
+        return error!(ErrorKind::ValueError, "Cannot find empty string.");
+    }
+    let string_len = string.len() as isize;
+    let start = {
+        let i = utils::validate_integer(args[2])?;
+        if i < 0 {
+            i + string_len
+        } else {
+            i
+        }
+    };
+    if start < 0 || start >= string_len {
+        return error!(ErrorKind::ValueError, "String index out of bounds.");
+    }
+    let start = start as usize;
+    check_char_boundary(string, start, "string index")?;
+    for i in start..string.as_str().len() {
+        if !string.is_char_boundary(i) || !string.is_char_boundary(i + substring.len()) {
+            continue;
+        }
+        let slice = &string[i..i + substring.len()];
+        if i >= start && slice == substring.as_str() {
+            return Ok(Value::Number(i as f64));
+        }
+    }
+    Ok(Value::None)
+}
+
+fn string_replace(
+    heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 2)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let old = args[1].try_as_obj_string().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::RuntimeError,
+            &format!("Expected a string but found '{}'.", args[1]),
+        )
+    })?;
+    if old.is_empty() {
+        return error!(ErrorKind::ValueError, "Cannot replace empty string.");
+    }
+    let new = args[2].try_as_obj_string().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::RuntimeError,
+            &format!("Expected a string but found '{}'.", args[2]),
+        )
+    })?;
+    let new_string =
+        string_store.new_gc_obj_string(heap, &string.replace(old.as_str(), new.as_str()));
+    Ok(Value::ObjString(new_string))
+}
+
+fn string_split(
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
+    string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let delim = args[1].try_as_obj_string().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::RuntimeError,
+            &format!("Expected a string but found '{}'.", args[1]),
+        )
+    })?;
+    if delim.is_empty() {
+        return error!(ErrorKind::ValueError, "Cannot split using an empty string.");
+    }
+    let splits = object::new_root_obj_vec(heap, class_store.get_obj_vec_class());
+    for substr in string.as_str().split(delim.as_str()) {
+        let new_str = Value::ObjString(string_store.new_gc_obj_string(heap, substr));
+        splits.borrow_mut().elements.push(new_str);
+    }
+    Ok(Value::ObjVec(splits.as_gc()))
+}
+
+fn string_starts_with(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let prefix = args[1].try_as_obj_string().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::TypeError,
+            format!("Expected a string but found '{}'.", args[1]).as_str(),
+        )
+    })?;
+
+    Ok(Value::Boolean(string.as_str().starts_with(prefix.as_str())))
+}
+
+fn string_ends_with(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let prefix = args[1].try_as_obj_string().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::TypeError,
+            format!("Expected a string but found '{}'.", args[1]).as_str(),
+        )
+    })?;
+
+    Ok(Value::Boolean(string.as_str().ends_with(prefix.as_str())))
+}
+
+fn string_as_num(
+    _heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let num = string.parse::<f64>().or_else(|_| {
+        error!(ErrorKind::ValueError, "Unable to parse number from '{}'.", args[0])
+    })?;
+
+    Ok(Value::Number(num))
+}
+
+fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<(), Error> {
+    if !string.as_str().is_char_boundary(pos) {
+        return error!(
+            ErrorKind::IndexError,
+            "Provided {} is not on a character boundary.", desc
+        );
+    }
+    Ok(())
 }
 
 /// Vec implemenation
@@ -110,13 +384,7 @@ fn vec_push(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 2 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 1 parameter but got {}",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 1)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
 
@@ -135,13 +403,7 @@ fn vec_pop(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 0)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let mut borrowed_vec = vec.borrow_mut();
@@ -154,21 +416,37 @@ fn vec_pop(
 }
 
 fn vec_get_item(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 2 {
-        let msg = format!("Expected 1 parameters but got {}", args.len() - 1);
-        return Err(Error::with_message(ErrorKind::RuntimeError, msg.as_str()));
-    }
+    check_num_args(args, 1)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
 
-    let index = get_vec_index(vec, args[1])?;
-    let borrowed_vec = vec.borrow();
-    Ok(borrowed_vec.elements[index])
+    match args[1] {
+        Value::Number(_) => {
+            let borrowed_vec = vec.borrow();
+            let index = get_bounded_index(
+                args[1],
+                borrowed_vec.elements.len() as isize,
+                "Vec index parameter out of bounds",
+            )?;
+            Ok(borrowed_vec.elements[index])
+        }
+        Value::ObjRange(r) => {
+            let vec_len = vec.borrow().elements.len() as isize;
+            let (begin, end) = r.get_bounded_range(vec_len, "Vec")?;
+            let new_vec = object::new_gc_obj_vec(heap, class_store.get_obj_vec_class());
+            new_vec
+                .borrow_mut()
+                .elements
+                .extend_from_slice(&vec.borrow().elements[begin..end]);
+            Ok(Value::ObjVec(new_vec))
+        }
+        _ => error!(ErrorKind::TypeError, "Expected an integer or range."),
+    }
 }
 
 fn vec_set_item(
@@ -177,16 +455,14 @@ fn vec_set_item(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 3 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 2 parameters but got {}",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 2)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
-    let index = get_vec_index(vec, args[1])?;
+    let index = get_bounded_index(
+        args[1],
+        vec.borrow().elements.len() as isize,
+        "Vec index parameter out of bounds",
+    )?;
     let mut borrowed_vec = vec.borrow_mut();
     borrowed_vec.elements[index] = args[2];
     Ok(Value::None)
@@ -198,13 +474,7 @@ fn vec_len(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 0)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
     let borrowed_vec = vec.borrow();
@@ -217,13 +487,7 @@ fn vec_iter(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}.",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 0)?;
 
     let iter = object::new_root_obj_vec_iter(
         heap,
@@ -233,30 +497,13 @@ fn vec_iter(
     Ok(Value::ObjVecIter(iter.as_gc()))
 }
 
-fn get_vec_index(vec: Gc<RefCell<ObjVec>>, value: Value) -> Result<usize, Error> {
-    let vec_len = vec.borrow_mut().elements.len() as isize;
-    let index = if let Value::Number(n) = value {
-        #[allow(clippy::float_cmp)]
-        if n.trunc() != n {
-            return error!(
-                ErrorKind::ValueError,
-                "Expected an integer but found '{}'.", n
-            );
-        }
-        if n < 0.0 {
-            n as isize + vec_len
-        } else {
-            n as isize
-        }
-    } else {
-        return error!(
-            ErrorKind::ValueError,
-            "Expected an integer but found '{}'.", value
-        );
-    };
-
-    if index < 0 || index >= vec_len {
-        return error!(ErrorKind::IndexError, "Vec index parameter out of bounds");
+fn get_bounded_index(value: Value, bound: isize, msg: &str) -> Result<usize, Error> {
+    let mut index = utils::validate_integer(value)?;
+    if index < 0 {
+        index += bound;
+    }
+    if index < 0 || index >= bound {
+        return error!(ErrorKind::IndexError, "{}", msg);
     }
 
     Ok(index as usize)
@@ -309,13 +556,8 @@ fn range_init(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 3 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 2 parameters but got {}",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 2)?;
+
     let mut bounds: [isize; 2] = [0; 2];
     for i in 0..2 {
         bounds[i] = utils::validate_integer(args[i + 1])?;
@@ -335,13 +577,7 @@ fn range_iter(
     _string_store: &mut ObjStringStore,
     args: &mut [Value],
 ) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected 0 parameters but got {}.",
-            args.len() - 1
-        );
-    }
+    check_num_args(args, 0)?;
 
     let iter = object::new_root_obj_range_iter(
         heap,

@@ -1,0 +1,12 @@
+// 1
+// 2
+// 10
+// 14
+// nil
+// 0
+var s = "Hello, World! 🙂";
+print(s.find("e", 0));
+print(s.find("l", 0));
+print(s.find("l", 4));
+print(s.find("🙂", 0));
+print(s.find("?", 0));

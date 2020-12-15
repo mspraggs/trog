@@ -1,4 +1,4 @@
-// Expected 2 arguments but got 4.
+// Expected 2 arguments but found 4.
 // [line 10] in script
 // 70
 class Foo {

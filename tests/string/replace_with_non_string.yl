@@ -1,0 +1,4 @@
+// Expected a string but found 'nil'.
+// [line 4] in script
+// 70
+"".replace("a", nil);

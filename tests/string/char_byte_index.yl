@@ -1,0 +1,46 @@
+// 0
+// 1
+// 2
+// 3
+// 7
+// 8
+// 9
+// 10
+// 14
+// 15
+// 16
+// 0
+// 1
+// 2
+// 3
+// 7
+// 8
+// 9
+// 10
+// 14
+// 15
+// 16
+// 0
+var s = "foo🎅bar🎄baz";
+print(s.char_byte_index(-11));
+print(s.char_byte_index(-10));
+print(s.char_byte_index(-9));
+print(s.char_byte_index(-8));
+print(s.char_byte_index(-7));
+print(s.char_byte_index(-6));
+print(s.char_byte_index(-5));
+print(s.char_byte_index(-4));
+print(s.char_byte_index(-3));
+print(s.char_byte_index(-2));
+print(s.char_byte_index(-1));
+print(s.char_byte_index(0));
+print(s.char_byte_index(1));
+print(s.char_byte_index(2));
+print(s.char_byte_index(3));
+print(s.char_byte_index(4));
+print(s.char_byte_index(5));
+print(s.char_byte_index(6));
+print(s.char_byte_index(7));
+print(s.char_byte_index(8));
+print(s.char_byte_index(9));
+print(s.char_byte_index(10));

@@ -1,0 +1,4 @@
+// String index out of bounds.
+// [line 4] in script
+// 70
+"some string".find("i", -12);

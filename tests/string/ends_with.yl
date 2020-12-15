@@ -1,0 +1,11 @@
+// true
+// true
+// false
+// false
+// false
+// 0
+print("".ends_with(""));
+print("🎁 Presents!".ends_with("s!"));
+print("Presents!".ends_with("🎄"));
+print("🎄 Presents!".ends_with("nts"));
+print("🎄 Presents!".ends_with("🎁"));

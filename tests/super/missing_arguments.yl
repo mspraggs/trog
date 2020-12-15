@@ -1,4 +1,4 @@
-// Expected 2 arguments but got 1.
+// Expected 2 arguments but found 1.
 // [line 12] in foo()
 // [line 15] in script
 // 70

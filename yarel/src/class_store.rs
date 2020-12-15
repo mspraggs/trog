@@ -37,14 +37,14 @@ pub struct CoreClassStore {
 
 impl CoreClassStore {
     pub(crate) fn new(heap: &mut Heap, string_store: &mut ObjStringStore) -> Self {
-        let empty = string_store.new_root_obj_string(heap, "");
-        let root_obj_iter_class = object::new_root_obj_class(heap, empty.as_gc());
-        let root_obj_map_iter_class = object::new_root_obj_class(heap, empty.as_gc());
-        let root_obj_filter_iter_class = object::new_root_obj_class(heap, empty.as_gc());
-        let root_obj_vec_class = object::new_root_obj_class(heap, empty.as_gc());
-        let root_obj_vec_iter_class = object::new_root_obj_class(heap, empty.as_gc());
-        let root_obj_range_class = object::new_root_obj_class(heap, empty.as_gc());
-        let root_obj_range_iter_class = object::new_root_obj_class(heap, empty.as_gc());
+        let empty = string_store.new_gc_obj_string(heap, "");
+        let root_obj_iter_class = object::new_root_obj_class(heap, empty);
+        let root_obj_map_iter_class = object::new_root_obj_class(heap, empty);
+        let root_obj_filter_iter_class = object::new_root_obj_class(heap, empty);
+        let root_obj_vec_class = object::new_root_obj_class(heap, empty);
+        let root_obj_vec_iter_class = object::new_root_obj_class(heap, empty);
+        let root_obj_range_class = object::new_root_obj_class(heap, empty);
+        let root_obj_range_iter_class = object::new_root_obj_class(heap, empty);
         CoreClassStore {
             root_obj_iter_class,
             root_obj_map_iter_class,

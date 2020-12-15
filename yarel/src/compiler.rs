@@ -156,17 +156,11 @@ impl Compiler {
         string_store: &mut ObjStringStore,
         chunk_store: &mut ChunkStore,
     ) -> Root<ObjFunction> {
-        let name = string_store.new_root_obj_string(heap, self.func_name.as_str());
+        let name = string_store.new_gc_obj_string(heap, self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = chunk_store.add_chunk(heap, chunk);
-        object::new_root_obj_function(
-            heap,
-            name.as_gc(),
-            self.func_arity,
-            num_upvalues,
-            chunk_index,
-        )
+        object::new_root_obj_function(heap, name, self.func_arity, num_upvalues, chunk_index)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {

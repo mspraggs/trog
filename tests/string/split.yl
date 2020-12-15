@@ -1,0 +1,8 @@
+// [a,  b, 1,  two, ?. 
+// 🎁]
+// [this is a, multi-line, string]
+// 0
+print("a, b,1, two,?. \n🎁".split(","));
+print("this is a
+multi-line
+string".split("\n"));

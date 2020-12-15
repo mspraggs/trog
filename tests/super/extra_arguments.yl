@@ -1,5 +1,5 @@
 // Derived.foo()
-// Expected 2 arguments but got 4.
+// Expected 2 arguments but found 4.
 // [line 14] in foo()
 // [line 17] in script
 // 70

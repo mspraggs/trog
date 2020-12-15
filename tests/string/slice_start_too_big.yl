@@ -1,0 +1,4 @@
+// String slice start out of range.
+// [line 4] in script
+// 70
+"🙁😐🙂"[16..8];

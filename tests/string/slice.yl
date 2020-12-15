@@ -1,0 +1,7 @@
+// bcd
+// 🙂
+// true
+// 0
+print("abcdefg"[1..4]);
+print("🙁😐🙂"[8..12]);
+print("abcdefg"[3..1] == "");
