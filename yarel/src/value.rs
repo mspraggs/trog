@@ -20,7 +20,7 @@ use std::fmt;
 use crate::memory::{self, Gc};
 use crate::object::{
     ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjRange,
-    ObjRangeIter, ObjString, ObjVec, ObjVecIter,
+    ObjRangeIter, ObjString, ObjStringIter, ObjVec, ObjVecIter,
 };
 
 #[derive(Clone, Copy)]
@@ -28,6 +28,7 @@ pub enum Value {
     Boolean(bool),
     Number(f64),
     ObjString(Gc<ObjString>),
+    ObjStringIter(Gc<RefCell<ObjStringIter>>),
     ObjFunction(Gc<ObjFunction>),
     ObjNative(Gc<ObjNative>),
     ObjClosure(Gc<RefCell<ObjClosure>>),
@@ -77,6 +78,13 @@ impl Value {
     pub fn try_as_obj_string(&self) -> Option<Gc<ObjString>> {
         match self {
             Value::ObjString(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_obj_string_iter(&self) -> Option<Gc<RefCell<ObjStringIter>>> {
+        match self {
+            Value::ObjStringIter(inner) => Some(*inner),
             _ => None,
         }
     }
@@ -162,6 +170,7 @@ impl memory::GcManaged for Value {
     fn mark(&self) {
         match self {
             Value::ObjString(inner) => inner.mark(),
+            Value::ObjStringIter(inner) => inner.mark(),
             Value::ObjFunction(inner) => inner.mark(),
             Value::ObjNative(inner) => inner.mark(),
             Value::ObjClosure(inner) => inner.mark(),
@@ -180,6 +189,7 @@ impl memory::GcManaged for Value {
     fn blacken(&self) {
         match self {
             Value::ObjString(inner) => inner.blacken(),
+            Value::ObjStringIter(inner) => inner.blacken(),
             Value::ObjFunction(inner) => inner.blacken(),
             Value::ObjNative(inner) => inner.blacken(),
             Value::ObjClosure(inner) => inner.blacken(),
@@ -215,6 +225,7 @@ impl fmt::Display for Value {
             }
             Value::Boolean(underlying) => write!(f, "{}", underlying),
             Value::ObjString(underlying) => write!(f, "{}", **underlying),
+            Value::ObjStringIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow()),
@@ -238,6 +249,7 @@ impl cmp::PartialEq for Value {
             (Value::Boolean(first), Value::Boolean(second)) => first == second,
             (Value::Number(first), Value::Number(second)) => first == second,
             (Value::ObjString(first), Value::ObjString(second)) => *first == *second,
+            (Value::ObjStringIter(first), Value::ObjStringIter(second)) => *first == *second,
             (Value::ObjFunction(first), Value::ObjFunction(second)) => *first == *second,
             (Value::ObjNative(first), Value::ObjNative(second)) => *first == *second,
             (Value::ObjClosure(first), Value::ObjClosure(second)) => *first == *second,

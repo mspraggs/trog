@@ -75,9 +75,69 @@ impl memory::GcManaged for ObjString {
     fn blacken(&self) {}
 }
 
+pub struct ObjStringIter {
+    pub(crate) class: Gc<RefCell<ObjClass>>,
+    iterable: Gc<ObjString>,
+    pos: usize,
+}
+
+pub fn new_gc_obj_string_iter(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    string: Gc<ObjString>,
+) -> Gc<RefCell<ObjStringIter>> {
+    heap.allocate(RefCell::new(ObjStringIter::new(class, string)))
+}
+
+pub fn new_root_obj_string_iter(
+    heap: &mut Heap,
+    class: Gc<RefCell<ObjClass>>,
+    string: Gc<ObjString>,
+) -> Root<RefCell<ObjStringIter>> {
+    new_gc_obj_string_iter(heap, class, string).as_root()
+}
+
+impl ObjStringIter {
+    fn new(class: Gc<RefCell<ObjClass>>, iterable: Gc<ObjString>) -> Self {
+        ObjStringIter {
+            class,
+            iterable,
+            pos: 0,
+        }
+    }
+
+    pub(crate) fn next(&mut self) -> Option<String> {
+        if self.pos == self.iterable.len() {
+            return None;
+        }
+        let old_pos = self.pos;
+        self.pos += 1;
+        while self.pos < self.iterable.len() && !self.iterable.is_char_boundary(self.pos) {
+            self.pos += 1;
+        }
+        Some(self.iterable[old_pos..self.pos].to_string())
+    }
+}
+
+impl memory::GcManaged for ObjStringIter {
+    fn mark(&self) {
+        self.iterable.mark();
+    }
+
+    fn blacken(&self) {
+        self.iterable.blacken();
+    }
+}
+
+impl fmt::Display for ObjStringIter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ObjStringIter instance")
+    }
+}
+
 pub struct ObjStringStore {
     class: Root<RefCell<ObjClass>>,
-    store: HashMap<u64, Root<ObjString>>,
+    store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
 }
 
 pub fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
@@ -92,7 +152,7 @@ impl ObjStringStore {
     pub fn new(class: Root<RefCell<ObjClass>>) -> Self {
         ObjStringStore {
             class,
-            store: HashMap::new(),
+            store: HashMap::with_hasher(BuildPassThroughHasher::default()),
         }
     }
 

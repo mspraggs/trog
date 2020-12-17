@@ -60,6 +60,7 @@ pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringSto
     };
     bind("__init__", string_init);
     bind("__getitem__", string_get_item);
+    bind("__iter__", string_iter);
     bind("len", string_len);
     bind("count_chars", string_count_chars);
     bind("char_byte_index", string_char_byte_index);
@@ -117,6 +118,24 @@ fn string_get_item(
     let new_string = string_store.new_gc_obj_string(heap, &string.as_str()[begin..end]);
 
     Ok(Value::ObjString(new_string))
+}
+
+fn string_iter(
+    heap: &mut Heap,
+    class_store: &CoreClassStore,
+    _string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let iter = object::new_root_obj_string_iter(
+        heap,
+        class_store.get_obj_string_iter_class(),
+        args[0]
+            .try_as_obj_string()
+            .expect("Expected ObjString instance."),
+    );
+    Ok(Value::ObjStringIter(iter.as_gc()))
 }
 
 fn string_len(
@@ -320,7 +339,10 @@ fn string_as_num(
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
     let num = string.parse::<f64>().or_else(|_| {
-        error!(ErrorKind::ValueError, "Unable to parse number from '{}'.", args[0])
+        error!(
+            ErrorKind::ValueError,
+            "Unable to parse number from '{}'.", args[0]
+        )
     })?;
 
     Ok(Value::Number(num))
@@ -334,6 +356,45 @@ fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<
         );
     }
     Ok(())
+}
+
+/// StringIter implementation
+
+fn string_iter_next(
+    heap: &mut Heap,
+    _class_store: &CoreClassStore,
+    string_store: &mut ObjStringStore,
+    args: &mut [Value],
+) -> Result<Value, Error> {
+    assert!(args.len() == 1);
+    let iter = args[0]
+        .try_as_obj_string_iter()
+        .expect("Expected ObjIter instance.");
+    let next = {
+        let mut borrowed_iter = iter.borrow_mut();
+        borrowed_iter.next()
+    };
+    if let Some(slice) = next {
+        let string = string_store.new_gc_obj_string(heap, &slice);
+        return Ok(Value::ObjString(string));
+    }
+    Ok(Value::Sentinel)
+}
+
+pub fn new_root_obj_string_iter_class(
+    heap: &mut Heap,
+    string_store: &mut ObjStringStore,
+) -> Root<RefCell<ObjClass>> {
+    let class_name = string_store.new_gc_obj_string(heap, "StringIter");
+    let class = object::new_root_obj_class(heap, class_name);
+    add_native_method_to_class(
+        heap,
+        string_store,
+        class.as_gc(),
+        "__next__",
+        string_iter_next,
+    );
+    class
 }
 
 /// Vec implemenation

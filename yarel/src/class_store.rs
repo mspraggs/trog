@@ -33,6 +33,7 @@ pub struct CoreClassStore {
     root_obj_vec_iter_class: Root<RefCell<ObjClass>>,
     root_obj_range_class: Root<RefCell<ObjClass>>,
     root_obj_range_iter_class: Root<RefCell<ObjClass>>,
+    root_obj_string_iter_class: Root<RefCell<ObjClass>>,
 }
 
 impl CoreClassStore {
@@ -45,6 +46,7 @@ impl CoreClassStore {
         let root_obj_vec_iter_class = object::new_root_obj_class(heap, empty);
         let root_obj_range_class = object::new_root_obj_class(heap, empty);
         let root_obj_range_iter_class = object::new_root_obj_class(heap, empty);
+        let root_obj_string_iter_class = object::new_root_obj_class(heap, empty);
         CoreClassStore {
             root_obj_iter_class,
             root_obj_map_iter_class,
@@ -53,6 +55,7 @@ impl CoreClassStore {
             root_obj_vec_iter_class,
             root_obj_range_class,
             root_obj_range_iter_class,
+            root_obj_string_iter_class,
         }
     }
 
@@ -82,6 +85,10 @@ impl CoreClassStore {
 
     pub(crate) fn get_obj_range_iter_class(&self) -> Gc<RefCell<ObjClass>> {
         self.root_obj_range_iter_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_string_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+        self.root_obj_string_iter_class.as_gc()
     }
 }
 
@@ -138,6 +145,8 @@ pub fn new_class_store(
     );
     let root_obj_range_iter_class =
         core::new_root_obj_range_iter_class(borrowed_heap, &mut string_store.borrow_mut());
+    let root_obj_string_iter_class =
+        core::new_root_obj_string_iter_class(borrowed_heap, &mut string_store.borrow_mut());
     Box::new(CoreClassStore {
         root_obj_iter_class,
         root_obj_map_iter_class,
@@ -146,5 +155,6 @@ pub fn new_class_store(
         root_obj_vec_iter_class,
         root_obj_range_class,
         root_obj_range_iter_class,
+        root_obj_string_iter_class,
     })
 }
