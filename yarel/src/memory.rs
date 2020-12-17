@@ -261,16 +261,16 @@ impl<T: GcManaged> PartialEq for Gc<T> {
 
 #[derive(Default)]
 pub struct Heap {
-    collection_threshold: Cell<usize>,
-    bytes_allocated: Cell<usize>,
+    collection_threshold: usize,
+    bytes_allocated: usize,
     objects: Vec<Box<GcBox<dyn GcManaged>>>,
 }
 
 impl Heap {
     fn new() -> Self {
         Heap {
-            collection_threshold: Cell::new(common::HEAP_INIT_BYTES_MAX),
-            bytes_allocated: Cell::new(0),
+            collection_threshold: common::HEAP_INIT_BYTES_MAX,
+            bytes_allocated: 0,
             objects: Vec::new(),
         }
     }
@@ -308,8 +308,7 @@ impl Heap {
         self.objects.push(obj);
         let size = mem::size_of::<T>();
 
-        self.bytes_allocated
-            .replace(self.bytes_allocated.get() + size);
+        self.bytes_allocated += size;
 
         if cfg!(feature = "debug_trace_gc") {
             let new_ptr = self.objects.last().unwrap();
@@ -333,26 +332,21 @@ impl Heap {
         self.trace_references();
         let bytes_freed = self.sweep();
 
-        let prev_bytes_allocated = self.bytes_allocated.get();
-        self.bytes_allocated
-            .replace(self.bytes_allocated.get() - bytes_freed);
-        self.collection_threshold
-            .replace(self.bytes_allocated.get() * common::HEAP_GROWTH_FACTOR);
+        let prev_bytes_allocated = self.bytes_allocated;
+        self.bytes_allocated -= bytes_freed;
+        self.collection_threshold = self.bytes_allocated * common::HEAP_GROWTH_FACTOR;
 
         if cfg!(feature = "debug_trace_gc") {
             println!("-- gc end (freed {} bytes)", bytes_freed);
             println!(
                 "   collected {} bytes (from {} to {}) next at {}",
-                bytes_freed,
-                prev_bytes_allocated,
-                self.bytes_allocated.get(),
-                self.collection_threshold.get(),
+                bytes_freed, prev_bytes_allocated, self.bytes_allocated, self.collection_threshold,
             )
         }
     }
 
     fn collect_if_required(&mut self) {
-        if self.bytes_allocated.get() >= self.collection_threshold.get() {
+        if self.bytes_allocated >= self.collection_threshold {
             self.collect();
         }
     }
