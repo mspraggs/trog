@@ -29,14 +29,15 @@ use crate::error::{Error, ErrorKind};
 use crate::hash::BuildPassThroughHasher;
 use crate::memory::{Gc, GcManaged, Heap, Root, UniqueRoot};
 use crate::object::{
-    self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjString, ObjStringStore,
-    ObjUpvalue,
+    self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjRange, ObjString,
+    ObjStringStore, ObjUpvalue,
 };
 use crate::utils;
 use crate::value::Value;
 
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
+const RANGE_CACHE_SIZE: usize = 8;
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
     let compile_result = compiler::compile(
@@ -80,6 +81,7 @@ pub struct Vm {
     chunk_store: Rc<RefCell<ChunkStore>>,
     string_store: Rc<RefCell<ObjStringStore>>,
     heap: Rc<RefCell<Heap>>,
+    range_cache: Vec<(Root<ObjRange>, time::Instant)>,
 }
 
 fn clock_native(
@@ -191,6 +193,7 @@ impl Vm {
             chunk_store,
             string_store,
             heap,
+            range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
         }
     }
 
@@ -509,13 +512,8 @@ impl Vm {
                 byte if byte == OpCode::BuildRange as u8 => {
                     let end = utils::validate_integer(self.pop())?;
                     let begin = utils::validate_integer(self.pop())?;
-                    let range = object::new_root_obj_range(
-                        &mut self.heap.borrow_mut(),
-                        self.class_store.get_obj_range_class(),
-                        begin,
-                        end,
-                    );
-                    self.push(Value::ObjRange(range.as_gc()));
+                    let range = self.build_range(begin, end);
+                    self.push(Value::ObjRange(range));
                 }
 
                 byte if byte == OpCode::BuildString as u8 => {
@@ -907,6 +905,46 @@ impl Vm {
         }
 
         self.open_upvalues.retain(|u| u.borrow().is_open());
+    }
+
+    fn build_range(&mut self, begin: isize, end: isize) -> Gc<ObjRange> {
+        // Ranges are cached using a crude LRU cache. Since the cache size is small it's reasonable
+        // to store the cache elements in a Vec and just iterate.
+        let result = self
+            .range_cache
+            .iter()
+            .find(|&(r, _)| r.begin == begin && r.end == end);
+
+        if let Some((range, _)) = result {
+            return range.as_gc();
+        }
+
+        // Cache miss! Create the range and cache it.
+
+        let range = object::new_root_obj_range(
+            &mut self.heap.borrow_mut(),
+            self.class_store.get_obj_range_class(),
+            begin,
+            end,
+        );
+        let range_gc = range.as_gc();
+
+        // Check the cache size. If we're at the limit, evict the oldest element.
+        if self.range_cache.len() >= RANGE_CACHE_SIZE {
+            let stale_pos = self
+                .range_cache
+                .iter()
+                .enumerate()
+                .max_by(|first, second| first.1 .1.elapsed().cmp(&second.1 .1.elapsed()))
+                .map(|e| e.0)
+                .expect("Expect to find max given non-empty Vec.");
+
+            self.range_cache[stale_pos] = (range, time::Instant::now());
+        } else {
+            self.range_cache.push((range, time::Instant::now()));
+        }
+
+        range_gc
     }
 
     fn frame(&self) -> &CallFrame {
