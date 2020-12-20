@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+pub const FRAMES_MAX: usize = 64;
 pub const LOCALS_MAX: usize = u8::MAX as usize + 1;
 pub const UPVALUES_MAX: usize = u8::MAX as usize + 1;
 pub const JUMP_SIZE_MAX: usize = u16::MAX as usize + 1;

@@ -30,11 +30,10 @@ use crate::object::{
     self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjRange, ObjString,
     ObjStringStore, ObjStringValueMap, ObjUpvalue,
 };
+use crate::stack::Stack;
 use crate::utils;
 use crate::value::Value;
 
-const FRAMES_MAX: usize = 64;
-const STACK_MAX: usize = common::LOCALS_MAX * FRAMES_MAX;
 const RANGE_CACHE_SIZE: usize = 8;
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
@@ -70,7 +69,7 @@ pub struct Vm {
     ip: *const u8,
     active_chunk: Gc<Chunk>,
     frames: Vec<CallFrame>,
-    stack: Vec<Value>,
+    stack: Stack<Value>,
     globals: ObjStringValueMap,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     init_string: Gc<ObjString>,
@@ -167,8 +166,8 @@ impl Vm {
         Vm {
             ip: ptr::null(),
             active_chunk: empty_chunk,
-            frames: Vec::with_capacity(FRAMES_MAX),
-            stack: Vec::with_capacity(STACK_MAX),
+            frames: Vec::with_capacity(common::FRAMES_MAX),
+            stack: Stack::new(),
             globals: object::new_obj_string_value_map(),
             open_upvalues: Vec::new(),
             init_string,
@@ -278,10 +277,7 @@ impl Vm {
         loop {
             if cfg!(feature = "debug_trace") {
                 print!("          ");
-                for v in self.stack.iter() {
-                    print!("[ {} ]", v);
-                }
-                println!();
+                println!("{}", self.stack);
                 let offset = self.active_chunk.code_offset(self.ip);
                 debug::disassemble_instruction(&self.active_chunk, offset);
             }
@@ -782,7 +778,7 @@ impl Vm {
             );
         }
 
-        if self.frames.len() == FRAMES_MAX {
+        if self.frames.len() == common::FRAMES_MAX {
             return error!(ErrorKind::IndexError, "Stack overflow.");
         }
 
@@ -799,8 +795,9 @@ impl Vm {
 
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
         let function = native.function;
-        let frame_begin = self.stack.len() - arg_count - 1;
-        let result = function(self, &self.stack[frame_begin..frame_begin + arg_count + 1])?;
+        let frame_end = self.stack.len();
+        let frame_begin = frame_end - arg_count - 1;
+        let result = function(self, &self.stack[frame_begin..frame_end])?;
         self.stack.truncate(frame_begin + 1);
         *self.peek_mut(0) = result;
         Ok(())
@@ -938,13 +935,11 @@ impl Vm {
     }
 
     fn peek(&self, depth: usize) -> &Value {
-        let stack_len = self.stack.len();
-        &self.stack[stack_len - depth - 1]
+        self.stack.peek(depth)
     }
 
     fn peek_mut(&mut self, depth: usize) -> &mut Value {
-        let stack_len = self.stack.len();
-        &mut self.stack[stack_len - depth - 1]
+        self.stack.peek_mut(depth)
     }
 
     fn push(&mut self, value: Value) {
