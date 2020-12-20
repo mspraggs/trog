@@ -15,13 +15,13 @@
 
 use std::cell::RefCell;
 
-use crate::class_store::CoreClassStore;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Heap, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjString, ObjStringStore};
 use crate::utils;
 use crate::value::Value;
+use crate::vm::Vm;
 
 fn add_native_method_to_class(
     heap: &mut Heap,
@@ -38,7 +38,7 @@ fn add_native_method_to_class(
         .insert(name, Value::ObjNative(obj_native.as_gc()));
 }
 
-fn check_num_args(args: &mut [Value], expected: usize) -> Result<(), Error> {
+fn check_num_args(args: &[Value], expected: usize) -> Result<(), Error> {
     if args.len() != expected + 1 {
         return error!(
             ErrorKind::RuntimeError,
@@ -72,25 +72,17 @@ pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringSto
     bind("as_num", string_as_num);
 }
 
-fn string_init(
-    heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_init(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     Ok(Value::ObjString(
-        string_store.new_gc_obj_string(heap, format!("{}", args[1]).as_str()),
+        vm.string_store
+            .borrow_mut()
+            .new_gc_obj_string(&mut vm.heap.borrow_mut(), format!("{}", args[1]).as_str()),
     ))
 }
 
-fn string_get_item(
-    heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_get_item(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -115,22 +107,20 @@ fn string_get_item(
         _ => return error!(ErrorKind::TypeError, "Expected an integer or range."),
     };
 
-    let new_string = string_store.new_gc_obj_string(heap, &string.as_str()[begin..end]);
+    let new_string = vm
+        .string_store
+        .borrow_mut()
+        .new_gc_obj_string(&mut vm.heap.borrow_mut(), &string.as_str()[begin..end]);
 
     Ok(Value::ObjString(new_string))
 }
 
-fn string_iter(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_iter(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let iter = object::new_root_obj_string_iter(
-        heap,
-        class_store.get_obj_string_iter_class(),
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_string_iter_class(),
         args[0]
             .try_as_obj_string()
             .expect("Expected ObjString instance."),
@@ -138,36 +128,21 @@ fn string_iter(
     Ok(Value::ObjStringIter(iter.as_gc()))
 }
 
-fn string_len(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_len(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
     Ok(Value::Number(string.len() as f64))
 }
 
-fn string_count_chars(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_count_chars(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
     Ok(Value::Number(string.chars().count() as f64))
 }
 
-fn string_char_byte_index(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_char_byte_index(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -192,12 +167,7 @@ fn string_char_byte_index(
     )
 }
 
-fn string_find(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_find(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 2)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -236,12 +206,7 @@ fn string_find(
     Ok(Value::None)
 }
 
-fn string_replace(
-    heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_replace(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 2)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -260,17 +225,14 @@ fn string_replace(
             &format!("Expected a string but found '{}'.", args[2]),
         )
     })?;
-    let new_string =
-        string_store.new_gc_obj_string(heap, &string.replace(old.as_str(), new.as_str()));
+    let new_string = vm.string_store.borrow_mut().new_gc_obj_string(
+        &mut vm.heap.borrow_mut(),
+        &string.replace(old.as_str(), new.as_str()),
+    );
     Ok(Value::ObjString(new_string))
 }
 
-fn string_split(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_split(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -283,20 +245,22 @@ fn string_split(
     if delim.is_empty() {
         return error!(ErrorKind::ValueError, "Cannot split using an empty string.");
     }
-    let splits = object::new_root_obj_vec(heap, class_store.get_obj_vec_class());
+    let splits = object::new_root_obj_vec(
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_vec_class(),
+    );
     for substr in string.as_str().split(delim.as_str()) {
-        let new_str = Value::ObjString(string_store.new_gc_obj_string(heap, substr));
+        let new_str = Value::ObjString(
+            vm.string_store
+                .borrow_mut()
+                .new_gc_obj_string(&mut vm.heap.borrow_mut(), substr),
+        );
         splits.borrow_mut().elements.push(new_str);
     }
     Ok(Value::ObjVec(splits.as_gc()))
 }
 
-fn string_starts_with(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_starts_with(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -310,12 +274,7 @@ fn string_starts_with(
     Ok(Value::Boolean(string.as_str().starts_with(prefix.as_str())))
 }
 
-fn string_ends_with(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_ends_with(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -329,12 +288,7 @@ fn string_ends_with(
     Ok(Value::Boolean(string.as_str().ends_with(prefix.as_str())))
 }
 
-fn string_as_num(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_as_num(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
@@ -360,12 +314,7 @@ fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<
 
 /// StringIter implementation
 
-fn string_iter_next(
-    heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn string_iter_next(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     assert!(args.len() == 1);
     let iter = args[0]
         .try_as_obj_string_iter()
@@ -375,7 +324,10 @@ fn string_iter_next(
         borrowed_iter.next()
     };
     if let Some(slice) = next {
-        let string = string_store.new_gc_obj_string(heap, &slice);
+        let string = vm
+            .string_store
+            .borrow_mut()
+            .new_gc_obj_string(&mut vm.heap.borrow_mut(), &slice);
         return Ok(Value::ObjString(string));
     }
     Ok(Value::Sentinel)
@@ -429,22 +381,15 @@ pub fn new_root_obj_vec_class(
     class
 }
 
-fn vec_init(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    _args: &mut [Value],
-) -> Result<Value, Error> {
-    let vec = object::new_root_obj_vec(heap, class_store.get_obj_vec_class());
+fn vec_init(vm: &Vm, _args: &[Value]) -> Result<Value, Error> {
+    let vec = object::new_root_obj_vec(
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_vec_class(),
+    );
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
-fn vec_push(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_push(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
@@ -458,12 +403,7 @@ fn vec_push(
     Ok(args[0])
 }
 
-fn vec_pop(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_pop(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
@@ -476,12 +416,7 @@ fn vec_pop(
     })
 }
 
-fn vec_get_item(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_get_item(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
@@ -499,7 +434,10 @@ fn vec_get_item(
         Value::ObjRange(r) => {
             let vec_len = vec.borrow().elements.len() as isize;
             let (begin, end) = r.get_bounded_range(vec_len, "Vec")?;
-            let new_vec = object::new_gc_obj_vec(heap, class_store.get_obj_vec_class());
+            let new_vec = object::new_gc_obj_vec(
+                &mut vm.heap.borrow_mut(),
+                vm.class_store.get_obj_vec_class(),
+            );
             new_vec
                 .borrow_mut()
                 .elements
@@ -510,12 +448,7 @@ fn vec_get_item(
     }
 }
 
-fn vec_set_item(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_set_item(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 2)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
@@ -529,12 +462,7 @@ fn vec_set_item(
     Ok(Value::None)
 }
 
-fn vec_len(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_len(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
@@ -542,17 +470,12 @@ fn vec_len(
     Ok(Value::from(borrowed_vec.elements.len() as f64))
 }
 
-fn vec_iter(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_iter(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let iter = object::new_root_obj_vec_iter(
-        heap,
-        class_store.get_obj_vec_iter_class(),
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_vec_iter_class(),
         args[0].try_as_obj_vec().expect("Expected ObjVec instance."),
     );
     Ok(Value::ObjVecIter(iter.as_gc()))
@@ -582,12 +505,7 @@ pub fn new_root_obj_vec_iter_class(
     class
 }
 
-fn vec_iter_next(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn vec_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     assert!(args.len() == 1);
     let iter = args[0]
         .try_as_obj_vec_iter()
@@ -611,12 +529,7 @@ pub fn new_root_obj_range_class(
     class
 }
 
-fn range_init(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn range_init(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 2)?;
 
     let mut bounds: [isize; 2] = [0; 2];
@@ -624,25 +537,20 @@ fn range_init(
         bounds[i] = utils::validate_integer(args[i + 1])?;
     }
     let range = object::new_root_obj_range(
-        heap,
-        class_store.get_obj_range_class(),
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_range_class(),
         bounds[0],
         bounds[1],
     );
     Ok(Value::ObjRange(range.as_gc()))
 }
 
-fn range_iter(
-    heap: &mut Heap,
-    class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn range_iter(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
     let iter = object::new_root_obj_range_iter(
-        heap,
-        class_store.get_obj_range_iter_class(),
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_range_iter_class(),
         args[0]
             .try_as_obj_range()
             .expect("Expected ObjRange instance."),
@@ -652,12 +560,7 @@ fn range_iter(
 
 /// RangeIter implementation
 
-fn range_iter_next(
-    _heap: &mut Heap,
-    _context: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
-) -> Result<Value, Error> {
+fn range_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     assert!(args.len() == 1);
     let iter = args[0]
         .try_as_obj_range_iter()

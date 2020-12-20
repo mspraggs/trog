@@ -29,7 +29,7 @@ use yarel::error::{Error, ErrorKind};
 use yarel::memory::Heap;
 use yarel::object::ObjStringStore;
 use yarel::value::Value;
-use yarel::vm;
+use yarel::vm::{self, Vm};
 
 #[derive(Debug)]
 pub struct Success {
@@ -91,10 +91,8 @@ fn parse_test(source: String) -> Option<Vec<String>> {
 }
 
 fn local_print(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
+    _heap: &Vm,
+    args: &[Value],
 ) -> Result<Value, Error> {
     if args.len() != 2 {
         return Err(Error::with_message(

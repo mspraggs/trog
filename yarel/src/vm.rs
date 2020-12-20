@@ -79,16 +79,14 @@ pub struct Vm {
     next_string: Gc<ObjString>,
     pub(crate) class_store: Box<CoreClassStore>,
     chunk_store: Rc<RefCell<ChunkStore>>,
-    string_store: Rc<RefCell<ObjStringStore>>,
-    heap: Rc<RefCell<Heap>>,
+    pub(crate) string_store: Rc<RefCell<ObjStringStore>>,
+    pub(crate) heap: Rc<RefCell<Heap>>,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
 }
 
 fn clock_native(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    _args: &mut [Value],
+    _vm: &Vm,
+    _args: &[Value],
 ) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
@@ -102,10 +100,8 @@ fn clock_native(
 }
 
 fn default_print(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
+    _vm: &Vm,
+    args: &[Value],
 ) -> Result<Value, Error> {
     if args.len() != 2 {
         return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
@@ -115,10 +111,8 @@ fn default_print(
 }
 
 fn sentinel(
-    _heap: &mut Heap,
-    _class_store: &CoreClassStore,
-    _string_store: &mut ObjStringStore,
-    args: &mut [Value],
+    _vm: &Vm,
+    args: &[Value],
 ) -> Result<Value, Error> {
     if args.len() != 1 {
         return error!(
@@ -801,10 +795,8 @@ impl Vm {
         let function = native.function;
         let frame_begin = self.stack.len() - arg_count - 1;
         let result = function(
-            &mut self.heap.borrow_mut(),
-            &self.class_store,
-            &mut self.string_store.borrow_mut(),
-            &mut self.stack[frame_begin..frame_begin + arg_count + 1],
+            self,
+            &self.stack[frame_begin..frame_begin + arg_count + 1],
         )?;
         self.stack.truncate(frame_begin);
         self.push(result);

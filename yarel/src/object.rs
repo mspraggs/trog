@@ -21,11 +21,11 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::rc::Rc;
 
-use crate::class_store::CoreClassStore;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, Heap, Root};
 use crate::value::Value;
+use crate::vm::Vm;
 
 pub struct ObjString {
     pub(crate) class: Gc<RefCell<ObjClass>>,
@@ -295,12 +295,7 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(
-    &mut Heap,
-    &CoreClassStore,
-    string_store: &mut ObjStringStore,
-    &mut [Value],
-) -> Result<Value, Error>;
+pub type NativeFn = fn(&Vm, &[Value]) -> Result<Value, Error>;
 
 pub struct ObjNative {
     pub function: NativeFn,
