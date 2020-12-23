@@ -424,7 +424,7 @@ impl<'a> Parser<'a> {
         let name_constant = self.identifier_constant(&name);
         self.declare_variable();
 
-        self.emit_bytes([OpCode::Class as u8, name_constant]);
+        self.emit_bytes([OpCode::DeclareClass as u8, name_constant]);
         self.define_variable(name_constant);
 
         self.class_compilers.push(ClassCompiler {
@@ -448,12 +448,16 @@ impl<'a> Parser<'a> {
             self.class_compilers.last_mut().unwrap().has_superclass = true;
         }
 
+        let (_, set_op, arg) = self.resolve_variable(&name);
+
         self.named_variable(name, false);
         self.consume(TokenKind::LeftBrace, "Expected '{' before class body.");
         while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
             self.method();
         }
         self.consume(TokenKind::RightBrace, "Expected '}' after class body.");
+        self.emit_byte(OpCode::DefineClass as u8);
+        self.emit_bytes([set_op as u8, arg]);
         self.emit_byte(OpCode::Pop as u8);
 
         if self.class_compilers.last().unwrap().has_superclass {
@@ -988,8 +992,8 @@ impl<'a> Parser<'a> {
         self.single_target_mode = false;
     }
 
-    fn named_variable(&mut self, name: Token, can_assign: bool) {
-        let (get_op, set_op, arg) = if let Some(result) = self.resolve_local(&name) {
+    fn resolve_variable(&mut self, name: &Token) -> (OpCode, OpCode, u8) {
+        if let Some(result) = self.resolve_local(&name) {
             (OpCode::GetLocal, OpCode::SetLocal, result)
         } else if let Some(result) = self.resolve_upvalue(&name) {
             (OpCode::GetUpvalue, OpCode::SetUpvalue, result)
@@ -999,7 +1003,11 @@ impl<'a> Parser<'a> {
                 OpCode::SetGlobal,
                 self.identifier_constant(&name),
             )
-        };
+        }
+    }
+
+    fn named_variable(&mut self, name: Token, can_assign: bool) {
+        let (get_op, set_op, arg) = self.resolve_variable(&name);
 
         if can_assign && self.match_token(TokenKind::Equal) {
             self.expression();

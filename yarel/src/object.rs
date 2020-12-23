@@ -23,18 +23,18 @@ use std::rc::Rc;
 
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
-use crate::memory::{self, Gc, Heap, Root};
+use crate::memory::{self, Gc, Heap, Root, UniqueRoot};
 use crate::value::Value;
 use crate::vm::Vm;
 
 pub struct ObjString {
-    pub(crate) class: Gc<RefCell<ObjClass>>,
+    pub(crate) class: Gc<ObjClass>,
     string: String,
     hash: u64,
 }
 
 impl ObjString {
-    fn new(class: Gc<RefCell<ObjClass>>, string: &str, hash: u64) -> Self {
+    fn new(class: Gc<ObjClass>, string: &str, hash: u64) -> Self {
         ObjString {
             class,
             string: String::from(string),
@@ -75,15 +75,21 @@ impl memory::GcManaged for ObjString {
     fn blacken(&self) {}
 }
 
+pub type ObjStringValueMap = HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>;
+
+pub fn new_obj_string_value_map() -> ObjStringValueMap {
+    ObjStringValueMap::with_hasher(BuildPassThroughHasher::default())
+}
+
 pub struct ObjStringIter {
-    pub(crate) class: Gc<RefCell<ObjClass>>,
+    pub(crate) class: Gc<ObjClass>,
     iterable: Gc<ObjString>,
     pos: usize,
 }
 
 pub fn new_gc_obj_string_iter(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     string: Gc<ObjString>,
 ) -> Gc<RefCell<ObjStringIter>> {
     heap.allocate(RefCell::new(ObjStringIter::new(class, string)))
@@ -91,14 +97,14 @@ pub fn new_gc_obj_string_iter(
 
 pub fn new_root_obj_string_iter(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     string: Gc<ObjString>,
 ) -> Root<RefCell<ObjStringIter>> {
     new_gc_obj_string_iter(heap, class, string).as_root()
 }
 
 impl ObjStringIter {
-    fn new(class: Gc<RefCell<ObjClass>>, iterable: Gc<ObjString>) -> Self {
+    fn new(class: Gc<ObjClass>, iterable: Gc<ObjString>) -> Self {
         ObjStringIter {
             class,
             iterable,
@@ -136,28 +142,32 @@ impl fmt::Display for ObjStringIter {
 }
 
 pub struct ObjStringStore {
-    class: Root<RefCell<ObjClass>>,
+    class: UniqueRoot<ObjClass>,
     store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
 }
 
 pub fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
-    let class = new_root_obj_class_anon(heap);
-    let store = Rc::new(RefCell::new(ObjStringStore::new(class.clone())));
+    let class = heap.allocate_unique_root(ObjClass::new());
+    let store = Rc::new(RefCell::new(ObjStringStore::new(class)));
     let name = store.borrow_mut().new_gc_obj_string(heap, "String");
-    class.borrow_mut().name = Some(name);
+    store.borrow_mut().class.name = Some(name);
     store
 }
 
 impl ObjStringStore {
-    pub fn new(class: Root<RefCell<ObjClass>>) -> Self {
+    pub fn new(class: UniqueRoot<ObjClass>) -> Self {
         ObjStringStore {
             class,
             store: HashMap::with_hasher(BuildPassThroughHasher::default()),
         }
     }
 
-    pub(crate) fn get_obj_string_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_string_class(&self) -> Gc<ObjClass> {
         self.class.as_gc()
+    }
+
+    pub(crate) fn set_obj_string_class_methods(&mut self, methods: ObjStringValueMap) {
+        self.class.methods = methods;
     }
 
     pub fn new_gc_obj_string(&mut self, heap: &mut Heap, data: &str) -> Gc<ObjString> {
@@ -380,36 +390,38 @@ pub struct ObjClass {
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_class(heap: &mut Heap, name: Gc<ObjString>) -> Gc<RefCell<ObjClass>> {
-    heap.allocate(RefCell::new(ObjClass::with_name(name)))
+pub fn new_gc_obj_class(
+    heap: &mut Heap,
+    name: Gc<ObjString>,
+    methods: ObjStringValueMap,
+) -> Gc<ObjClass> {
+    heap.allocate(ObjClass::with_name(name, methods))
 }
 
-pub fn new_root_obj_class(heap: &mut Heap, name: Gc<ObjString>) -> Root<RefCell<ObjClass>> {
-    new_gc_obj_class(heap, name).as_root()
+pub fn new_root_obj_class(
+    heap: &mut Heap,
+    name: Gc<ObjString>,
+    methods: ObjStringValueMap,
+) -> Root<ObjClass> {
+    new_gc_obj_class(heap, name, methods).as_root()
 }
 
-pub fn new_root_obj_class_anon(heap: &mut Heap) -> Root<RefCell<ObjClass>> {
-    heap.allocate(RefCell::new(ObjClass::new())).as_root()
+pub fn new_root_obj_class_anon(heap: &mut Heap) -> Root<ObjClass> {
+    heap.allocate(ObjClass::new()).as_root()
 }
 
 impl ObjClass {
     fn new() -> Self {
         ObjClass {
             name: None,
-            methods: HashMap::with_hasher(BuildPassThroughHasher::default()),
+            methods: new_obj_string_value_map(),
         }
     }
 
-    fn with_name(name: memory::Gc<ObjString>) -> Self {
+    fn with_name(name: memory::Gc<ObjString>, methods: ObjStringValueMap) -> Self {
         ObjClass {
             name: Some(name),
-            methods: HashMap::with_hasher(BuildPassThroughHasher::default()),
-        }
-    }
-
-    pub fn add_superclass(&mut self, superclass: memory::Gc<RefCell<ObjClass>>) {
-        for (name, value) in superclass.borrow().methods.iter() {
-            self.methods.insert(*name, *value);
+            methods,
         }
     }
 }
@@ -431,26 +443,20 @@ impl fmt::Display for ObjClass {
 }
 
 pub struct ObjInstance {
-    pub class: memory::Gc<RefCell<ObjClass>>,
+    pub class: memory::Gc<ObjClass>,
     pub fields: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_instance(
-    heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
-) -> Gc<RefCell<ObjInstance>> {
+pub fn new_gc_obj_instance(heap: &mut Heap, class: Gc<ObjClass>) -> Gc<RefCell<ObjInstance>> {
     heap.allocate(RefCell::new(ObjInstance::new(class)))
 }
 
-pub fn new_root_obj_instance(
-    heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
-) -> Root<RefCell<ObjInstance>> {
+pub fn new_root_obj_instance(heap: &mut Heap, class: Gc<ObjClass>) -> Root<RefCell<ObjInstance>> {
     new_gc_obj_instance(heap, class).as_root()
 }
 
 impl ObjInstance {
-    fn new(class: Gc<RefCell<ObjClass>>) -> Self {
+    fn new(class: Gc<ObjClass>) -> Self {
         ObjInstance {
             class,
             fields: HashMap::with_hasher(BuildPassThroughHasher::default()),
@@ -472,7 +478,7 @@ impl memory::GcManaged for ObjInstance {
 
 impl fmt::Display for ObjInstance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} instance", *self.class.borrow())
+        write!(f, "{} instance", *self.class)
     }
 }
 
@@ -528,20 +534,20 @@ impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
 }
 
 pub struct ObjVec {
-    pub class: Gc<RefCell<ObjClass>>,
+    pub class: Gc<ObjClass>,
     pub elements: Vec<Value>,
 }
 
-pub fn new_gc_obj_vec(heap: &mut Heap, class: Gc<RefCell<ObjClass>>) -> Gc<RefCell<ObjVec>> {
+pub fn new_gc_obj_vec(heap: &mut Heap, class: Gc<ObjClass>) -> Gc<RefCell<ObjVec>> {
     heap.allocate(RefCell::new(ObjVec::new(class)))
 }
 
-pub fn new_root_obj_vec(heap: &mut Heap, class: Gc<RefCell<ObjClass>>) -> Root<RefCell<ObjVec>> {
+pub fn new_root_obj_vec(heap: &mut Heap, class: Gc<ObjClass>) -> Root<RefCell<ObjVec>> {
     new_gc_obj_vec(heap, class).as_root()
 }
 
 impl ObjVec {
-    fn new(class: Gc<RefCell<ObjClass>>) -> Self {
+    fn new(class: Gc<ObjClass>) -> Self {
         ObjVec {
             class,
             elements: Vec::new(),
@@ -591,14 +597,14 @@ impl cmp::PartialEq for ObjVec {
 }
 
 pub struct ObjVecIter {
-    pub class: Gc<RefCell<ObjClass>>,
+    pub class: Gc<ObjClass>,
     pub iterable: Gc<RefCell<ObjVec>>,
     pub current: usize,
 }
 
 pub fn new_gc_obj_vec_iter(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     vec: Gc<RefCell<ObjVec>>,
 ) -> Gc<RefCell<ObjVecIter>> {
     heap.allocate(RefCell::new(ObjVecIter::new(class, vec)))
@@ -606,14 +612,14 @@ pub fn new_gc_obj_vec_iter(
 
 pub fn new_root_obj_vec_iter(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     vec: Gc<RefCell<ObjVec>>,
 ) -> Root<RefCell<ObjVecIter>> {
     new_gc_obj_vec_iter(heap, class, vec).as_root()
 }
 
 impl ObjVecIter {
-    fn new(class: Gc<RefCell<ObjClass>>, iterable: Gc<RefCell<ObjVec>>) -> Self {
+    fn new(class: Gc<ObjClass>, iterable: Gc<RefCell<ObjVec>>) -> Self {
         ObjVecIter {
             class,
             iterable,
@@ -649,14 +655,14 @@ impl fmt::Display for ObjVecIter {
 }
 
 pub struct ObjRange {
-    pub class: Gc<RefCell<ObjClass>>,
+    pub class: Gc<ObjClass>,
     pub begin: isize,
     pub end: isize,
 }
 
 pub fn new_gc_obj_range(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     begin: isize,
     end: isize,
 ) -> Gc<ObjRange> {
@@ -665,7 +671,7 @@ pub fn new_gc_obj_range(
 
 pub fn new_root_obj_range(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     begin: isize,
     end: isize,
 ) -> Root<ObjRange> {
@@ -673,7 +679,7 @@ pub fn new_root_obj_range(
 }
 
 impl ObjRange {
-    fn new(class: Gc<RefCell<ObjClass>>, begin: isize, end: isize) -> Self {
+    fn new(class: Gc<ObjClass>, begin: isize, end: isize) -> Self {
         ObjRange { class, begin, end }
     }
 
@@ -728,7 +734,7 @@ impl fmt::Display for ObjRange {
 }
 
 pub struct ObjRangeIter {
-    pub class: Gc<RefCell<ObjClass>>,
+    pub class: Gc<ObjClass>,
     pub iterable: Gc<ObjRange>,
     current: isize,
     step: isize,
@@ -736,7 +742,7 @@ pub struct ObjRangeIter {
 
 pub fn new_gc_obj_range_iter(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     range: Gc<ObjRange>,
 ) -> Gc<RefCell<ObjRangeIter>> {
     heap.allocate(RefCell::new(ObjRangeIter::new(class, range)))
@@ -744,14 +750,14 @@ pub fn new_gc_obj_range_iter(
 
 pub fn new_root_obj_range_iter(
     heap: &mut Heap,
-    class: Gc<RefCell<ObjClass>>,
+    class: Gc<ObjClass>,
     range: Gc<ObjRange>,
 ) -> Root<RefCell<ObjRangeIter>> {
     new_gc_obj_range_iter(heap, class, range).as_root()
 }
 
 impl ObjRangeIter {
-    fn new(class: Gc<RefCell<ObjClass>>, iterable: Gc<ObjRange>) -> Self {
+    fn new(class: Gc<ObjClass>, iterable: Gc<ObjRange>) -> Self {
         let current = iterable.begin;
         ObjRangeIter {
             class,

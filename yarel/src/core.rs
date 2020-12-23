@@ -13,30 +13,15 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
-
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Heap, Root};
-use crate::object::{self, NativeFn, ObjClass, ObjString, ObjStringStore};
+use crate::object::{
+    self, NativeFn, ObjClass, ObjNative, ObjString, ObjStringStore, ObjStringValueMap,
+};
 use crate::utils;
 use crate::value::Value;
 use crate::vm::Vm;
-
-fn add_native_method_to_class(
-    heap: &mut Heap,
-    string_store: &mut ObjStringStore,
-    class: Gc<RefCell<ObjClass>>,
-    name: &str,
-    native: NativeFn,
-) {
-    let name = string_store.new_gc_obj_string(heap, name);
-    let obj_native = object::new_root_obj_native(heap, native);
-    class
-        .borrow_mut()
-        .methods
-        .insert(name, Value::ObjNative(obj_native.as_gc()));
-}
 
 fn check_num_args(args: &[Value], expected: usize) -> Result<(), Error> {
     if args.len() != expected + 1 {
@@ -51,25 +36,45 @@ fn check_num_args(args: &[Value], expected: usize) -> Result<(), Error> {
     Ok(())
 }
 
-// String implementation
+fn build_methods(
+    heap: &mut Heap,
+    string_store: &mut ObjStringStore,
+    definitions: &[(&str, NativeFn)],
+    extra_methods: Option<ObjStringValueMap>,
+) -> (ObjStringValueMap, Vec<Root<ObjNative>>) {
+    let mut roots = Vec::new();
+    let mut methods = extra_methods.unwrap_or(object::new_obj_string_value_map());
+
+    for (name, native) in definitions {
+        let name = string_store.new_gc_obj_string(heap, name);
+        let obj_native = object::new_root_obj_native(heap, *native);
+        roots.push(obj_native.clone());
+        methods.insert(name, Value::ObjNative(obj_native.as_gc()));
+    }
+
+    (methods, roots)
+}
+
+/// String implementation
 
 pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringStore) {
-    let string_class = string_store.get_obj_string_class();
-    let mut bind = |name, func| {
-        add_native_method_to_class(heap, string_store, string_class, name, func);
-    };
-    bind("__init__", string_init);
-    bind("__getitem__", string_get_item);
-    bind("__iter__", string_iter);
-    bind("len", string_len);
-    bind("count_chars", string_count_chars);
-    bind("char_byte_index", string_char_byte_index);
-    bind("find", string_find);
-    bind("replace", string_replace);
-    bind("split", string_split);
-    bind("starts_with", string_starts_with);
-    bind("ends_with", string_ends_with);
-    bind("as_num", string_as_num);
+    let method_map = [
+        ("__init__", string_init as NativeFn),
+        ("__getitem__", string_get_item as NativeFn),
+        ("__iter__", string_iter as NativeFn),
+        ("len", string_len as NativeFn),
+        ("count_chars", string_count_chars as NativeFn),
+        ("char_byte_index", string_char_byte_index as NativeFn),
+        ("find", string_find as NativeFn),
+        ("replace", string_replace as NativeFn),
+        ("split", string_split as NativeFn),
+        ("starts_with", string_starts_with as NativeFn),
+        ("ends_with", string_ends_with as NativeFn),
+        ("as_num", string_as_num as NativeFn),
+    ];
+    let (methods, _native_roots) = build_methods(heap, string_store, &method_map, None);
+
+    string_store.set_obj_string_class_methods(methods);
 }
 
 fn string_init(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
@@ -336,17 +341,15 @@ fn string_iter_next(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_string_iter_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
-) -> Root<RefCell<ObjClass>> {
+) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "StringIter");
-    let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(
+    let (methods, _native_roots) = build_methods(
         heap,
         string_store,
-        class.as_gc(),
-        "__next__",
-        string_iter_next,
+        &[("__next__", string_iter_next as NativeFn)],
+        None,
     );
-    class
+    object::new_root_obj_class(heap, class_name, methods)
 }
 
 /// Vec implemenation
@@ -354,31 +357,26 @@ pub fn new_root_obj_string_iter_class(
 pub fn new_root_obj_vec_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
-    iter_class: Gc<RefCell<ObjClass>>,
-) -> Root<RefCell<ObjClass>> {
+    iter_class: Gc<ObjClass>,
+) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "Vec");
-    let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "__init__", vec_init);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "push", vec_push);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "pop", vec_pop);
-    add_native_method_to_class(
+    let method_map = [
+        ("__init__", vec_init as NativeFn),
+        ("push", vec_push as NativeFn),
+        ("pop", vec_pop as NativeFn),
+        ("__getitem__", vec_get_item as NativeFn),
+        ("__setitem__", vec_set_item as NativeFn),
+        ("len", vec_len as NativeFn),
+        ("__iter__", vec_iter as NativeFn),
+    ];
+    let (methods, _native_roots) = build_methods(
         heap,
         string_store,
-        class.as_gc(),
-        "__getitem__",
-        vec_get_item,
+        &method_map,
+        Some(iter_class.methods.clone()),
     );
-    add_native_method_to_class(
-        heap,
-        string_store,
-        class.as_gc(),
-        "__setitem__",
-        vec_set_item,
-    );
-    add_native_method_to_class(heap, string_store, class.as_gc(), "len", vec_len);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "__iter__", vec_iter);
-    class.borrow_mut().add_superclass(iter_class);
-    class
+    // class.borrow_mut().add_superclass(iter_class);
+    object::new_root_obj_class(heap, class_name, methods)
 }
 
 fn vec_init(vm: &Vm, _args: &[Value]) -> Result<Value, Error> {
@@ -498,11 +496,15 @@ fn get_bounded_index(value: Value, bound: isize, msg: &str) -> Result<usize, Err
 pub fn new_root_obj_vec_iter_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
-) -> Root<RefCell<ObjClass>> {
+) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "VecIter");
-    let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "__next__", vec_iter_next);
-    class
+    let (methods, _native_roots) = build_methods(
+        heap,
+        string_store,
+        &[("__next__", vec_iter_next as NativeFn)],
+        None,
+    );
+    object::new_root_obj_class(heap, class_name, methods)
 }
 
 fn vec_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
@@ -519,14 +521,21 @@ fn vec_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_range_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
-    iter_class: Gc<RefCell<ObjClass>>,
-) -> Root<RefCell<ObjClass>> {
+    iter_class: Gc<ObjClass>,
+) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "Range");
-    let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "__init__", range_init);
-    add_native_method_to_class(heap, string_store, class.as_gc(), "__iter__", range_iter);
-    class.borrow_mut().add_superclass(iter_class);
-    class
+    let method_map = [
+        ("__init__", range_init as NativeFn),
+        ("__iter__", range_iter as NativeFn),
+    ];
+    let (methods, _native_roots) = build_methods(
+        heap,
+        string_store,
+        &method_map,
+        Some(iter_class.methods.clone()),
+    );
+    // class.borrow_mut().add_superclass(iter_class);
+    object::new_root_obj_class(heap, class_name, methods)
 }
 
 fn range_init(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
@@ -572,15 +581,13 @@ fn range_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_range_iter_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
-) -> Root<RefCell<ObjClass>> {
+) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "RangeIter");
-    let class = object::new_root_obj_class(heap, class_name);
-    add_native_method_to_class(
+    let (methods, _native_roots) = build_methods(
         heap,
         string_store,
-        class.as_gc(),
-        "__next__",
-        range_iter_next,
+        &[("__next__", range_iter_next as NativeFn)],
+        None,
     );
-    class
+    object::new_root_obj_class(heap, class_name, methods)
 }

@@ -109,7 +109,8 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         }
         OpCode::CloseUpvalue => simple_instruction("CLOSE_UPVALUE", offset),
         OpCode::Return => simple_instruction("RETURN", offset),
-        OpCode::Class => constant_instruction("CLASS", chunk, offset),
+        OpCode::DeclareClass => constant_instruction("DECLARE_CLASS", chunk, offset),
+        OpCode::DefineClass => simple_instruction("DEFINE_CLASS", offset),
         OpCode::Inherit => simple_instruction("INHERIT", offset),
         OpCode::Method => constant_instruction("METHOD", chunk, offset),
     }

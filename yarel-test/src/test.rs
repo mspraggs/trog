@@ -90,10 +90,7 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn local_print(
-    _heap: &Vm,
-    args: &[Value],
-) -> Result<Value, Error> {
+fn local_print(_heap: &Vm, args: &[Value]) -> Result<Value, Error> {
     if args.len() != 2 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,

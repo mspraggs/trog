@@ -66,6 +66,7 @@ impl Hasher for PassThroughHasher {
     }
 }
 
+#[derive(Clone)]
 pub struct BuildPassThroughHasher;
 
 impl Default for BuildPassThroughHasher {

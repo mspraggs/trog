@@ -26,27 +26,28 @@ include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 
 #[derive(Clone)]
 pub struct CoreClassStore {
-    root_obj_iter_class: Root<RefCell<ObjClass>>,
-    root_obj_map_iter_class: Root<RefCell<ObjClass>>,
-    root_obj_filter_iter_class: Root<RefCell<ObjClass>>,
-    root_obj_vec_class: Root<RefCell<ObjClass>>,
-    root_obj_vec_iter_class: Root<RefCell<ObjClass>>,
-    root_obj_range_class: Root<RefCell<ObjClass>>,
-    root_obj_range_iter_class: Root<RefCell<ObjClass>>,
-    root_obj_string_iter_class: Root<RefCell<ObjClass>>,
+    root_obj_iter_class: Root<ObjClass>,
+    root_obj_map_iter_class: Root<ObjClass>,
+    root_obj_filter_iter_class: Root<ObjClass>,
+    root_obj_vec_class: Root<ObjClass>,
+    root_obj_vec_iter_class: Root<ObjClass>,
+    root_obj_range_class: Root<ObjClass>,
+    root_obj_range_iter_class: Root<ObjClass>,
+    root_obj_string_iter_class: Root<ObjClass>,
 }
 
 impl CoreClassStore {
     pub(crate) fn new(heap: &mut Heap, string_store: &mut ObjStringStore) -> Self {
         let empty = string_store.new_gc_obj_string(heap, "");
-        let root_obj_iter_class = object::new_root_obj_class(heap, empty);
-        let root_obj_map_iter_class = object::new_root_obj_class(heap, empty);
-        let root_obj_filter_iter_class = object::new_root_obj_class(heap, empty);
-        let root_obj_vec_class = object::new_root_obj_class(heap, empty);
-        let root_obj_vec_iter_class = object::new_root_obj_class(heap, empty);
-        let root_obj_range_class = object::new_root_obj_class(heap, empty);
-        let root_obj_range_iter_class = object::new_root_obj_class(heap, empty);
-        let root_obj_string_iter_class = object::new_root_obj_class(heap, empty);
+        let methods = object::new_obj_string_value_map();
+        let root_obj_iter_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_map_iter_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_filter_iter_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_vec_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_vec_iter_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_range_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_range_iter_class = object::new_root_obj_class(heap, empty, methods.clone());
+        let root_obj_string_iter_class = object::new_root_obj_class(heap, empty, methods.clone());
         CoreClassStore {
             root_obj_iter_class,
             root_obj_map_iter_class,
@@ -59,35 +60,35 @@ impl CoreClassStore {
         }
     }
 
-    pub(crate) fn get_obj_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_iter_class.as_gc()
     }
 
-    pub(crate) fn get_obj_map_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_map_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_map_iter_class.as_gc()
     }
 
-    pub(crate) fn get_obj_filter_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_filter_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_filter_iter_class.as_gc()
     }
 
-    pub(crate) fn get_obj_vec_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_vec_class(&self) -> Gc<ObjClass> {
         self.root_obj_vec_class.as_gc()
     }
 
-    pub(crate) fn get_obj_vec_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_vec_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_vec_iter_class.as_gc()
     }
 
-    pub(crate) fn get_obj_range_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_range_class(&self) -> Gc<ObjClass> {
         self.root_obj_range_class.as_gc()
     }
 
-    pub(crate) fn get_obj_range_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_range_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_range_iter_class.as_gc()
     }
 
-    pub(crate) fn get_obj_string_iter_class(&self) -> Gc<RefCell<ObjClass>> {
+    pub(crate) fn get_obj_string_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_string_iter_class.as_gc()
     }
 }

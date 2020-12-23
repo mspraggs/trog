@@ -1,4 +1,4 @@
-// [line 162] Error at 'print': Too many constants in one chunk.
+// [line 162] Error at 'bilberry': Too many constants in one chunk.
 // [line 163] Error at 'print': Too many constants in one chunk.
 // [line 164] Error at 'print': Too many constants in one chunk.
 // [line 165] Error at 'print': Too many constants in one chunk.
@@ -72,6 +72,7 @@
 // [line 233] Error at 'print': Too many constants in one chunk.
 // [line 234] Error at 'print': Too many constants in one chunk.
 // [line 235] Error at 'print': Too many constants in one chunk.
+// [line 236] Error at 'print': Too many constants in one chunk.
 // 65
 class Foo {}
 var foo = Foo();

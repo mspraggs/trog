@@ -32,7 +32,7 @@ pub enum Value {
     ObjFunction(Gc<ObjFunction>),
     ObjNative(Gc<ObjNative>),
     ObjClosure(Gc<RefCell<ObjClosure>>),
-    ObjClass(Gc<RefCell<ObjClass>>),
+    ObjClass(Gc<ObjClass>),
     ObjInstance(Gc<RefCell<ObjInstance>>),
     ObjBoundMethod(Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>),
     ObjBoundNative(Gc<RefCell<ObjBoundMethod<ObjNative>>>),
@@ -53,7 +53,7 @@ impl Value {
         }
     }
 
-    pub(crate) fn get_class(&self) -> Option<Gc<RefCell<ObjClass>>> {
+    pub(crate) fn get_class(&self) -> Option<Gc<ObjClass>> {
         match self {
             Value::ObjString(s) => Some(s.class),
             Value::ObjVec(v) => Some(v.borrow().class),
@@ -108,7 +108,7 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_obj_class(&self) -> Option<Gc<RefCell<ObjClass>>> {
+    pub fn try_as_obj_class(&self) -> Option<Gc<ObjClass>> {
         match self {
             Value::ObjClass(inner) => Some(*inner),
             _ => None,
@@ -229,7 +229,7 @@ impl fmt::Display for Value {
             Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
             Value::ObjNative(_) => write!(f, "<native fn>"),
             Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjClass(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjClass(underlying) => write!(f, "{}", **underlying),
             Value::ObjInstance(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjBoundMethod(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjBoundNative(underlying) => write!(f, "{}", *underlying.borrow()),
