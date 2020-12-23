@@ -15,7 +15,7 @@
 
 use crate::common;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, Heap, Root};
+use crate::memory::{Gc, GcBoxPtr, Heap, Root};
 use crate::object::{
     self, NativeFn, ObjClass, ObjNative, ObjString, ObjStringStore, ObjStringValueMap,
 };
@@ -57,7 +57,7 @@ fn build_methods(
 
 /// String implementation
 
-pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringStore) {
+pub(crate) unsafe fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringStore, class: &mut GcBoxPtr<ObjClass>) {
     let method_map = [
         ("__init__", string_init as NativeFn),
         ("__getitem__", string_get_item as NativeFn),
@@ -74,7 +74,7 @@ pub fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringSto
     ];
     let (methods, _native_roots) = build_methods(heap, string_store, &method_map, None);
 
-    string_store.set_obj_string_class_methods(methods);
+    class.as_mut().data_mut().methods = methods;
 }
 
 fn string_init(vm: &Vm, args: &[Value]) -> Result<Value, Error> {

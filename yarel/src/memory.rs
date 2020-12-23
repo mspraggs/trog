@@ -39,9 +39,9 @@ pub trait GcManaged {
     fn blacken(&self);
 }
 
-type GcBoxPtr<T> = NonNull<GcBox<T>>;
+pub(crate) type GcBoxPtr<T> = NonNull<GcBox<T>>;
 
-struct GcBox<T: GcManaged + ?Sized> {
+pub(crate) struct GcBox<T: GcManaged + ?Sized> {
     colour: Cell<Colour>,
     num_roots: Cell<usize>,
     data: T,
@@ -50,6 +50,10 @@ struct GcBox<T: GcManaged + ?Sized> {
 impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
     fn unmark(&self) {
         self.colour.set(Colour::White);
+    }
+
+    pub(crate) fn data_mut(&mut self) -> &mut T {
+        &mut self.data
     }
 
     fn mark(&self) {
@@ -83,12 +87,6 @@ impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
 
 pub struct UniqueRoot<T: 'static + GcManaged + ?Sized> {
     ptr: GcBoxPtr<T>,
-}
-
-impl<T: GcManaged> UniqueRoot<T> {
-    pub fn as_gc(&self) -> Gc<T> {
-        Gc { ptr: self.ptr }
-    }
 }
 
 impl<T: 'static + GcManaged + ?Sized> UniqueRoot<T> {
@@ -211,6 +209,14 @@ impl<T: GcManaged> From<Gc<T>> for Root<T> {
     }
 }
 
+impl<T: GcManaged> From<GcBoxPtr<T>> for Root<T> {
+    fn from(ptr: GcBoxPtr<T>) -> Self {
+        let mut ret = Root { ptr: ptr };
+        ret.inc_num_roots();
+        ret
+    }
+}
+
 pub struct Gc<T: GcManaged + ?Sized> {
     ptr: GcBoxPtr<T>,
 }
@@ -277,7 +283,7 @@ impl Heap {
 
     pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
         Gc {
-            ptr: self.allocate_ptr(data),
+            ptr: self.allocate_bare(data),
         }
     }
     pub fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
@@ -285,13 +291,13 @@ impl Heap {
     }
     pub fn allocate_unique_root<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
         let mut ret = UniqueRoot {
-            ptr: self.allocate_ptr(data),
+            ptr: self.allocate_bare(data),
         };
         ret.inc_num_roots();
         ret
     }
 
-    fn allocate_ptr<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+    pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
         if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
             self.collect();
         } else {

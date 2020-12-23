@@ -21,9 +21,10 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::rc::Rc;
 
+use crate::core;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
-use crate::memory::{self, Gc, Heap, Root, UniqueRoot};
+use crate::memory::{self, Gc, Heap, Root};
 use crate::value::Value;
 use crate::vm::Vm;
 
@@ -142,20 +143,29 @@ impl fmt::Display for ObjStringIter {
 }
 
 pub struct ObjStringStore {
-    class: UniqueRoot<ObjClass>,
+    class: Root<ObjClass>,
     store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
 }
 
 pub fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
-    let class = heap.allocate_unique_root(ObjClass::new());
-    let store = Rc::new(RefCell::new(ObjStringStore::new(class)));
-    let name = store.borrow_mut().new_gc_obj_string(heap, "String");
-    store.borrow_mut().class.name = Some(name);
-    store
+    // # Safety
+    // The intialisation here involves creating a set of immutable objects with cyclic
+    // dependencies. To facilitate this we have to retain a mutable reference to the class that
+    // backs an instance of ObjString. Between initialisation and modification, we hand out
+    // immutable references to this object to each instance of ObjString. We then modify the
+    // original instance to give a name and methods to the class.
+    unsafe {
+        let mut class = heap.allocate_bare(ObjClass::new());
+        let store = Rc::new(RefCell::new(ObjStringStore::new(Root::from(class))));
+        let class_name = store.borrow_mut().new_gc_obj_string(heap, "String");
+        class.as_mut().data_mut().name = Some(class_name);
+        core::bind_gc_obj_string_class(heap, &mut store.borrow_mut(), &mut class);
+        store
+    }
 }
 
 impl ObjStringStore {
-    pub fn new(class: UniqueRoot<ObjClass>) -> Self {
+    pub fn new(class: Root<ObjClass>) -> Self {
         ObjStringStore {
             class,
             store: HashMap::with_hasher(BuildPassThroughHasher::default()),
@@ -164,10 +174,6 @@ impl ObjStringStore {
 
     pub(crate) fn get_obj_string_class(&self) -> Gc<ObjClass> {
         self.class.as_gc()
-    }
-
-    pub(crate) fn set_obj_string_class_methods(&mut self, methods: ObjStringValueMap) {
-        self.class.methods = methods;
     }
 
     pub fn new_gc_obj_string(&mut self, heap: &mut Heap, data: &str) -> Gc<ObjString> {

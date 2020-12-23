@@ -105,7 +105,6 @@ pub fn new_class_store(
     string_store: Rc<RefCell<ObjStringStore>>,
     chunk_store: Rc<RefCell<ChunkStore>>,
 ) -> Box<CoreClassStore> {
-    core::bind_gc_obj_string_class(&mut heap.borrow_mut(), &mut string_store.borrow_mut());
     let mut vm = vm::new_root_vm(heap.clone(), string_store.clone(), chunk_store);
     let source = String::from(CORE_SOURCE);
     let result = vm::interpret(&mut vm, source);
