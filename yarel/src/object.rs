@@ -84,7 +84,7 @@ pub fn new_obj_string_value_map() -> ObjStringValueMap {
 
 pub struct ObjStringIter {
     pub(crate) class: Gc<ObjClass>,
-    iterable: Gc<ObjString>,
+    pub(crate) iterable: Gc<ObjString>,
     pos: usize,
 }
 
@@ -113,7 +113,7 @@ impl ObjStringIter {
         }
     }
 
-    pub(crate) fn next(&mut self) -> Option<String> {
+    pub(crate) fn next(&mut self) -> Option<(usize, usize)> {
         if self.pos == self.iterable.len() {
             return None;
         }
@@ -122,7 +122,7 @@ impl ObjStringIter {
         while self.pos < self.iterable.len() && !self.iterable.is_char_boundary(self.pos) {
             self.pos += 1;
         }
-        Some(self.iterable[old_pos..self.pos].to_string())
+        Some((old_pos, self.pos))
     }
 }
 

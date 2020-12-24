@@ -324,15 +324,17 @@ fn string_iter_next(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     let iter = args[0]
         .try_as_obj_string_iter()
         .expect("Expected ObjIter instance.");
+    let iterable = iter.borrow().iterable;
     let next = {
         let mut borrowed_iter = iter.borrow_mut();
         borrowed_iter.next()
     };
-    if let Some(slice) = next {
+    if let Some((begin, end)) = next {
+        let slice = &iterable[begin..end];
         let string = vm
             .string_store
             .borrow_mut()
-            .new_gc_obj_string(&mut vm.heap.borrow_mut(), &slice);
+            .new_gc_obj_string(&mut vm.heap.borrow_mut(), slice);
         return Ok(Value::ObjString(string));
     }
     Ok(Value::Sentinel)
