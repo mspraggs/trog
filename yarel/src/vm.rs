@@ -22,6 +22,7 @@ use std::time;
 use crate::chunk::{Chunk, ChunkStore, OpCode};
 use crate::class_store::{self, CoreClassStore};
 use crate::common;
+use crate::core;
 use crate::compiler;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
@@ -82,36 +83,6 @@ pub struct Vm {
     class_method_cache: ObjStringValueMap,
 }
 
-fn clock_native(_vm: &Vm, _args: &[Value]) -> Result<Value, Error> {
-    let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
-        Ok(value) => value,
-        Err(_) => {
-            return error!(ErrorKind::RuntimeError, "Error calling native function.");
-        }
-    };
-    let seconds = duration.as_secs_f64();
-    let nanos = duration.subsec_nanos() as f64 / 1e9;
-    Ok(Value::Number(seconds + nanos))
-}
-
-fn default_print(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
-    if args.len() != 2 {
-        return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
-    }
-    println!("{}", args[1]);
-    Ok(Value::None)
-}
-
-fn sentinel(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return error!(
-            ErrorKind::RuntimeError,
-            "Expected no arguments to 'sentinel'."
-        );
-    }
-    Ok(Value::Sentinel)
-}
-
 pub fn new_root_vm(
     heap: Rc<RefCell<Heap>>,
     string_store: Rc<RefCell<ObjStringStore>>,
@@ -131,9 +102,9 @@ pub fn new_root_vm_with_built_ins(
 ) -> UniqueRoot<Vm> {
     let vm = Vm::new(heap.clone(), string_store, chunk_store, class_store);
     let mut vm = heap.borrow_mut().allocate_unique_root(vm);
-    vm.define_native("clock", clock_native);
-    vm.define_native("print", default_print);
-    vm.define_native("sentinel", sentinel);
+    vm.define_native("clock", core::clock_native);
+    vm.define_native("print", core::default_print);
+    vm.define_native("sentinel", core::sentinel);
     let obj_string_class = vm.string_store.borrow().get_obj_string_class();
     vm.set_global("String", Value::ObjClass(obj_string_class));
     let obj_iter_class = vm.class_store.get_obj_iter_class();

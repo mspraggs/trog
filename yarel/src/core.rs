@@ -13,6 +13,8 @@
  * limitations under the License.
  */
 
+use std::time;
+
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, GcBoxPtr, Heap, Root};
@@ -55,9 +57,45 @@ fn build_methods(
     (methods, roots)
 }
 
+/// Global functions
+
+pub(crate) fn clock_native(_vm: &Vm, _args: &[Value]) -> Result<Value, Error> {
+    let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
+        Ok(value) => value,
+        Err(_) => {
+            return error!(ErrorKind::RuntimeError, "Error calling native function.");
+        }
+    };
+    let seconds = duration.as_secs_f64();
+    let nanos = duration.subsec_nanos() as f64 / 1e9;
+    Ok(Value::Number(seconds + nanos))
+}
+
+pub(crate) fn default_print(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
+    if args.len() != 2 {
+        return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
+    }
+    println!("{}", args[1]);
+    Ok(Value::None)
+}
+
+pub(crate) fn sentinel(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
+    if args.len() != 1 {
+        return error!(
+            ErrorKind::RuntimeError,
+            "Expected no arguments to 'sentinel'."
+        );
+    }
+    Ok(Value::Sentinel)
+}
+
 /// String implementation
 
-pub(crate) unsafe fn bind_gc_obj_string_class(heap: &mut Heap, string_store: &mut ObjStringStore, class: &mut GcBoxPtr<ObjClass>) {
+pub(crate) unsafe fn bind_gc_obj_string_class(
+    heap: &mut Heap,
+    string_store: &mut ObjStringStore,
+    class: &mut GcBoxPtr<ObjClass>,
+) {
     let method_map = [
         ("__init__", string_init as NativeFn),
         ("__getitem__", string_get_item as NativeFn),
