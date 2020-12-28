@@ -109,6 +109,8 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
         ("starts_with", string_starts_with as NativeFn),
         ("ends_with", string_ends_with as NativeFn),
         ("as_num", string_as_num as NativeFn),
+        ("to_bytes", string_to_bytes as NativeFn),
+        ("to_code_points", string_to_code_points as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(heap, string_store, &method_map, None);
 
@@ -343,6 +345,41 @@ fn string_as_num(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
     })?;
 
     Ok(Value::Number(num))
+}
+
+fn string_to_bytes(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+
+    let vec = object::new_gc_obj_vec(
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_vec_class(),
+    );
+    vec.borrow_mut().elements = string
+        .as_bytes()
+        .iter()
+        .map(|&b| Value::Number(b as f64))
+        .collect();
+
+    Ok(Value::ObjVec(vec))
+}
+
+fn string_to_code_points(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+
+    let vec = object::new_gc_obj_vec(
+        &mut vm.heap.borrow_mut(),
+        vm.class_store.get_obj_vec_class(),
+    );
+    vec.borrow_mut().elements = string
+        .chars()
+        .map(|c| Value::Number((c as u32) as f64))
+        .collect();
+
+    Ok(Value::ObjVec(vec))
 }
 
 fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<(), Error> {
