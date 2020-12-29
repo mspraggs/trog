@@ -22,8 +22,8 @@ use std::time;
 use crate::chunk::{Chunk, ChunkStore, OpCode};
 use crate::class_store::{self, CoreClassStore};
 use crate::common;
-use crate::core;
 use crate::compiler;
+use crate::core;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, GcManaged, Heap, Root, UniqueRoot};
@@ -87,9 +87,13 @@ pub fn new_root_vm(
     heap: Rc<RefCell<Heap>>,
     string_store: Rc<RefCell<ObjStringStore>>,
     chunk_store: Rc<RefCell<ChunkStore>>,
+    root_obj_base_metaclass: Root<ObjClass>,
 ) -> UniqueRoot<Vm> {
-    let class_store =
-        class_store::new_empty_class_store(&mut heap.borrow_mut(), &mut string_store.borrow_mut());
+    let class_store = class_store::new_empty_class_store(
+        &mut heap.borrow_mut(),
+        &mut string_store.borrow_mut(),
+        root_obj_base_metaclass,
+    );
     let vm = Vm::new(heap.clone(), string_store, chunk_store, class_store);
     heap.borrow_mut().allocate_unique_root(vm)
 }
@@ -605,6 +609,7 @@ impl Vm {
                     let class = object::new_gc_obj_class(
                         &mut self.heap.borrow_mut(),
                         string,
+                        self.class_store.get_obj_base_metaclass(),
                         object::new_obj_string_value_map(),
                     );
                     self.push(Value::ObjClass(class));
@@ -615,6 +620,7 @@ impl Vm {
                     let defined_class = object::new_root_obj_class(
                         &mut self.heap.borrow_mut(),
                         class.name.unwrap(),
+                        self.class_store.get_obj_base_metaclass(),
                         self.class_method_cache.clone(),
                     );
                     *self.peek_mut(0) = Value::ObjClass(defined_class.as_gc());

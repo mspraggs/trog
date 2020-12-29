@@ -418,6 +418,7 @@ fn string_iter_next(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_string_iter_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
+    metaclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "StringIter");
     let (methods, _native_roots) = build_methods(
@@ -426,7 +427,7 @@ pub fn new_root_obj_string_iter_class(
         &[("__next__", string_iter_next as NativeFn)],
         None,
     );
-    object::new_root_obj_class(heap, class_name, methods)
+    object::new_root_obj_class(heap, class_name, metaclass, methods)
 }
 
 /// Vec implemenation
@@ -434,6 +435,7 @@ pub fn new_root_obj_string_iter_class(
 pub fn new_root_obj_vec_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
+    metaclass: Gc<ObjClass>,
     iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "Vec");
@@ -452,8 +454,7 @@ pub fn new_root_obj_vec_class(
         &method_map,
         Some(iter_class.methods.clone()),
     );
-    // class.borrow_mut().add_superclass(iter_class);
-    object::new_root_obj_class(heap, class_name, methods)
+    object::new_root_obj_class(heap, class_name, metaclass, methods)
 }
 
 fn vec_init(vm: &Vm, _args: &[Value]) -> Result<Value, Error> {
@@ -573,6 +574,7 @@ fn get_bounded_index(value: Value, bound: isize, msg: &str) -> Result<usize, Err
 pub fn new_root_obj_vec_iter_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
+    metaclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "VecIter");
     let (methods, _native_roots) = build_methods(
@@ -581,7 +583,7 @@ pub fn new_root_obj_vec_iter_class(
         &[("__next__", vec_iter_next as NativeFn)],
         None,
     );
-    object::new_root_obj_class(heap, class_name, methods)
+    object::new_root_obj_class(heap, class_name, metaclass, methods)
 }
 
 fn vec_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
@@ -598,6 +600,7 @@ fn vec_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_range_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
+    metaclass: Gc<ObjClass>,
     iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "Range");
@@ -611,8 +614,7 @@ pub fn new_root_obj_range_class(
         &method_map,
         Some(iter_class.methods.clone()),
     );
-    // class.borrow_mut().add_superclass(iter_class);
-    object::new_root_obj_class(heap, class_name, methods)
+    object::new_root_obj_class(heap, class_name, metaclass, methods)
 }
 
 fn range_init(vm: &Vm, args: &[Value]) -> Result<Value, Error> {
@@ -658,6 +660,7 @@ fn range_iter_next(_vm: &Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_range_iter_class(
     heap: &mut Heap,
     string_store: &mut ObjStringStore,
+    metaclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = string_store.new_gc_obj_string(heap, "RangeIter");
     let (methods, _native_roots) = build_methods(
@@ -666,5 +669,5 @@ pub fn new_root_obj_range_iter_class(
         &[("__next__", range_iter_next as NativeFn)],
         None,
     );
-    object::new_root_obj_class(heap, class_name, methods)
+    object::new_root_obj_class(heap, class_name, metaclass, methods)
 }

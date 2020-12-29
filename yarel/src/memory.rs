@@ -48,12 +48,12 @@ pub(crate) struct GcBox<T: GcManaged + ?Sized> {
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
-    fn unmark(&self) {
-        self.colour.set(Colour::White);
-    }
-
     pub(crate) fn data_mut(&mut self) -> &mut T {
         &mut self.data
+    }
+
+    fn unmark(&self) {
+        self.colour.set(Colour::White);
     }
 
     fn mark(&self) {
@@ -224,6 +224,12 @@ pub struct Gc<T: GcManaged + ?Sized> {
 impl<T: GcManaged> Gc<T> {
     pub fn as_root(&self) -> Root<T> {
         Root::from(*self)
+    }
+
+    pub(crate) unsafe fn dangling() -> Self {
+        Gc {
+            ptr: GcBoxPtr::dangling(),
+        }
     }
 }
 

@@ -147,7 +147,10 @@ pub struct ObjStringStore {
     store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
 }
 
-pub(crate) fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
+pub(crate) fn new_obj_string_store(
+    heap: &mut Heap,
+    metaclass: Gc<ObjClass>,
+) -> Rc<RefCell<ObjStringStore>> {
     // # Safety
     // The intialisation here involves creating a set of immutable objects with cyclic
     // dependencies. To facilitate this we have to retain a mutable reference to the class that
@@ -155,7 +158,7 @@ pub(crate) fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore
     // immutable references to this object to each instance of ObjString. We then modify the
     // original instance to give a name and methods to the class.
     unsafe {
-        let mut class = heap.allocate_bare(ObjClass::new());
+        let mut class = heap.allocate_bare(ObjClass::new(metaclass));
         let store = Rc::new(RefCell::new(ObjStringStore::new(Root::from(class))));
         let class_name = store.borrow_mut().new_gc_obj_string(heap, "String");
         class.as_mut().data_mut().name = Some(class_name);
@@ -393,40 +396,49 @@ impl fmt::Display for ObjClosure {
 
 pub struct ObjClass {
     pub name: Option<memory::Gc<ObjString>>,
+    pub metaclass: Gc<ObjClass>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
 pub fn new_gc_obj_class(
     heap: &mut Heap,
     name: Gc<ObjString>,
+    metaclass: Gc<ObjClass>,
     methods: ObjStringValueMap,
 ) -> Gc<ObjClass> {
-    heap.allocate(ObjClass::with_name(name, methods))
+    heap.allocate(ObjClass::with_name(name, metaclass, methods))
 }
 
 pub fn new_root_obj_class(
     heap: &mut Heap,
     name: Gc<ObjString>,
+    metaclass: Gc<ObjClass>,
     methods: ObjStringValueMap,
 ) -> Root<ObjClass> {
-    new_gc_obj_class(heap, name, methods).as_root()
+    new_gc_obj_class(heap, name, metaclass, methods).as_root()
 }
 
-pub fn new_root_obj_class_anon(heap: &mut Heap) -> Root<ObjClass> {
-    heap.allocate(ObjClass::new()).as_root()
+pub fn new_root_obj_class_anon(heap: &mut Heap, metaclass: Gc<ObjClass>) -> Root<ObjClass> {
+    heap.allocate(ObjClass::new(metaclass)).as_root()
 }
 
 impl ObjClass {
-    fn new() -> Self {
+    fn new(metaclass: Gc<ObjClass>) -> Self {
         ObjClass {
             name: None,
+            metaclass,
             methods: new_obj_string_value_map(),
         }
     }
 
-    fn with_name(name: memory::Gc<ObjString>, methods: ObjStringValueMap) -> Self {
+    fn with_name(
+        name: memory::Gc<ObjString>,
+        metaclass: Gc<ObjClass>,
+        methods: ObjStringValueMap,
+    ) -> Self {
         ObjClass {
             name: Some(name),
+            metaclass: metaclass,
             methods,
         }
     }
@@ -434,10 +446,12 @@ impl ObjClass {
 
 impl memory::GcManaged for ObjClass {
     fn mark(&self) {
+        self.metaclass.mark();
         self.methods.mark();
     }
 
     fn blacken(&self) {
+        self.metaclass.blacken();
         self.methods.blacken();
     }
 }
