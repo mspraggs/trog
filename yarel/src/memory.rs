@@ -402,7 +402,7 @@ impl Heap {
     }
 }
 
-pub fn new_heap() -> Rc<RefCell<Heap>> {
+pub(crate) fn new_heap() -> Rc<RefCell<Heap>> {
     Rc::new(RefCell::new(Heap::new()))
 }
 

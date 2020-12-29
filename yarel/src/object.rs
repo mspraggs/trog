@@ -147,7 +147,7 @@ pub struct ObjStringStore {
     store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
 }
 
-pub fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
+pub(crate) fn new_obj_string_store(heap: &mut Heap) -> Rc<RefCell<ObjStringStore>> {
     // # Safety
     // The intialisation here involves creating a set of immutable objects with cyclic
     // dependencies. To facilitate this we have to retain a mutable reference to the class that

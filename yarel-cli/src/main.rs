@@ -18,11 +18,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
-use yarel::chunk;
-use yarel::class_store;
 use yarel::error::ErrorKind;
-use yarel::memory;
-use yarel::object;
+use yarel::shared_context;
 use yarel::vm;
 
 fn repl(vm: &mut vm::Vm) {
@@ -71,11 +68,7 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let heap = memory::new_heap();
-    let string_store = object::new_obj_string_store(&mut heap.borrow_mut());
-    let chunk_store = chunk::new_chunk_store();
-    let class_store =
-        class_store::new_class_store(heap.clone(), string_store.clone(), chunk_store.clone());
+    let (heap, string_store, chunk_store, class_store) = shared_context::new_shared_context();
     let mut vm = vm::new_root_vm_with_built_ins(heap, string_store, chunk_store, class_store);
 
     if args.len() == 1 {

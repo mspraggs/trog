@@ -18,10 +18,7 @@ use std::{io, process};
 mod test;
 mod utils;
 
-use yarel::chunk;
-use yarel::class_store;
-use yarel::memory;
-use yarel::object;
+use yarel::shared_context;
 
 fn main() {
     let paths = match utils::get_paths("tests", Some(".yl")) {
@@ -37,11 +34,7 @@ fn main() {
     let mut num_failed = 0;
     let mut stdout = io::stdout();
 
-    let heap = memory::new_heap();
-    let string_store = object::new_obj_string_store(&mut heap.borrow_mut());
-    let chunk_store = chunk::new_chunk_store();
-    let class_store =
-        class_store::new_class_store(heap.clone(), string_store.clone(), chunk_store.clone());
+    let (heap, string_store, chunk_store, class_store) = shared_context::new_shared_context();
 
     let failures: Vec<test::Failure> = paths
         .iter()

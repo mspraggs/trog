@@ -176,6 +176,6 @@ impl ChunkStore {
     }
 }
 
-pub fn new_chunk_store() -> Rc<RefCell<ChunkStore>> {
+pub(crate) fn new_chunk_store() -> Rc<RefCell<ChunkStore>> {
     Rc::new(RefCell::new(ChunkStore::new()))
 }

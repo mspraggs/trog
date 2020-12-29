@@ -100,7 +100,7 @@ pub fn new_empty_class_store(
     Box::new(CoreClassStore::new(heap, string_store))
 }
 
-pub fn new_class_store(
+pub(crate) fn new_class_store(
     heap: Rc<RefCell<Heap>>,
     string_store: Rc<RefCell<ObjStringStore>>,
     chunk_store: Rc<RefCell<ChunkStore>>,
