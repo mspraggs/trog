@@ -1,0 +1,19 @@
+// Foo
+// 0
+class Foo {
+  static fn get_closure() {
+    fn f() {
+      fn g() {
+        fn h() {
+          return Self.to_string();
+        }
+        return h;
+      }
+      return g;
+    }
+    return f;
+  }
+  static fn to_string() { return "Foo"; }
+}
+var closure = Foo.get_closure();
+print(closure()()());

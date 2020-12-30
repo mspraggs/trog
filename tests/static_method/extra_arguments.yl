@@ -1,0 +1,10 @@
+// Expected 2 arguments but found 4.
+// [line 10] in script
+// 70
+class Foo {
+  static fn method(a, b) {
+    print(a);
+    print(b);
+  }
+}
+Foo.method(1, 2, 3, 4);

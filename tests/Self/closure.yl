@@ -1,13 +1,13 @@
 // Foo
 // 0
 class Foo {
-  fn get_closure(self) {
+  static fn get_closure() {
     fn closure() {
-      return self.to_string();
+      return Self();
     }
     return closure;
   }
   fn to_string(self) { return "Foo"; }
 }
-var closure = Foo().get_closure();
-print(closure());
+var closure = Foo.get_closure();
+print(closure().to_string());

@@ -55,6 +55,8 @@ impl Value {
 
     pub(crate) fn get_class(&self) -> Option<Gc<ObjClass>> {
         match self {
+            Value::ObjClass(c) => Some(c.metaclass),
+            Value::ObjInstance(i) => Some(i.borrow().class),
             Value::ObjString(s) => Some(s.class),
             Value::ObjVec(v) => Some(v.borrow().class),
             _ => None,

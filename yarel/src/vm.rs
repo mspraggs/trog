@@ -66,6 +66,36 @@ impl GcManaged for CallFrame {
     }
 }
 
+struct ClassDef {
+    name: Gc<ObjString>,
+    metaclass_name: Gc<ObjString>,
+    methods: ObjStringValueMap,
+    static_methods: ObjStringValueMap,
+}
+
+impl ClassDef {
+    fn new(name: Gc<ObjString>, metaclass_name: Gc<ObjString>) -> Self {
+        ClassDef {
+            name,
+            metaclass_name,
+            methods: object::new_obj_string_value_map(),
+            static_methods: object::new_obj_string_value_map(),
+        }
+    }
+}
+
+impl GcManaged for ClassDef {
+    fn mark(&self) {
+        self.methods.mark();
+        self.static_methods.mark();
+    }
+
+    fn blacken(&self) {
+        self.methods.blacken();
+        self.static_methods.blacken();
+    }
+}
+
 pub struct Vm {
     ip: *const u8,
     active_chunk: Gc<Chunk>,
@@ -80,7 +110,7 @@ pub struct Vm {
     pub(crate) string_store: Rc<RefCell<ObjStringStore>>,
     pub(crate) heap: Rc<RefCell<Heap>>,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
-    class_method_cache: ObjStringValueMap,
+    working_class_def: Option<ClassDef>,
 }
 
 pub fn new_root_vm(
@@ -152,7 +182,7 @@ impl Vm {
             string_store,
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
-            class_method_cache: object::new_obj_string_value_map(),
+            working_class_def: None,
         }
     }
 
@@ -354,24 +384,21 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::GetProperty as u8 => {
-                    if let Some(class) = self.peek(0).get_class() {
-                        let name = read_string!();
-                        self.bind_method(class, name)?;
-                        continue;
-                    }
-                    let instance = if let Some(ptr) = self.peek(0).try_as_obj_instance() {
-                        ptr
-                    } else {
-                        return error!(ErrorKind::RuntimeError, "Only instances have properties.",);
-                    };
                     let name = read_string!();
 
-                    let borrowed_instance = instance.borrow();
-                    if let Some(property) = borrowed_instance.fields.get(&name) {
-                        self.pop();
-                        self.push(*property);
+                    if let Some(instance) = self.peek(0).try_as_obj_instance() {
+                        let borrowed_instance = instance.borrow();
+                        if let Some(&property) = borrowed_instance.fields.get(&name) {
+                            self.pop();
+                            self.push(property);
+                            continue;
+                        }
+                    }
+
+                    if let Some(class) = self.peek(0).get_class() {
+                        self.bind_method(class, name)?;
                     } else {
-                        self.bind_method(borrowed_instance.class, name)?;
+                        return error!(ErrorKind::RuntimeError, "Only instances have properties.",);
                     }
                 }
 
@@ -388,6 +415,20 @@ impl Vm {
                     self.pop();
                     self.pop();
                     self.push(value);
+                }
+
+                byte if byte == OpCode::GetClass as u8 => {
+                    let value = *self.peek(0);
+                    match value {
+                        Value::ObjClass(_) => continue,
+                        Value::ObjInstance(instance) => {
+                            *self.peek_mut(0) = Value::ObjClass(instance.borrow().class);
+                        }
+                        _ => {
+                            let class = value.get_class().expect("Expected object.");
+                            *self.peek_mut(0) = Value::ObjClass(class);
+                        }
+                    }
                 }
 
                 byte if byte == OpCode::GetSuper as u8 => {
@@ -604,11 +645,15 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::DeclareClass as u8 => {
-                    let string = read_string!();
-                    self.class_method_cache.clear();
+                    let name = read_string!();
+                    let metaclass_name = self.string_store.borrow_mut().new_gc_obj_string(
+                        &mut self.heap.borrow_mut(),
+                        format!("{}Class", *name).as_str(),
+                    );
+                    self.working_class_def = Some(ClassDef::new(name, metaclass_name));
                     let class = object::new_gc_obj_class(
                         &mut self.heap.borrow_mut(),
-                        string,
+                        name,
                         self.class_store.get_obj_base_metaclass(),
                         object::new_obj_string_value_map(),
                     );
@@ -616,13 +661,22 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::DefineClass as u8 => {
-                    let class = self.peek(0).try_as_obj_class().expect("Expected ObjClass.");
+                    let class_def = self.working_class_def.as_ref().expect("Expected ClassDef.");
+
+                    let metaclass = object::new_root_obj_class(
+                        &mut self.heap.borrow_mut(),
+                        class_def.metaclass_name,
+                        self.class_store.get_obj_base_metaclass(),
+                        class_def.static_methods.clone(),
+                    );
+
                     let defined_class = object::new_root_obj_class(
                         &mut self.heap.borrow_mut(),
-                        class.name.unwrap(),
-                        self.class_store.get_obj_base_metaclass(),
-                        self.class_method_cache.clone(),
+                        class_def.name,
+                        metaclass.as_gc(),
+                        class_def.methods.clone(),
                     );
+                    self.working_class_def = None;
                     *self.peek_mut(0) = Value::ObjClass(defined_class.as_gc());
                 }
 
@@ -633,14 +687,23 @@ impl Vm {
                         return error!(ErrorKind::RuntimeError, "Superclass must be a class.");
                     };
                     for (&name, &method) in &superclass.methods {
-                        self.class_method_cache.insert(name, method);
+                        self.working_class_def
+                            .as_mut()
+                            .unwrap()
+                            .methods
+                            .insert(name, method);
                     }
                     self.pop();
                 }
 
                 byte if byte == OpCode::Method as u8 => {
                     let name = read_string!();
-                    self.define_method(name)?;
+                    self.define_method(name, false)?;
+                }
+
+                byte if byte == OpCode::StaticMethod as u8 => {
+                    let name = read_string!();
+                    self.define_method(name, true)?;
                 }
 
                 _ => {
@@ -737,6 +800,7 @@ impl Vm {
                 let class = iter.borrow().class;
                 self.invoke_from_class(class, name, arg_count)
             }
+            Value::ObjClass(class) => self.invoke_from_class(class.metaclass, name, arg_count),
             _ => error!(ErrorKind::ValueError, "Only instances have methods."),
         }
     }
@@ -813,9 +877,13 @@ impl Vm {
         error.clone()
     }
 
-    fn define_method(&mut self, name: Gc<ObjString>) -> Result<(), Error> {
+    fn define_method(&mut self, name: Gc<ObjString>, is_static: bool) -> Result<(), Error> {
         let method = *self.peek(0);
-        self.class_method_cache.insert(name, method);
+        let class_def = self.working_class_def.as_mut().unwrap();
+        class_def.methods.insert(name, method);
+        if is_static {
+            class_def.static_methods.insert(name, method);
+        }
         self.pop();
 
         Ok(())
@@ -934,7 +1002,9 @@ impl GcManaged for Vm {
         self.globals.mark();
         self.frames.mark();
         self.open_upvalues.mark();
-        self.class_method_cache.mark();
+        if let Some(def) = self.working_class_def.as_ref() {
+            def.mark()
+        }
     }
 
     fn blacken(&self) {
@@ -942,6 +1012,8 @@ impl GcManaged for Vm {
         self.globals.blacken();
         self.frames.blacken();
         self.open_upvalues.blacken();
-        self.class_method_cache.blacken();
+        if let Some(def) = self.working_class_def.as_ref() {
+            def.blacken()
+        }
     }
 }

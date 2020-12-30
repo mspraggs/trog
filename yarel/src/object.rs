@@ -156,7 +156,9 @@ pub(crate) fn new_obj_string_store(
     // dependencies. To facilitate this we have to retain a mutable reference to the class that
     // backs an instance of ObjString. Between initialisation and modification, we hand out
     // immutable references to this object to each instance of ObjString. We then modify the
-    // original instance to give a name and methods to the class.
+    // original instance to give a name and methods to the class. The class name is only used by the
+    // Display trait and the methods are only used by the VM once all core classes have been
+    // instantiated, so in this scenario the aliasing is safe.
     unsafe {
         let mut class = heap.allocate_bare(ObjClass::new(metaclass));
         let store = Rc::new(RefCell::new(ObjStringStore::new(Root::from(class))));
@@ -438,7 +440,7 @@ impl ObjClass {
     ) -> Self {
         ObjClass {
             name: Some(name),
-            metaclass: metaclass,
+            metaclass,
             methods,
         }
     }

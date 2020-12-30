@@ -40,7 +40,8 @@ pub fn new_shared_context() -> SharedContext {
     // # Safety
     // We're modifying data for which there are immutable references held by other data structures.
     // Because the code is single-threaded and the immutable references aren't being used to access
-    // the data at this point in time, mutating the data here should be safe.
+    // the data at this point in time (class names are only used by the Display trait), mutating the
+    // data here should be safe.
     unsafe {
         obj_base_metaclass_ptr.as_mut().data_mut().name = Some(base_metaclass_name);
     }

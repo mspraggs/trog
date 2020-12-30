@@ -1,0 +1,20 @@
+// Outer
+// Outer
+// Inner
+// 0
+class Outer {
+  static fn method() {
+    print(Self);
+    fn f() {
+      print(Self);
+      class Inner {
+        static fn method() {
+          print(Self);
+        }
+      }
+      Inner().method();
+    }
+    f();
+  }
+}
+Outer().method();

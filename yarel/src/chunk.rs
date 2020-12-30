@@ -36,6 +36,7 @@ pub enum OpCode {
     SetUpvalue,
     GetProperty,
     SetProperty,
+    GetClass,
     GetSuper,
     Equal,
     Greater,
@@ -65,6 +66,7 @@ pub enum OpCode {
     DefineClass,
     Inherit,
     Method,
+    StaticMethod,
 }
 
 impl From<u8> for OpCode {
@@ -85,6 +87,7 @@ impl From<u8> for OpCode {
             value if value == OpCode::SetUpvalue as u8 => OpCode::SetUpvalue,
             value if value == OpCode::GetProperty as u8 => OpCode::GetProperty,
             value if value == OpCode::SetProperty as u8 => OpCode::SetProperty,
+            value if value == OpCode::GetClass as u8 => OpCode::GetClass,
             value if value == OpCode::GetSuper as u8 => OpCode::GetSuper,
             value if value == OpCode::Equal as u8 => OpCode::Equal,
             value if value == OpCode::Greater as u8 => OpCode::Greater,
@@ -114,6 +117,7 @@ impl From<u8> for OpCode {
             value if value == OpCode::DefineClass as u8 => OpCode::DefineClass,
             value if value == OpCode::Inherit as u8 => OpCode::Inherit,
             value if value == OpCode::Method as u8 => OpCode::Method,
+            value if value == OpCode::StaticMethod as u8 => OpCode::StaticMethod,
             _ => panic!("Unknown opcode {}", value),
         }
     }

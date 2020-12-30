@@ -68,6 +68,7 @@ enum FunctionKind {
     Initialiser,
     Method,
     Script,
+    StaticMethod,
 }
 
 impl FunctionKind {
@@ -135,7 +136,9 @@ impl Compiler {
             func_name: name.to_owned(),
             chunk: Chunk::new(),
             locals: vec![Local {
-                name: if kind != FunctionKind::Function {
+                name: if kind == FunctionKind::StaticMethod {
+                    "Self"
+                } else if kind != FunctionKind::Function {
                     "self"
                 } else {
                     ""
@@ -381,6 +384,9 @@ impl<'a> Parser<'a> {
                 "Expected 'self' as first parameter in method.",
             );
             self.match_token(TokenKind::Comma);
+        } else if self.match_token(TokenKind::Self_) {
+            self.error("Expected parameter name.");
+            self.match_token(TokenKind::Comma);
         }
         self.parameter_list(
             TokenKind::RightParen,
@@ -404,18 +410,30 @@ impl<'a> Parser<'a> {
     }
 
     fn method(&mut self) {
+        let first_token = self.current.clone();
+        let static_method = self.match_token(TokenKind::Static);
         self.consume(TokenKind::Fn, "Expected 'fn' before method name.");
         self.consume(TokenKind::Identifier, "Expected method name.");
         let previous = self.previous.clone();
         let constant = self.identifier_constant(&previous);
 
         let kind = if self.previous.source == "__init__" {
+            if static_method {
+                self.error_at(first_token, "Constructors cannot be static.");
+            }
             FunctionKind::Initialiser
+        } else if static_method {
+            FunctionKind::StaticMethod
         } else {
             FunctionKind::Method
         };
         self.function(kind);
-        self.emit_bytes([OpCode::Method as u8, constant]);
+        let opcode = if static_method {
+            OpCode::StaticMethod
+        } else {
+            OpCode::Method
+        };
+        self.emit_bytes([opcode as u8, constant]);
     }
 
     fn class_declaration(&mut self) {
@@ -1229,7 +1247,21 @@ impl<'a> Parser<'a> {
             s.error("Cannot use 'self' outside of a class.");
             return;
         }
+        if s.compiler().kind == FunctionKind::StaticMethod {
+            s.error("Cannot use 'self' in a static method.");
+            return;
+        }
         Parser::variable(s, false);
+    }
+
+    fn cap_self(s: &mut Parser, _can_assign: bool) {
+        if s.class_compilers.is_empty() {
+            s.error("Cannot use 'Self' outside of a class.");
+            return;
+        }
+        // TODO: Optimise this access to generate a single opcode
+        Parser::variable(s, false);
+        s.emit_byte(OpCode::GetClass as u8);
     }
 
     fn super_(s: &mut Parser, _can_assign: bool) {
@@ -1282,7 +1314,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 49] = [
+const RULES: [ParseRule; 51] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -1475,6 +1507,12 @@ const RULES: [ParseRule; 49] = [
         infix: Some(Parser::and),
         precedence: Precedence::And,
     },
+    // CapSelf
+    ParseRule {
+        prefix: Some(Parser::cap_self),
+        infix: None,
+        precedence: Precedence::None,
+    },
     // Class
     ParseRule {
         prefix: None,
@@ -1538,6 +1576,12 @@ const RULES: [ParseRule; 49] = [
     // Self
     ParseRule {
         prefix: Some(Parser::self_),
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Static
+    ParseRule {
+        prefix: None,
         infix: None,
         precedence: Precedence::None,
     },

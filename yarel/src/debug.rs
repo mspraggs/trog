@@ -51,6 +51,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::SetUpvalue => byte_instruction("SET_UPVALUE", chunk, offset),
         OpCode::GetProperty => constant_instruction("GET_PROPERTY", chunk, offset),
         OpCode::SetProperty => constant_instruction("SET_PROPERTY", chunk, offset),
+        OpCode::GetClass => simple_instruction("GET_CLASS", offset),
         OpCode::GetSuper => constant_instruction("GET_SUPER", chunk, offset),
         OpCode::Equal => simple_instruction("EQUAL", offset),
         OpCode::Greater => simple_instruction("GREATER", offset),
@@ -113,6 +114,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::DefineClass => simple_instruction("DEFINE_CLASS", offset),
         OpCode::Inherit => simple_instruction("INHERIT", offset),
         OpCode::Method => constant_instruction("METHOD", chunk, offset),
+        OpCode::StaticMethod => constant_instruction("STATIC_METHOD", chunk, offset),
     }
 }
 

@@ -1,4 +1,4 @@
-// Only instances have properties.
+// Undefined property 'bar'.
 // [line 5] in script
 // 70
 class Foo {}

@@ -1,0 +1,7 @@
+// Expected 2 arguments but found 1.
+// [line 7] in script
+// 70
+class Foo {
+  static fn method(a, b) {}
+}
+Foo.method(1);
