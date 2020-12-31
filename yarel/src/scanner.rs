@@ -99,11 +99,11 @@ impl Token {
 }
 
 fn is_alpha(s: &str) -> bool {
-    s.chars().all(|c| c.is_ascii_alphabetic() || c == '_')
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphabetic() || c == '_')
 }
 
 fn is_digit(s: &str) -> bool {
-    s.chars().all(|c| c.is_ascii_digit())
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
 pub struct Scanner {
@@ -278,10 +278,11 @@ impl Scanner {
         if self.is_at_end() {
             return false;
         }
-        if &self.source[self.current..self.current + 1] != expected {
+        let next = self.get_next_char_boundary(self.current);
+        if &self.source[self.current..next] != expected {
             return false;
         }
-        self.current += 1;
+        self.current = next;
         true
     }
 
@@ -550,10 +551,11 @@ impl Scanner {
     }
 
     fn get_next_char_boundary(&self, start: usize) -> usize {
-        let mut pos = start + 1;
-        while pos <= self.source.len() && !self.source.as_str().is_char_boundary(pos) {
-            pos += 1;
+        for pos in (start + 1)..self.source.len() {
+            if self.source.is_char_boundary(pos) {
+                return pos;
+            }
         }
-        pos
+        self.source.len()
     }
 }
