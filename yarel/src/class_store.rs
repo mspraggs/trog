@@ -13,14 +13,10 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::chunk::ChunkStore;
 use crate::core;
-use crate::memory::{Gc, Heap, Root};
-use crate::object::{self, ObjClass, ObjStringStore};
-use crate::vm;
+use crate::memory::{Gc, GcBoxPtr, Root};
+use crate::object::{self, ObjClass};
+use crate::vm::{self, Vm};
 
 include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 
@@ -38,61 +34,95 @@ pub struct CoreClassStore {
 }
 
 impl CoreClassStore {
-    pub(crate) fn new(
-        heap: &mut Heap,
-        string_store: &mut ObjStringStore,
-        root_obj_base_metaclass: Root<ObjClass>,
-    ) -> Self {
-        let empty = string_store.new_gc_obj_string(heap, "");
+    pub(crate) unsafe fn new_empty() -> Self {
+        CoreClassStore {
+            root_obj_base_metaclass: Root::dangling(),
+            root_obj_iter_class: Root::dangling(),
+            root_obj_map_iter_class: Root::dangling(),
+            root_obj_filter_iter_class: Root::dangling(),
+            root_obj_vec_class: Root::dangling(),
+            root_obj_vec_iter_class: Root::dangling(),
+            root_obj_range_class: Root::dangling(),
+            root_obj_range_iter_class: Root::dangling(),
+            root_obj_string_iter_class: Root::dangling(),
+        }
+    }
+
+    pub(crate) fn new(vm: &mut Vm, root_obj_base_metaclass: Root<ObjClass>) -> Self {
+        let empty = vm.new_gc_obj_string("");
         let methods = object::new_obj_string_value_map();
-        let root_obj_iter_class = object::new_root_obj_class(
-            heap,
-            empty,
+        let root_obj_iter_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_map_iter_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_filter_iter_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_vec_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_vec_iter_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_range_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_range_iter_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_string_iter_class =
+            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        CoreClassStore {
+            root_obj_base_metaclass,
+            root_obj_iter_class,
+            root_obj_map_iter_class,
+            root_obj_filter_iter_class,
+            root_obj_vec_class,
+            root_obj_vec_iter_class,
+            root_obj_range_class,
+            root_obj_range_iter_class,
+            root_obj_string_iter_class,
+        }
+    }
+
+    pub(crate) fn new_with_built_ins(vm: &mut Vm, root_obj_base_metaclass: Root<ObjClass>) -> Self {
+        let class_store = Self::new(vm, root_obj_base_metaclass.clone());
+        vm.class_store = class_store;
+        let source = String::from(CORE_SOURCE);
+        let result = vm::interpret(vm, source);
+        match result {
+            Ok(_) => {}
+            Err(error) => eprint!("{}", error),
+        }
+        let root_obj_iter_class = vm
+            .get_global("Iter")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_map_iter_class = vm
+            .get_global("MapIter")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_filter_iter_class = vm
+            .get_global("FilterIter")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_vec_class = core::new_root_obj_vec_class(
+            vm,
             root_obj_base_metaclass.as_gc(),
-            methods.clone(),
+            root_obj_iter_class.as_gc(),
         );
-        let root_obj_map_iter_class = object::new_root_obj_class(
-            heap,
-            empty,
+        let root_obj_vec_iter_class =
+            core::new_root_obj_vec_iter_class(vm, root_obj_base_metaclass.as_gc());
+        let root_obj_range_class = core::new_root_obj_range_class(
+            vm,
             root_obj_base_metaclass.as_gc(),
-            methods.clone(),
+            root_obj_iter_class.as_gc(),
         );
-        let root_obj_filter_iter_class = object::new_root_obj_class(
-            heap,
-            empty,
-            root_obj_base_metaclass.as_gc(),
-            methods.clone(),
-        );
-        let root_obj_vec_class = object::new_root_obj_class(
-            heap,
-            empty,
-            root_obj_base_metaclass.as_gc(),
-            methods.clone(),
-        );
-        let root_obj_vec_iter_class = object::new_root_obj_class(
-            heap,
-            empty,
-            root_obj_base_metaclass.as_gc(),
-            methods.clone(),
-        );
-        let root_obj_range_class = object::new_root_obj_class(
-            heap,
-            empty,
-            root_obj_base_metaclass.as_gc(),
-            methods.clone(),
-        );
-        let root_obj_range_iter_class = object::new_root_obj_class(
-            heap,
-            empty,
-            root_obj_base_metaclass.as_gc(),
-            methods.clone(),
-        );
-        let root_obj_string_iter_class = object::new_root_obj_class(
-            heap,
-            empty,
-            root_obj_base_metaclass.as_gc(),
-            methods.clone(),
-        );
+        let root_obj_range_iter_class =
+            core::new_root_obj_range_iter_class(vm, root_obj_base_metaclass.as_gc());
+        let root_obj_string_iter_class =
+            core::new_root_obj_string_iter_class(vm, root_obj_base_metaclass.as_gc());
         CoreClassStore {
             root_obj_base_metaclass,
             root_obj_iter_class,
@@ -143,91 +173,21 @@ impl CoreClassStore {
     }
 }
 
-pub fn new_empty_class_store(
-    heap: &mut Heap,
-    string_store: &mut ObjStringStore,
-    root_obj_base_metaclass: Root<ObjClass>,
-) -> Box<CoreClassStore> {
-    Box::new(CoreClassStore::new(
-        heap,
-        string_store,
-        root_obj_base_metaclass,
-    ))
-}
-
-pub(crate) fn new_class_store(
-    heap: Rc<RefCell<Heap>>,
-    string_store: Rc<RefCell<ObjStringStore>>,
-    chunk_store: Rc<RefCell<ChunkStore>>,
-    root_obj_base_metaclass: Root<ObjClass>,
-) -> Box<CoreClassStore> {
-    let mut vm = vm::new_root_vm(
-        heap.clone(),
-        string_store.clone(),
-        chunk_store,
-        root_obj_base_metaclass.clone(),
-    );
-    let source = String::from(CORE_SOURCE);
-    let result = vm::interpret(&mut vm, source);
-    match result {
-        Ok(_) => {}
-        Err(error) => eprint!("{}", error),
+pub(crate) fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
+    // # Safety
+    // The root metaclass is its own metaclass, so we need to add a pointer to the metaclass to the
+    // class's data. To do this we allocate the object and mutate it whilst an immutable reference
+    // is held by a local `Root` instance. This is safe because the `Root` instance doesn't access
+    // any fields on the pointer it holds whilst the metaclass assignment is being performed.
+    unsafe {
+        let data = ObjClass {
+            name: None,
+            metaclass: Gc::dangling(),
+            methods: object::new_obj_string_value_map(),
+        };
+        let mut ptr = vm.allocate_bare(data);
+        let root = Root::from(ptr);
+        ptr.as_mut().data_mut().metaclass = root.as_gc();
+        ptr
     }
-    let root_obj_iter_class = vm
-        .get_global("Iter")
-        .unwrap()
-        .try_as_obj_class()
-        .expect("Expected ObjClass.")
-        .as_root();
-    let root_obj_map_iter_class = vm
-        .get_global("MapIter")
-        .unwrap()
-        .try_as_obj_class()
-        .expect("Expected ObjClass.")
-        .as_root();
-    let root_obj_filter_iter_class = vm
-        .get_global("FilterIter")
-        .unwrap()
-        .try_as_obj_class()
-        .expect("Expected ObjClass.")
-        .as_root();
-    let borrowed_heap = &mut heap.borrow_mut();
-    let root_obj_vec_class = core::new_root_obj_vec_class(
-        borrowed_heap,
-        &mut string_store.borrow_mut(),
-        root_obj_base_metaclass.as_gc(),
-        root_obj_iter_class.as_gc(),
-    );
-    let root_obj_vec_iter_class = core::new_root_obj_vec_iter_class(
-        borrowed_heap,
-        &mut string_store.borrow_mut(),
-        root_obj_base_metaclass.as_gc(),
-    );
-    let root_obj_range_class = core::new_root_obj_range_class(
-        borrowed_heap,
-        &mut string_store.borrow_mut(),
-        root_obj_base_metaclass.as_gc(),
-        root_obj_iter_class.as_gc(),
-    );
-    let root_obj_range_iter_class = core::new_root_obj_range_iter_class(
-        borrowed_heap,
-        &mut string_store.borrow_mut(),
-        root_obj_base_metaclass.as_gc(),
-    );
-    let root_obj_string_iter_class = core::new_root_obj_string_iter_class(
-        borrowed_heap,
-        &mut string_store.borrow_mut(),
-        root_obj_base_metaclass.as_gc(),
-    );
-    Box::new(CoreClassStore {
-        root_obj_base_metaclass,
-        root_obj_iter_class,
-        root_obj_map_iter_class,
-        root_obj_filter_iter_class,
-        root_obj_vec_class,
-        root_obj_vec_iter_class,
-        root_obj_range_class,
-        root_obj_range_iter_class,
-        root_obj_string_iter_class,
-    })
 }

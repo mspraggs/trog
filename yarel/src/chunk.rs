@@ -13,10 +13,7 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::memory::{self, Gc, Heap, Root};
+use crate::memory;
 use crate::value;
 
 #[repr(u8)]
@@ -158,28 +155,4 @@ impl memory::GcManaged for Chunk {
     fn blacken(&self) {
         self.constants.blacken();
     }
-}
-
-pub struct ChunkStore {
-    chunks: Vec<Root<Chunk>>,
-}
-
-impl ChunkStore {
-    fn new() -> Self {
-        ChunkStore { chunks: Vec::new() }
-    }
-
-    pub(crate) fn add_chunk(&mut self, heap: &mut Heap, chunk: Chunk) -> usize {
-        let root = heap.allocate_root(chunk);
-        self.chunks.push(root);
-        self.chunks.len() - 1
-    }
-
-    pub(crate) fn get_chunk(&self, index: usize) -> Gc<Chunk> {
-        self.chunks[index].as_gc()
-    }
-}
-
-pub(crate) fn new_chunk_store() -> Rc<RefCell<ChunkStore>> {
-    Rc::new(RefCell::new(ChunkStore::new()))
 }

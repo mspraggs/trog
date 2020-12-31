@@ -17,19 +17,14 @@ use std::cell::RefCell;
 use std::fmt;
 use std::fs;
 use std::mem;
-use std::rc::Rc;
 
 use crossterm::queue;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 
-use yarel::chunk::ChunkStore;
-use yarel::class_store::CoreClassStore;
 use yarel::compiler;
 use yarel::error::{Error, ErrorKind};
-use yarel::memory::Heap;
-use yarel::object::ObjStringStore;
 use yarel::value::Value;
-use yarel::vm::{self, Vm};
+use yarel::vm::Vm;
 
 #[derive(Debug)]
 pub struct Success {
@@ -90,7 +85,7 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn local_print(_heap: &Vm, args: &[Value]) -> Result<Value, Error> {
+fn local_print(_heap: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     if args.len() != 2 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
@@ -104,19 +99,8 @@ fn local_print(_heap: &Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::None)
 }
 
-pub fn run_test(
-    heap: Rc<RefCell<Heap>>,
-    string_store: Rc<RefCell<ObjStringStore>>,
-    chunk_store: Rc<RefCell<ChunkStore>>,
-    class_store: &CoreClassStore,
-    path: &str,
-) -> Result<Success, Failure> {
-    let mut vm = vm::new_root_vm_with_built_ins(
-        heap.clone(),
-        string_store.clone(),
-        chunk_store.clone(),
-        Box::new(class_store.clone()),
-    );
+pub fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
+    vm.reset();
     vm.define_native("print", local_print);
 
     let source = match fs::read_to_string(path) {
@@ -134,12 +118,7 @@ pub fn run_test(
         }
     };
 
-    let result = compiler::compile(
-        &mut heap.borrow_mut(),
-        &mut chunk_store.borrow_mut(),
-        &mut string_store.borrow_mut(),
-        source,
-    );
+    let result = compiler::compile(vm, source);
     let error_output = match result {
         Ok(f) => match vm.execute(f, &[]) {
             Ok(_) => Vec::new(),

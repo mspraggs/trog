@@ -14,22 +14,25 @@
  */
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fmt::Write;
+use std::hash::{Hash, Hasher};
 use std::ptr;
-use std::rc::Rc;
+use std::slice;
 use std::time;
 
-use crate::chunk::{Chunk, ChunkStore, OpCode};
+use crate::chunk::{Chunk, OpCode};
 use crate::class_store::{self, CoreClassStore};
 use crate::common;
 use crate::compiler;
 use crate::core;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, GcManaged, Heap, Root, UniqueRoot};
+use crate::hash::{BuildPassThroughHasher, FnvHasher};
+use crate::memory::{self, Gc, GcBoxPtr, GcManaged, Heap, Root};
 use crate::object::{
     self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjRange, ObjString,
-    ObjStringStore, ObjStringValueMap, ObjUpvalue,
+    ObjStringValueMap, ObjUpvalue,
 };
 use crate::stack::Stack;
 use crate::utils;
@@ -38,12 +41,7 @@ use crate::value::Value;
 const RANGE_CACHE_SIZE: usize = 8;
 
 pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
-    let compile_result = compiler::compile(
-        &mut vm.heap.borrow_mut(),
-        &mut vm.chunk_store.borrow_mut(),
-        &mut vm.string_store.borrow_mut(),
-        source,
-    );
+    let compile_result = compiler::compile(vm, source);
     match compile_result {
         Ok(function) => vm.execute(function, &[]),
         Err(error) => Err(error),
@@ -105,89 +103,52 @@ pub struct Vm {
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     init_string: Gc<ObjString>,
     next_string: Gc<ObjString>,
-    pub(crate) class_store: Box<CoreClassStore>,
-    chunk_store: Rc<RefCell<ChunkStore>>,
-    pub(crate) string_store: Rc<RefCell<ObjStringStore>>,
-    pub(crate) heap: Rc<RefCell<Heap>>,
+    pub(crate) class_store: CoreClassStore,
+    chunks: Vec<Root<Chunk>>,
+    core_chunks: Vec<Root<Chunk>>,
+    string_class: Root<ObjClass>,
+    string_store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
     working_class_def: Option<ClassDef>,
-}
-
-pub fn new_root_vm(
-    heap: Rc<RefCell<Heap>>,
-    string_store: Rc<RefCell<ObjStringStore>>,
-    chunk_store: Rc<RefCell<ChunkStore>>,
-    root_obj_base_metaclass: Root<ObjClass>,
-) -> UniqueRoot<Vm> {
-    let class_store = class_store::new_empty_class_store(
-        &mut heap.borrow_mut(),
-        &mut string_store.borrow_mut(),
-        root_obj_base_metaclass,
-    );
-    let vm = Vm::new(heap.clone(), string_store, chunk_store, class_store);
-    heap.borrow_mut().allocate_unique_root(vm)
-}
-
-pub fn new_root_vm_with_built_ins(
-    heap: Rc<RefCell<Heap>>,
-    string_store: Rc<RefCell<ObjStringStore>>,
-    chunk_store: Rc<RefCell<ChunkStore>>,
-    class_store: Box<CoreClassStore>,
-) -> UniqueRoot<Vm> {
-    let vm = Vm::new(heap.clone(), string_store, chunk_store, class_store);
-    let mut vm = heap.borrow_mut().allocate_unique_root(vm);
-    vm.define_native("clock", core::clock_native);
-    vm.define_native("print", core::default_print);
-    vm.define_native("sentinel", core::sentinel);
-    let obj_string_class = vm.string_store.borrow().get_obj_string_class();
-    vm.set_global("String", Value::ObjClass(obj_string_class));
-    let obj_iter_class = vm.class_store.get_obj_iter_class();
-    vm.set_global("Iter", Value::ObjClass(obj_iter_class));
-    let obj_map_iter_class = vm.class_store.get_obj_map_iter_class();
-    vm.set_global("MapIter", Value::ObjClass(obj_map_iter_class));
-    let obj_filter_iter_class = vm.class_store.get_obj_filter_iter_class();
-    vm.set_global("FilterIter", Value::ObjClass(obj_filter_iter_class));
-    let obj_vec_class = vm.class_store.get_obj_vec_class();
-    vm.set_global("Vec", Value::ObjClass(obj_vec_class));
-    let obj_range_class = vm.class_store.get_obj_range_class();
-    vm.set_global("Range", Value::ObjClass(obj_range_class));
-    vm
+    pub(crate) heap: Heap,
 }
 
 impl Vm {
-    fn new(
-        heap: Rc<RefCell<Heap>>,
-        string_store: Rc<RefCell<ObjStringStore>>,
-        chunk_store: Rc<RefCell<ChunkStore>>,
-        class_store: Box<CoreClassStore>,
-    ) -> Self {
-        let empty_chunk = heap.borrow_mut().allocate(Chunk::new());
-        let init_string = string_store
-            .borrow_mut()
-            .new_gc_obj_string(&mut heap.borrow_mut(), "__init__");
-        let next_string = string_store
-            .borrow_mut()
-            .new_gc_obj_string(&mut heap.borrow_mut(), "__next__");
-        Vm {
+    pub fn new() -> Self {
+        let heap = memory::Heap::new();
+        // # Safety
+        // We create some dangling GC pointers here. This is safe because the fields are
+        // re-assigned immediately to valid GC pointers by init_heap_allocated_data.
+        let mut vm = Vm {
             ip: ptr::null(),
-            active_chunk: empty_chunk,
+            active_chunk: unsafe { Gc::dangling() },
             frames: Vec::with_capacity(common::FRAMES_MAX),
             stack: Stack::new(),
             globals: object::new_obj_string_value_map(),
             open_upvalues: Vec::new(),
-            init_string,
-            next_string,
-            class_store,
-            chunk_store,
-            string_store,
+            init_string: unsafe { Gc::dangling() },
+            next_string: unsafe { Gc::dangling() },
+            class_store: unsafe { CoreClassStore::new_empty() },
+            chunks: Vec::new(),
+            core_chunks: Vec::new(),
+            string_class: unsafe { Root::dangling() },
+            string_store: HashMap::with_hasher(BuildPassThroughHasher::default()),
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
             working_class_def: None,
-        }
+        };
+        vm.init_heap_allocated_data();
+        vm
+    }
+
+    pub fn with_built_ins() -> Self {
+        let mut vm = Self::new();
+        vm.init_built_in_globals();
+        vm
     }
 
     pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
-        let closure = object::new_gc_obj_closure(&mut self.heap.borrow_mut(), function.as_gc());
+        let closure = object::new_gc_obj_closure(self, function.as_gc());
         self.push(Value::ObjClosure(closure));
         self.stack.extend_from_slice(args);
         self.call_value(Value::ObjClosure(closure), args.len())?;
@@ -197,29 +158,81 @@ impl Vm {
         }
     }
 
-    pub fn get_global(&self, name: &str) -> Option<Value> {
-        let name = self
-            .string_store
-            .borrow_mut()
-            .new_gc_obj_string(&mut self.heap.borrow_mut(), name);
+    pub fn get_global(&mut self, name: &str) -> Option<Value> {
+        let name = self.new_gc_obj_string(name);
         self.globals.get(&name).copied()
     }
 
     pub fn set_global(&mut self, name: &str, value: Value) {
-        let name = self
-            .string_store
-            .borrow_mut()
-            .new_gc_obj_string(&mut self.heap.borrow_mut(), name);
+        let name = self.new_gc_obj_string(name);
         self.globals.insert(name, value);
     }
 
     pub fn define_native(&mut self, name: &str, function: NativeFn) {
-        let native = object::new_root_obj_native(&mut self.heap.borrow_mut(), function);
-        let name = self
-            .string_store
-            .borrow_mut()
-            .new_gc_obj_string(&mut self.heap.borrow_mut(), name);
+        let native = object::new_root_obj_native(self, function);
+        let name = self.new_gc_obj_string(name);
         self.globals.insert(name, Value::ObjNative(native.as_gc()));
+    }
+
+    pub fn new_gc_obj_string(&mut self, data: &str) -> Gc<ObjString> {
+        let hash = {
+            let mut hasher = FnvHasher::new();
+            (*data).hash(&mut hasher);
+            hasher.finish()
+        };
+        if let Some(gc_string) = self.string_store.get(&hash).map(|v| v.as_gc()) {
+            return gc_string;
+        }
+        let ret = self.allocate(ObjString::new(self.string_class.as_gc(), data, hash));
+        self.string_store.insert(hash, ret.as_root());
+        ret
+    }
+
+    pub fn reset(&mut self) {
+        self.reset_stack();
+        self.chunks = self.core_chunks.clone();
+        self.globals = object::new_obj_string_value_map();
+        self.init_built_in_globals();
+    }
+
+    pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> usize {
+        let root = self.allocate_root(chunk);
+        self.chunks.push(root);
+        self.chunks.len() - 1
+    }
+
+    pub(crate) fn get_chunk(&self, index: usize) -> Gc<Chunk> {
+        self.chunks[index].as_gc()
+    }
+
+    pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+        let mut roots: Vec<&dyn GcManaged> = vec![
+            &self.stack,
+            &self.globals,
+            &self.frames,
+            &self.open_upvalues,
+        ];
+        if let Some(def) = self.working_class_def.as_ref() {
+            roots.push(def);
+        }
+        self.heap.allocate_bare(&roots, data)
+    }
+
+    pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
+        self.allocate_root(data).as_gc()
+    }
+
+    pub(crate) fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
+        let mut roots: Vec<&dyn GcManaged> = vec![
+            &self.stack,
+            &self.globals,
+            &self.frames,
+            &self.open_upvalues,
+        ];
+        if let Some(def) = self.working_class_def.as_ref() {
+            roots.push(def);
+        }
+        self.heap.allocate_root(&roots, data)
     }
 
     fn run(&mut self) -> Result<Value, Error> {
@@ -453,11 +466,9 @@ impl Vm {
                     let a = self.pop();
                     match (a, b) {
                         (Value::ObjString(a), Value::ObjString(b)) => {
-                            let value =
-                                Value::ObjString(self.string_store.borrow_mut().new_gc_obj_string(
-                                    &mut self.heap.borrow_mut(),
-                                    format!("{}{}", *a, *b).as_str(),
-                                ));
+                            let value = Value::ObjString(
+                                self.new_gc_obj_string(format!("{}{}", *a, *b).as_str()),
+                            );
                             self.stack.push(value)
                         }
 
@@ -495,14 +506,12 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::FormatString as u8 => {
-                    let value = self.peek(0);
+                    let value = *self.peek(0);
                     if value.try_as_obj_string().is_some() {
                         continue;
                     }
-                    let obj = Value::ObjString(self.string_store.borrow_mut().new_gc_obj_string(
-                        &mut self.heap.borrow_mut(),
-                        format!("{}", value).as_str(),
-                    ));
+                    let obj =
+                        Value::ObjString(self.new_gc_obj_string(format!("{}", value).as_str()));
                     *self.peek_mut(0) = obj;
                 }
 
@@ -524,20 +533,13 @@ impl Vm {
                     }
                     let new_stack_size = self.stack.len() - num_operands;
                     self.stack.truncate(new_stack_size);
-                    let value = Value::ObjString(
-                        self.string_store
-                            .borrow_mut()
-                            .new_gc_obj_string(&mut self.heap.borrow_mut(), new_string.as_str()),
-                    );
+                    let value = Value::ObjString(self.new_gc_obj_string(new_string.as_str()));
                     self.push(value);
                 }
 
                 byte if byte == OpCode::BuildVec as u8 => {
                     let num_operands = read_byte!() as usize;
-                    let vec = object::new_root_obj_vec(
-                        &mut self.heap.borrow_mut(),
-                        self.class_store.get_obj_vec_class(),
-                    );
+                    let vec = object::new_root_obj_vec(self, self.class_store.get_obj_vec_class());
                     let begin = self.stack.len() - num_operands;
                     let end = self.stack.len();
                     vec.borrow_mut().elements = self.stack[begin..end].iter().copied().collect();
@@ -604,7 +606,7 @@ impl Vm {
 
                     let upvalue_count = function.upvalue_count;
 
-                    let closure = object::new_gc_obj_closure(&mut self.heap.borrow_mut(), function);
+                    let closure = object::new_gc_obj_closure(self, function);
                     self.push(Value::ObjClosure(closure));
 
                     for i in 0..upvalue_count {
@@ -637,7 +639,7 @@ impl Vm {
                         return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
-                    self.active_chunk = self.chunk_store.borrow().get_chunk(prev_chunk_index);
+                    self.active_chunk = self.get_chunk(prev_chunk_index);
                     self.ip = prev_ip;
 
                     self.stack.truncate(prev_stack_size);
@@ -646,13 +648,10 @@ impl Vm {
 
                 byte if byte == OpCode::DeclareClass as u8 => {
                     let name = read_string!();
-                    let metaclass_name = self.string_store.borrow_mut().new_gc_obj_string(
-                        &mut self.heap.borrow_mut(),
-                        format!("{}Class", *name).as_str(),
-                    );
+                    let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
                     self.working_class_def = Some(ClassDef::new(name, metaclass_name));
                     let class = object::new_gc_obj_class(
-                        &mut self.heap.borrow_mut(),
+                        self,
                         name,
                         self.class_store.get_obj_base_metaclass(),
                         object::new_obj_string_value_map(),
@@ -663,19 +662,20 @@ impl Vm {
                 byte if byte == OpCode::DefineClass as u8 => {
                     let class_def = self.working_class_def.as_ref().expect("Expected ClassDef.");
 
+                    let base_metaclass = self.class_store.get_obj_base_metaclass();
+                    let name = class_def.name;
+                    let metaclass_name = class_def.metaclass_name;
+                    let methods = class_def.methods.clone();
+                    let static_methods = class_def.static_methods.clone();
                     let metaclass = object::new_root_obj_class(
-                        &mut self.heap.borrow_mut(),
-                        class_def.metaclass_name,
-                        self.class_store.get_obj_base_metaclass(),
-                        class_def.static_methods.clone(),
+                        self,
+                        metaclass_name,
+                        base_metaclass,
+                        static_methods,
                     );
 
-                    let defined_class = object::new_root_obj_class(
-                        &mut self.heap.borrow_mut(),
-                        class_def.name,
-                        metaclass.as_gc(),
-                        class_def.methods.clone(),
-                    );
+                    let defined_class =
+                        object::new_root_obj_class(self, name, metaclass.as_gc(), methods);
                     self.working_class_def = None;
                     *self.peek_mut(0) = Value::ObjClass(defined_class.as_gc());
                 }
@@ -726,7 +726,7 @@ impl Vm {
             }
 
             Value::ObjClass(class) => {
-                let instance = object::new_gc_obj_instance(&mut self.heap.borrow_mut(), class);
+                let instance = object::new_gc_obj_instance(self, class);
                 *self.peek_mut(arg_count) = Value::ObjInstance(instance);
 
                 let init = class.methods.get(&self.init_string);
@@ -824,7 +824,7 @@ impl Vm {
         }
 
         let chunk_index = closure.borrow().function.chunk_index;
-        self.active_chunk = self.chunk_store.borrow().get_chunk(chunk_index);
+        self.active_chunk = self.get_chunk(chunk_index);
         self.frames.push(CallFrame {
             closure,
             prev_ip: self.ip,
@@ -838,7 +838,14 @@ impl Vm {
         let function = native.function;
         let frame_end = self.stack.len();
         let frame_begin = frame_end - arg_count - 1;
-        let result = function(self, &self.stack[frame_begin..frame_end])?;
+        // # Safety
+        // Native functions accept a mutable Vm instance _and_ a slice of Value objects representing
+        // arguments to the native function. In general this is unsafe, but because the stack cannot
+        // be mutated via the Vm object, it is safe to hand the native function a mutable Vm _and_
+        // an immutable slice of stack data.
+        let args =
+            unsafe { slice::from_raw_parts(&self.stack[frame_begin], frame_end - frame_begin) };
+        let result = function(self, args)?;
         self.stack.truncate(frame_begin + 1);
         *self.peek_mut(0) = result;
         Ok(())
@@ -857,10 +864,7 @@ impl Vm {
             let function = frame.closure.borrow().function;
 
             let mut new_msg = String::new();
-            let chunk = self
-                .chunk_store
-                .borrow()
-                .get_chunk(frame.closure.borrow().function.chunk_index);
+            let chunk = self.get_chunk(frame.closure.borrow().function.chunk_index);
             let instruction = chunk.code_offset(ips[i]) - 1;
             write!(new_msg, "[line {}] in ", chunk.lines[instruction])
                 .expect("Unable to write error to buffer.");
@@ -891,19 +895,18 @@ impl Vm {
 
     fn bind_method(&mut self, class: Gc<ObjClass>, name: Gc<ObjString>) -> Result<(), Error> {
         let instance = *self.peek(0);
-        let bound =
-            match class.methods.get(&name) {
-                Some(Value::ObjClosure(ptr)) => Value::ObjBoundMethod(
-                    object::new_gc_obj_bound_method(&mut self.heap.borrow_mut(), instance, *ptr),
-                ),
-                Some(Value::ObjNative(ptr)) => Value::ObjBoundNative(
-                    object::new_gc_obj_bound_method(&mut self.heap.borrow_mut(), instance, *ptr),
-                ),
-                None => {
-                    return error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
-                }
-                _ => unreachable!(),
-            };
+        let bound = match class.methods.get(&name) {
+            Some(Value::ObjClosure(ptr)) => {
+                Value::ObjBoundMethod(object::new_gc_obj_bound_method(self, instance, *ptr))
+            }
+            Some(Value::ObjNative(ptr)) => {
+                Value::ObjBoundNative(object::new_gc_obj_bound_method(self, instance, *ptr))
+            }
+            None => {
+                return error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
+            }
+            _ => unreachable!(),
+        };
         self.pop();
         self.push(bound);
         Ok(())
@@ -918,7 +921,7 @@ impl Vm {
         let upvalue = if let Some(upvalue) = result {
             *upvalue
         } else {
-            object::new_gc_obj_upvalue(&mut self.heap.borrow_mut(), location)
+            object::new_gc_obj_upvalue(self, location)
         };
 
         self.open_upvalues.push(upvalue);
@@ -949,12 +952,8 @@ impl Vm {
 
         // Cache miss! Create the range and cache it.
 
-        let range = object::new_root_obj_range(
-            &mut self.heap.borrow_mut(),
-            self.class_store.get_obj_range_class(),
-            begin,
-            end,
-        );
+        let range =
+            object::new_root_obj_range(self, self.class_store.get_obj_range_class(), begin, end);
         let range_gc = range.as_gc();
 
         // Check the cache size. If we're at the limit, evict the oldest element.
@@ -973,6 +972,66 @@ impl Vm {
         }
 
         range_gc
+    }
+
+    fn init_heap_allocated_data(&mut self) {
+        // # Safety
+        // The intialisation here involves creating a set of immutable objects with cyclic
+        // dependencies. To facilitate this we have to retain a mutable reference to the class that
+        // backs an instance of ObjString. Between initialisation and modification, we hand out
+        // immutable references to this object to each instance of ObjString. We then modify the
+        // original instance to give a name and methods to the class. The class name is only used by the
+        // Display trait and the methods are only used by the VM once all core classes have been
+        // instantiated, so in this scenario the aliasing is safe.
+        let mut obj_base_metaclass_ptr = class_store::new_base_metaclass(self);
+        let root_obj_base_metaclass = Root::from(obj_base_metaclass_ptr);
+        let mut string_class_ptr =
+            self.allocate_bare(ObjClass::new(root_obj_base_metaclass.as_gc()));
+
+        self.string_class = Root::from(string_class_ptr);
+        let class_name = self.new_gc_obj_string("String");
+        unsafe {
+            string_class_ptr.as_mut().data_mut().name = Some(class_name);
+            core::bind_gc_obj_string_class(self, &mut string_class_ptr);
+        }
+
+        let base_metaclass_name = self.new_gc_obj_string("Class");
+        // # Safety
+        // We're modifying data for which there are immutable references held by other data
+        // structures. Because the code is single-threaded and the immutable references aren't being
+        // used to access the data at this point in time (class names are only used by the Display
+        // trait), mutating the data here should be safe.
+        unsafe {
+            obj_base_metaclass_ptr.as_mut().data_mut().name = Some(base_metaclass_name);
+        }
+
+        let empty_chunk = self.allocate(Chunk::new());
+        let init_string = self.new_gc_obj_string("__init__");
+        let next_string = self.new_gc_obj_string("__next__");
+        self.active_chunk = empty_chunk;
+        self.init_string = init_string;
+        self.next_string = next_string;
+        let class_store = CoreClassStore::new_with_built_ins(self, root_obj_base_metaclass);
+        self.core_chunks = self.chunks.clone();
+        self.class_store = class_store;
+    }
+
+    fn init_built_in_globals(&mut self) {
+        self.define_native("clock", core::clock_native);
+        self.define_native("print", core::default_print);
+        self.define_native("sentinel", core::sentinel);
+        let obj_string_class = self.string_class.as_gc();
+        self.set_global("String", Value::ObjClass(obj_string_class));
+        let obj_iter_class = self.class_store.get_obj_iter_class();
+        self.set_global("Iter", Value::ObjClass(obj_iter_class));
+        let obj_map_iter_class = self.class_store.get_obj_map_iter_class();
+        self.set_global("MapIter", Value::ObjClass(obj_map_iter_class));
+        let obj_filter_iter_class = self.class_store.get_obj_filter_iter_class();
+        self.set_global("FilterIter", Value::ObjClass(obj_filter_iter_class));
+        let obj_vec_class = self.class_store.get_obj_vec_class();
+        self.set_global("Vec", Value::ObjClass(obj_vec_class));
+        let obj_range_class = self.class_store.get_obj_range_class();
+        self.set_global("Range", Value::ObjClass(obj_range_class));
     }
 
     fn frame(&self) -> &CallFrame {

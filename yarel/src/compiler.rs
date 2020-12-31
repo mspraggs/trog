@@ -17,14 +17,15 @@ use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::mem;
 
-use crate::chunk::{Chunk, ChunkStore, OpCode};
+use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Heap, Root};
-use crate::object::{self, ObjFunction, ObjStringStore};
+use crate::memory::Root;
+use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
+use crate::vm::Vm;
 
 #[derive(Copy, Clone)]
 enum Precedence {
@@ -153,17 +154,12 @@ impl Compiler {
         }
     }
 
-    fn make_function(
-        &mut self,
-        heap: &mut Heap,
-        string_store: &mut ObjStringStore,
-        chunk_store: &mut ChunkStore,
-    ) -> Root<ObjFunction> {
-        let name = string_store.new_gc_obj_string(heap, self.func_name.as_str());
+    fn make_function(&mut self, vm: &mut Vm) -> Root<ObjFunction> {
+        let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
-        let chunk_index = chunk_store.add_chunk(heap, chunk);
-        object::new_root_obj_function(heap, name, self.func_arity, num_upvalues, chunk_index)
+        let chunk_index = vm.add_chunk(chunk);
+        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk_index)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -215,15 +211,10 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(
-    heap: &mut Heap,
-    chunk_store: &mut ChunkStore,
-    string_store: &mut ObjStringStore,
-    source: String,
-) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
 
-    let mut parser = Parser::new(heap, &mut scanner, chunk_store, string_store);
+    let mut parser = Parser::new(vm, &mut scanner);
     parser.parse()
 }
 
@@ -237,18 +228,11 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
-    chunk_store: &'a mut ChunkStore,
-    string_store: &'a mut ObjStringStore,
-    heap: &'a mut Heap,
+    vm: &'a mut Vm,
 }
 
 impl<'a> Parser<'a> {
-    fn new(
-        heap: &'a mut Heap,
-        scanner: &'a mut Scanner,
-        chunk_store: &'a mut ChunkStore,
-        string_store: &'a mut ObjStringStore,
-    ) -> Parser<'a> {
+    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -259,9 +243,7 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
-            chunk_store,
-            string_store,
-            heap,
+            vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
         ret
@@ -360,11 +342,11 @@ impl<'a> Parser<'a> {
         self.emit_return();
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.heap, self.string_store, self.chunk_store);
+        let function = compiler.make_function(self.vm);
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
-            let chunk = self.chunk_store.get_chunk(function.chunk_index);
+            let chunk = self.vm.get_chunk(function.chunk_index);
             let func_name = format!("{}", *function);
             debug::disassemble_chunk(&chunk, &func_name);
         }
@@ -814,10 +796,7 @@ impl<'a> Parser<'a> {
     }
 
     fn identifier_constant(&mut self, token: &Token) -> u8 {
-        let value = Value::ObjString(
-            self.string_store
-                .new_gc_obj_string(self.heap, &token.source),
-        );
+        let value = Value::ObjString(self.vm.new_gc_obj_string(&token.source));
         self.make_constant(value)
     }
 
@@ -1204,7 +1183,7 @@ impl<'a> Parser<'a> {
     }
 
     fn string(s: &mut Parser, _can_assign: bool) {
-        let value = Value::ObjString(s.string_store.new_gc_obj_string(s.heap, &s.previous.source));
+        let value = Value::ObjString(s.vm.new_gc_obj_string(&s.previous.source));
         s.emit_constant(value);
     }
 
@@ -1212,8 +1191,7 @@ impl<'a> Parser<'a> {
         let mut arg_count = 0;
         loop {
             if !s.previous.source.is_empty() {
-                let value =
-                    Value::ObjString(s.string_store.new_gc_obj_string(s.heap, &s.previous.source));
+                let value = Value::ObjString(s.vm.new_gc_obj_string(&s.previous.source));
                 s.emit_constant(value);
                 arg_count += 1;
             }
@@ -1227,10 +1205,7 @@ impl<'a> Parser<'a> {
 
         s.advance();
         if !s.previous.source.is_empty() {
-            let value = Value::ObjString(
-                s.string_store
-                    .new_gc_obj_string(s.heap, s.previous.source.as_str()),
-            );
+            let value = Value::ObjString(s.vm.new_gc_obj_string(s.previous.source.as_str()));
             s.emit_constant(value);
             arg_count += 1;
         }

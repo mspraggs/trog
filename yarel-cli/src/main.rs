@@ -19,10 +19,9 @@ use std::io::{self, Write};
 use std::process;
 
 use yarel::error::ErrorKind;
-use yarel::shared_context;
-use yarel::vm;
+use yarel::vm::{self, Vm};
 
-fn repl(vm: &mut vm::Vm) {
+fn repl(vm: &mut Vm) {
     loop {
         print!("> ");
         io::stdout().flush().unwrap();
@@ -47,7 +46,7 @@ fn repl(vm: &mut vm::Vm) {
     }
 }
 
-fn run_file(vm: &mut vm::Vm, path: &str) {
+fn run_file(vm: &mut Vm, path: &str) {
     let source = fs::read_to_string(path);
     let result = match source {
         Ok(contents) => vm::interpret(vm, contents),
@@ -68,8 +67,7 @@ fn run_file(vm: &mut vm::Vm, path: &str) {
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    let (heap, string_store, chunk_store, class_store) = shared_context::new_shared_context();
-    let mut vm = vm::new_root_vm_with_built_ins(heap, string_store, chunk_store, class_store);
+    let mut vm = Vm::with_built_ins();
 
     if args.len() == 1 {
         repl(&mut vm);

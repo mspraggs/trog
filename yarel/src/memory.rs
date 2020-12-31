@@ -20,9 +20,8 @@ use std::any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::mem;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::ptr::NonNull;
-use std::rc::Rc;
 
 use crate::common;
 
@@ -85,67 +84,19 @@ impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
     }
 }
 
-pub struct UniqueRoot<T: 'static + GcManaged + ?Sized> {
-    ptr: GcBoxPtr<T>,
-}
-
-impl<T: 'static + GcManaged + ?Sized> UniqueRoot<T> {
-    fn inc_num_roots(&mut self) {
-        self.gc_box_mut().inc_num_roots();
-    }
-
-    fn dec_num_roots(&mut self) {
-        self.gc_box_mut().dec_num_roots();
-    }
-}
-
-impl<T: GcManaged + ?Sized> UniqueRoot<T> {
-    fn gc_box(&self) -> &GcBox<T> {
-        unsafe { self.ptr.as_ref() }
-    }
-
-    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
-        unsafe { self.ptr.as_mut() }
-    }
-}
-
-impl<T: 'static + GcManaged + ?Sized> GcManaged for UniqueRoot<T> {
-    fn mark(&self) {
-        self.gc_box().mark();
-    }
-
-    fn blacken(&self) {
-        self.gc_box().blacken();
-    }
-}
-
-impl<T: 'static + GcManaged> Deref for UniqueRoot<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.gc_box().data
-    }
-}
-
-impl<T: 'static + GcManaged> DerefMut for UniqueRoot<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.gc_box_mut().data
-    }
-}
-
-impl<T: 'static + GcManaged + ?Sized> Drop for UniqueRoot<T> {
-    fn drop(&mut self) {
-        self.dec_num_roots();
-    }
-}
-
 pub struct Root<T: 'static + GcManaged + ?Sized> {
-    ptr: GcBoxPtr<T>,
+    ptr: Option<GcBoxPtr<T>>,
 }
 
 impl<T: GcManaged> Root<T> {
+    pub unsafe fn dangling() -> Self {
+        Root { ptr: None }
+    }
+
     pub fn as_gc(&self) -> Gc<T> {
-        Gc { ptr: self.ptr }
+        Gc {
+            ptr: self.ptr.expect("Expected initialised Root."),
+        }
     }
 }
 
@@ -161,11 +112,21 @@ impl<T: 'static + GcManaged + ?Sized> Root<T> {
 
 impl<T: GcManaged + ?Sized> Root<T> {
     fn gc_box(&self) -> &GcBox<T> {
-        unsafe { self.ptr.as_ref() }
+        unsafe {
+            self.ptr
+                .as_ref()
+                .expect("Expected initialised Root.")
+                .as_ref()
+        }
     }
 
     fn gc_box_mut(&mut self) -> &mut GcBox<T> {
-        unsafe { self.ptr.as_mut() }
+        unsafe {
+            self.ptr
+                .as_mut()
+                .expect("Expected initialised Root.")
+                .as_mut()
+        }
     }
 }
 
@@ -197,13 +158,16 @@ impl<T: 'static + GcManaged> Deref for Root<T> {
 
 impl<T: 'static + GcManaged + ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
+        if self.ptr.is_none() {
+            return;
+        }
         self.dec_num_roots();
     }
 }
 
 impl<T: GcManaged> From<Gc<T>> for Root<T> {
     fn from(gc: Gc<T>) -> Self {
-        let mut ret = Root { ptr: gc.ptr };
+        let mut ret = Root { ptr: Some(gc.ptr) };
         ret.inc_num_roots();
         ret
     }
@@ -211,7 +175,7 @@ impl<T: GcManaged> From<Gc<T>> for Root<T> {
 
 impl<T: GcManaged> From<GcBoxPtr<T>> for Root<T> {
     fn from(ptr: GcBoxPtr<T>) -> Self {
-        let mut ret = Root { ptr: ptr };
+        let mut ret = Root { ptr: Some(ptr) };
         ret.inc_num_roots();
         ret
     }
@@ -279,7 +243,7 @@ pub struct Heap {
 }
 
 impl Heap {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Heap {
             collection_threshold: common::HEAP_INIT_BYTES_MAX,
             bytes_allocated: 0,
@@ -287,27 +251,32 @@ impl Heap {
         }
     }
 
-    pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
+    pub(crate) fn allocate<T: 'static + GcManaged>(
+        &mut self,
+        static_roots: &[&dyn GcManaged],
+        data: T,
+    ) -> Gc<T> {
         Gc {
-            ptr: self.allocate_bare(data),
+            ptr: self.allocate_bare(static_roots, data),
         }
     }
-    pub fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
-        self.allocate(data).as_root()
-    }
-    pub fn allocate_unique_root<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
-        let mut ret = UniqueRoot {
-            ptr: self.allocate_bare(data),
-        };
-        ret.inc_num_roots();
-        ret
+    pub(crate) fn allocate_root<T: 'static + GcManaged>(
+        &mut self,
+        static_roots: &[&dyn GcManaged],
+        data: T,
+    ) -> Root<T> {
+        self.allocate(static_roots, data).as_root()
     }
 
-    pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+    pub(crate) fn allocate_bare<T: 'static + GcManaged>(
+        &mut self,
+        static_roots: &[&dyn GcManaged],
+        data: T,
+    ) -> GcBoxPtr<T> {
         if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
-            self.collect();
+            self.collect(static_roots);
         } else {
-            self.collect_if_required();
+            self.collect_if_required(static_roots);
         }
         let mut obj = Box::new(GcBox {
             colour: Cell::new(Colour::White),
@@ -335,13 +304,13 @@ impl Heap {
         gc_box_ptr
     }
 
-    fn collect(&mut self) {
+    fn collect(&mut self, static_roots: &[&dyn GcManaged]) {
         if cfg!(feature = "debug_trace_gc") {
             println!("-- gc begin")
         }
 
-        self.mark_roots();
-        self.trace_references();
+        self.mark_roots(static_roots);
+        self.trace_references(static_roots);
         let bytes_freed = self.sweep();
 
         let prev_bytes_allocated = self.bytes_allocated;
@@ -357,14 +326,15 @@ impl Heap {
         }
     }
 
-    fn collect_if_required(&mut self) {
+    fn collect_if_required(&mut self, static_roots: &[&dyn GcManaged]) {
         if self.bytes_allocated >= self.collection_threshold {
-            self.collect();
+            self.collect(static_roots);
         }
     }
 
-    fn mark_roots(&mut self) {
+    fn mark_roots(&mut self, static_roots: &[&dyn GcManaged]) {
         self.objects.iter_mut().for_each(|obj| obj.unmark());
+        static_roots.iter().for_each(|o| o.mark());
         self.objects.iter_mut().for_each(|obj| {
             if obj.num_roots.get() > 0 {
                 obj.mark();
@@ -372,12 +342,13 @@ impl Heap {
         });
     }
 
-    fn trace_references(&mut self) {
+    fn trace_references(&mut self, static_roots: &[&dyn GcManaged]) {
         let mut num_greys = self
             .objects
             .iter()
             .filter(|obj| obj.colour.get() == Colour::Grey)
             .count();
+        static_roots.iter().for_each(|o| o.blacken());
         #[allow(clippy::suspicious_map)]
         while num_greys > 0 {
             num_greys = self
@@ -406,10 +377,6 @@ impl Heap {
 
         bytes_marked
     }
-}
-
-pub(crate) fn new_heap() -> Rc<RefCell<Heap>> {
-    Rc::new(RefCell::new(Heap::new()))
 }
 
 impl<T: GcManaged> GcManaged for RefCell<T> {

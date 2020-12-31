@@ -18,7 +18,7 @@ use std::{io, process};
 mod test;
 mod utils;
 
-use yarel::shared_context;
+use yarel::vm::Vm;
 
 fn main() {
     let paths = match utils::get_paths("tests", Some(".yl")) {
@@ -34,18 +34,12 @@ fn main() {
     let mut num_failed = 0;
     let mut stdout = io::stdout();
 
-    let (heap, string_store, chunk_store, class_store) = shared_context::new_shared_context();
+    let mut vm = Vm::with_built_ins();
 
     let failures: Vec<test::Failure> = paths
         .iter()
         .map(|p| {
-            let ret = test::run_test(
-                heap.clone(),
-                string_store.clone(),
-                chunk_store.clone(),
-                &class_store,
-                p,
-            );
+            let ret = test::run_test(p, &mut vm);
             match ret {
                 Ok(ref success) => {
                     if !success.skipped {

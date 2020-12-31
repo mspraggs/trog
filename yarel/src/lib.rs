@@ -25,7 +25,6 @@ mod hash;
 pub mod memory;
 pub mod object;
 mod scanner;
-pub mod shared_context;
 mod stack;
 mod utils;
 pub mod value;
