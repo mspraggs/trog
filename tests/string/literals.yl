@@ -2,6 +2,7 @@
 // a string
 // A~¶Þॐஃ
 // another string
+// ÿ
 // volé
 // 💩
 // 0
@@ -9,5 +10,6 @@ print("(" + "" + ")");
 print("a string");
 print("A~¶Þॐஃ");
 print("\x61nother string");
+print("\xff");
 print("vol\uc3a9");
 print("\Uf09f92a9");

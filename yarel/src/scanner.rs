@@ -449,8 +449,9 @@ impl Scanner {
                 }
             }
         }
-        if num_bytes == 1 {
-            return Ok(String::from_utf8_lossy(&bytes).to_string());
+        if num_bytes == 1 && *bytes.last().unwrap() > 127_u8 {
+            bytes.insert(0, 195);
+            *bytes.last_mut().unwrap() &= 0b1011_1111;
         }
         match String::from_utf8(bytes) {
             Ok(s) => Ok(s),
