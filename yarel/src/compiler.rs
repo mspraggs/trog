@@ -1163,7 +1163,13 @@ impl<'a> Parser<'a> {
     }
 
     fn number(s: &mut Parser, _can_assign: bool) {
-        let value = s.previous.source.as_str().parse::<f64>().unwrap();
+        let value = match s.previous.source.as_str().parse::<f64>() {
+            Ok(n) => n,
+            Err(_) => {
+                s.error("Unable to parse number.");
+                return;
+            }
+        };
         s.emit_constant(value::Value::Number(value));
     }
 
