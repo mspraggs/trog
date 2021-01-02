@@ -1,0 +1,4 @@
+// Expected a positive integer less than 256 but found '256'.
+// [line 4] in script
+// 0
+String.from_ascii([256]);

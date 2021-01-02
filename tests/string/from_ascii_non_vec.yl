@@ -1,0 +1,4 @@
+// Expected a Vec instance but found 'some arg'.
+// [line 4] in script
+// 0
+String.from_ascii("some arg");

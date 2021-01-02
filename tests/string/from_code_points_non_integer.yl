@@ -1,0 +1,4 @@
+// Expected a positive integer less than 4294967295 but found '1234.5'.
+// [line 4] in script
+// 0
+String.from_code_points([1234.5]);

@@ -187,7 +187,7 @@ pub(crate) fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
         };
         let mut ptr = vm.allocate_bare(data);
         let root = Root::from(ptr);
-        ptr.as_mut().data_mut().metaclass = root.as_gc();
+        ptr.as_mut().data.metaclass = root.as_gc();
         ptr
     }
 }

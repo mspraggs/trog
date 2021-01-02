@@ -1,0 +1,4 @@
+// Expected 1 parameter but found 0.
+// [line 4] in script
+// 70
+String.from_code_points();

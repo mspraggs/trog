@@ -13,6 +13,7 @@
  * limitations under the License.
  */
 
+use std::char;
 use std::time;
 
 use crate::common;
@@ -88,7 +89,20 @@ pub(crate) fn sentinel(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
 /// String implementation
 
-pub(crate) unsafe fn bind_gc_obj_string_class(vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
+pub(crate) unsafe fn bind_gc_obj_string_class(
+    vm: &mut Vm,
+    class: &mut GcBoxPtr<ObjClass>,
+    metaclass: &mut GcBoxPtr<ObjClass>,
+) {
+    let static_method_map = [
+        ("from_ascii", string_from_ascii as NativeFn),
+        ("from_utf8", string_from_utf8 as NativeFn),
+        ("from_code_points", string_from_code_points as NativeFn),
+    ];
+    let (static_methods, _native_roots) = build_methods(vm, &static_method_map, None);
+
+    metaclass.as_mut().data.methods = static_methods;
+
     let method_map = [
         ("__init__", string_init as NativeFn),
         ("__getitem__", string_get_item as NativeFn),
@@ -107,7 +121,144 @@ pub(crate) unsafe fn bind_gc_obj_string_class(vm: &mut Vm, class: &mut GcBoxPtr<
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
 
-    class.as_mut().data_mut().methods = methods;
+    class.as_mut().data.methods = methods;
+}
+
+fn string_from_ascii(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let vec_arg = args[1].try_as_obj_vec().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::TypeError,
+            &format!("Expected a Vec instance but found '{}'.", args[1]),
+        )
+    })?;
+
+    let mut bytes = Vec::with_capacity(vec_arg.borrow().elements.len() * 2);
+
+    for value in vec_arg.borrow().elements.iter() {
+        let num = value.try_as_number().ok_or_else(|| {
+            Error::with_message(
+                ErrorKind::TypeError,
+                &format!("Expected a number but found '{}'.", value),
+            )
+        })?;
+        if num < 0.0 || num > 255.0 || num.trunc() != num {
+            return error!(
+                ErrorKind::ValueError,
+                "Expected a positive integer less than 256 but found '{}'.", num
+            );
+        }
+        if num > 127.0 {
+            bytes.push(195_u8);
+            bytes.push((num as u8) & 0b1011_1111);
+        } else {
+            bytes.push(num as u8);
+        }
+    }
+
+    let string = vm.new_gc_obj_string(&String::from_utf8(bytes).map_err(|_| {
+        Error::with_message(
+            ErrorKind::ValueError,
+            &format!("Unable to create a string from byte sequence."),
+        )
+    })?);
+
+    Ok(Value::ObjString(string))
+}
+
+fn string_from_utf8(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let vec_arg = args[1].try_as_obj_vec().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::TypeError,
+            &format!("Expected a Vec instance but found '{}'.", args[1]),
+        )
+    })?;
+
+    let bytes: Result<Vec<u8>, Error> = vec_arg
+        .borrow()
+        .elements
+        .iter()
+        .map(|v| {
+            let num = v.try_as_number().ok_or_else(|| {
+                Error::with_message(
+                    ErrorKind::TypeError,
+                    &format!("Expected a number but found '{}'.", v),
+                )
+            })?;
+            if num < 0.0 || num > 255.0 || num.trunc() != num {
+                error!(
+                    ErrorKind::ValueError,
+                    "Expected a positive integer less than 256 but found '{}'.", num
+                )
+            } else {
+                Ok(num as u8)
+            }
+        })
+        .collect();
+
+    let string = vm.new_gc_obj_string(&String::from_utf8(bytes?).map_err(|e| {
+        let index = e.utf8_error().valid_up_to();
+        let byte = e.into_bytes()[index];
+        Error::with_message(
+            ErrorKind::ValueError,
+            &format!(
+                "Invalid Unicode encountered at byte {} with index {}.",
+                byte, index,
+            ),
+        )
+    })?);
+
+    Ok(Value::ObjString(string))
+}
+
+fn string_from_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let vec_arg = args[1].try_as_obj_vec().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::TypeError,
+            &format!("Expected a Vec instance but found '{}'.", args[1]),
+        )
+    })?;
+
+    let string: Result<String, Error> = vec_arg
+        .borrow()
+        .elements
+        .iter()
+        .map(|v| {
+            let num = v.try_as_number().ok_or_else(|| {
+                Error::with_message(
+                    ErrorKind::TypeError,
+                    &format!("Expected a number but found '{}'.", v),
+                )
+            })?;
+            if num < 0.0 || num > u32::MAX as f64 || num.trunc() != num {
+                error!(
+                    ErrorKind::ValueError,
+                    "Expected a positive integer less than {} but found '{}'.",
+                    u32::MAX,
+                    num
+                )
+            } else {
+                char::from_u32(num as u32).ok_or_else(|| {
+                    Error::with_message(
+                        ErrorKind::ValueError,
+                        &format!(
+                            "Expected a valid Unicode code point but found '{}'.",
+                            num as u32
+                        ),
+                    )
+                })
+            }
+        })
+        .collect();
+
+    let string = vm.new_gc_obj_string(&string?);
+
+    Ok(Value::ObjString(string))
 }
 
 fn string_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {

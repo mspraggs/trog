@@ -43,14 +43,10 @@ pub(crate) type GcBoxPtr<T> = NonNull<GcBox<T>>;
 pub(crate) struct GcBox<T: GcManaged + ?Sized> {
     colour: Cell<Colour>,
     num_roots: Cell<usize>,
-    data: T,
+    pub(crate) data: T,
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
-    pub(crate) fn data_mut(&mut self) -> &mut T {
-        &mut self.data
-    }
-
     fn unmark(&self) {
         self.colour.set(Colour::White);
     }

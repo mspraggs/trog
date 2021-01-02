@@ -975,34 +975,28 @@ impl Vm {
     }
 
     fn init_heap_allocated_data(&mut self) {
-        // # Safety
-        // The intialisation here involves creating a set of immutable objects with cyclic
-        // dependencies. To facilitate this we have to retain a mutable reference to the class that
-        // backs an instance of ObjString. Between initialisation and modification, we hand out
-        // immutable references to this object to each instance of ObjString. We then modify the
-        // original instance to give a name and methods to the class. The class name is only used by the
-        // Display trait and the methods are only used by the VM once all core classes have been
-        // instantiated, so in this scenario the aliasing is safe.
         let mut obj_base_metaclass_ptr = class_store::new_base_metaclass(self);
         let root_obj_base_metaclass = Root::from(obj_base_metaclass_ptr);
-        let mut string_class_ptr =
+        let mut string_metaclass_ptr =
             self.allocate_bare(ObjClass::new(root_obj_base_metaclass.as_gc()));
+        let root_string_metaclass = Root::from(string_metaclass_ptr);
+        let mut string_class_ptr = self.allocate_bare(ObjClass::new(root_string_metaclass.as_gc()));
 
         self.string_class = Root::from(string_class_ptr);
-        let class_name = self.new_gc_obj_string("String");
-        unsafe {
-            string_class_ptr.as_mut().data_mut().name = Some(class_name);
-            core::bind_gc_obj_string_class(self, &mut string_class_ptr);
-        }
-
         let base_metaclass_name = self.new_gc_obj_string("Class");
+        let string_metaclass_name = self.new_gc_obj_string("StringClass");
+        let string_class_name = self.new_gc_obj_string("String");
         // # Safety
         // We're modifying data for which there are immutable references held by other data
-        // structures. Because the code is single-threaded and the immutable references aren't being
-        // used to access the data at this point in time (class names are only used by the Display
-        // trait), mutating the data here should be safe.
+        // structures (namely metaclass and class objects). Because the code is single-threaded and
+        // the immutable references aren't being used to access the data at this point in time
+        // (class names are only used by the Display trait, and methods are only accessed once code
+        // is run), mutating the data here should be safe.
         unsafe {
-            obj_base_metaclass_ptr.as_mut().data_mut().name = Some(base_metaclass_name);
+            obj_base_metaclass_ptr.as_mut().data.name = Some(base_metaclass_name);
+            string_metaclass_ptr.as_mut().data.name = Some(string_metaclass_name);
+            string_class_ptr.as_mut().data.name = Some(string_class_name);
+            core::bind_gc_obj_string_class(self, &mut string_class_ptr, &mut string_metaclass_ptr);
         }
 
         let empty_chunk = self.allocate(Chunk::new());
