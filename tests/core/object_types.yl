@@ -1,0 +1,78 @@
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// 0
+print(type(Type) == Type);
+
+print(type("123") == Type);
+print(type("123") == Nil);
+print(type("123") == Bool);
+print(type("123") == Num);
+print(type("123") == Sentinel);
+print(type("123") == Func);
+print(type("123") == BuiltIn);
+print(type("123") == Method);
+print(type("123") == BuiltInMethod);
+print(type("123") == String);
+print(type("123") == Vec);
+print(type("123") == Range);
+
+print(type([]) == Type);
+print(type([]) == Nil);
+print(type([]) == Bool);
+print(type([]) == Num);
+print(type([]) == Sentinel);
+print(type([]) == Func);
+print(type([]) == BuiltIn);
+print(type([]) == Method);
+print(type([]) == BuiltInMethod);
+print(type([]) == String);
+print(type([]) == Vec);
+print(type([]) == Range);
+
+print(type(1..3) == Type);
+print(type(1..3) == Nil);
+print(type(1..3) == Bool);
+print(type(1..3) == Num);
+print(type(1..3) == Sentinel);
+print(type(1..3) == Func);
+print(type(1..3) == BuiltIn);
+print(type(1..3) == Method);
+print(type(1..3) == BuiltInMethod);
+print(type(1..3) == String);
+print(type(1..3) == Vec);
+print(type(1..3) == Range);

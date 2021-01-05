@@ -1,0 +1,53 @@
+// true
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// 0
+print(type(Type) == Type);
+
+print(type(|| {}) == Type);
+print(type(|| {}) == Nil);
+print(type(|| {}) == Bool);
+print(type(|| {}) == Num);
+print(type(|| {}) == Sentinel);
+print(type(|| {}) == Func);
+print(type(|| {}) == BuiltIn);
+print(type(|| {}) == Method);
+print(type(|| {}) == BuiltInMethod);
+print(type(|| {}) == String);
+print(type(|| {}) == Vec);
+print(type(|| {}) == Range);
+
+print(type(type) == Type);
+print(type(type) == Nil);
+print(type(type) == Bool);
+print(type(type) == Num);
+print(type(type) == Sentinel);
+print(type(type) == Func);
+print(type(type) == BuiltIn);
+print(type(type) == Method);
+print(type(type) == BuiltInMethod);
+print(type(type) == String);
+print(type(type) == Vec);
+print(type(type) == Range);

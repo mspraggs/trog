@@ -1,0 +1,13 @@
+// true
+// Foo
+// FooClass
+// Type
+// 0
+class Foo {
+}
+print(type(Type) == Type);
+
+var foo = Foo();
+print(type(foo));
+print(type(type(foo)));
+print(type(type(type(foo))));

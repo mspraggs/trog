@@ -1,0 +1,58 @@
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// 0
+class Foo {
+    fn foo(self) {
+    }
+}
+
+print(type(Type) == Type);
+
+print(type(Foo().foo) == Type);
+print(type(Foo().foo) == Nil);
+print(type(Foo().foo) == Bool);
+print(type(Foo().foo) == Num);
+print(type(Foo().foo) == Sentinel);
+print(type(Foo().foo) == Func);
+print(type(Foo().foo) == BuiltIn);
+print(type(Foo().foo) == Method);
+print(type(Foo().foo) == BuiltInMethod);
+print(type(Foo().foo) == String);
+print(type(Foo().foo) == Vec);
+print(type(Foo().foo) == Range);
+
+print(type([].push) == Type);
+print(type([].push) == Nil);
+print(type([].push) == Bool);
+print(type([].push) == Num);
+print(type([].push) == Sentinel);
+print(type([].push) == Func);
+print(type([].push) == BuiltIn);
+print(type([].push) == Method);
+print(type([].push) == BuiltInMethod);
+print(type([].push) == String);
+print(type([].push) == Vec);
+print(type([].push) == Range);

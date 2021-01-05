@@ -1,0 +1,103 @@
+// true
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// true
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// false
+// 0
+print(type(Type) == Type);
+
+print(type(nil) == Type);
+print(type(nil) == Nil);
+print(type(nil) == Bool);
+print(type(nil) == Num);
+print(type(nil) == Sentinel);
+print(type(nil) == Func);
+print(type(nil) == BuiltIn);
+print(type(nil) == Method);
+print(type(nil) == BuiltInMethod);
+print(type(nil) == String);
+print(type(nil) == Vec);
+print(type(nil) == Range);
+
+print(type(true) == Type);
+print(type(true) == Nil);
+print(type(true) == Bool);
+print(type(true) == Num);
+print(type(true) == Sentinel);
+print(type(true) == Func);
+print(type(true) == BuiltIn);
+print(type(true) == Method);
+print(type(true) == BuiltInMethod);
+print(type(true) == String);
+print(type(true) == Vec);
+print(type(true) == Range);
+
+print(type(false) == Type);
+print(type(false) == Nil);
+print(type(false) == Bool);
+print(type(false) == Num);
+print(type(false) == Sentinel);
+print(type(false) == Func);
+print(type(false) == BuiltIn);
+print(type(false) == Method);
+print(type(false) == BuiltInMethod);
+print(type(false) == String);
+print(type(false) == Vec);
+print(type(false) == Range);
+
+print(type(3.14) == Type);
+print(type(3.14) == Nil);
+print(type(3.14) == Bool);
+print(type(3.14) == Num);
+print(type(3.14) == Sentinel);
+print(type(3.14) == Func);
+print(type(3.14) == BuiltIn);
+print(type(3.14) == Method);
+print(type(3.14) == BuiltInMethod);
+print(type(3.14) == String);
+print(type(3.14) == Vec);
+print(type(3.14) == Range);

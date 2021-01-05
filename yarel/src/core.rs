@@ -57,7 +57,7 @@ fn build_methods(
 
 /// Global functions
 
-pub(crate) fn clock_native(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+pub(crate) fn clock(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
@@ -69,12 +69,48 @@ pub(crate) fn clock_native(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error
     Ok(Value::Number(seconds + nanos))
 }
 
-pub(crate) fn default_print(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+pub(crate) fn print(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     if args.len() != 2 {
         return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
     }
     println!("{}", args[1]);
     Ok(Value::None)
+}
+
+pub(crate) fn type_(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    Ok(Value::ObjClass(match args[1] {
+        Value::Boolean(_) => vm.class_store.get_boolean_class(),
+        Value::Number(_) => vm.class_store.get_number_class(),
+        Value::ObjString(string) => string.class,
+        Value::ObjStringIter(_) => vm.class_store.get_obj_string_iter_class(),
+        Value::ObjFunction(_) => unreachable!(),
+        Value::ObjNative(_) => vm.class_store.get_obj_native_class(),
+        Value::ObjClosure(_) => vm.class_store.get_obj_closure_class(),
+        Value::ObjClass(class) => class.metaclass,
+        Value::ObjInstance(instance) => instance.borrow().class,
+        Value::ObjBoundMethod(_) => vm.class_store.get_obj_closure_method_class(),
+        Value::ObjBoundNative(_) => vm.class_store.get_obj_native_method_class(),
+        Value::ObjVec(vec) => vec.borrow().class,
+        Value::ObjVecIter(iter) => iter.borrow().class,
+        Value::ObjRange(range) => range.class,
+        Value::ObjRangeIter(iter) => iter.borrow().class,
+        Value::None => vm.class_store.get_nil_class(),
+        Value::Sentinel => vm.class_store.get_sentinel_class(),
+    }))
+}
+
+pub(crate) fn no_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    let class = type_(vm, &[Value::None, args[0]])?;
+    error!(ErrorKind::RuntimeError, "Construction of type {} is unsupported.", class)
+}
+
+pub(crate) fn build_unsupported_methods(vm: &mut Vm) -> (object::ObjStringValueMap, Vec<Root<ObjNative>>) {
+    let method_map = &[
+        ("__init__", no_init as NativeFn),
+    ];
+    build_methods(vm, method_map, None)
 }
 
 pub(crate) fn sentinel(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {

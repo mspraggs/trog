@@ -983,7 +983,7 @@ impl Vm {
         let mut string_class_ptr = self.allocate_bare(ObjClass::new(root_string_metaclass.as_gc()));
 
         self.string_class = Root::from(string_class_ptr);
-        let base_metaclass_name = self.new_gc_obj_string("Class");
+        let base_metaclass_name = self.new_gc_obj_string("Type");
         let string_metaclass_name = self.new_gc_obj_string("StringClass");
         let string_class_name = self.new_gc_obj_string("String");
         // # Safety
@@ -1011,9 +1011,28 @@ impl Vm {
     }
 
     fn init_built_in_globals(&mut self) {
-        self.define_native("clock", core::clock_native);
-        self.define_native("print", core::default_print);
+        self.define_native("clock", core::clock);
+        self.define_native("type", core::type_);
+        self.define_native("print", core::print);
         self.define_native("sentinel", core::sentinel);
+        let obj_base_metaclass = self.class_store.get_obj_base_metaclass();
+        self.set_global("Type", Value::ObjClass(obj_base_metaclass));
+        let nil_class = self.class_store.get_nil_class();
+        self.set_global("Nil", Value::ObjClass(nil_class));
+        let boolean_class = self.class_store.get_boolean_class();
+        self.set_global("Bool", Value::ObjClass(boolean_class));
+        let number_class = self.class_store.get_number_class();
+        self.set_global("Num", Value::ObjClass(number_class));
+        let sentinel_class = self.class_store.get_sentinel_class();
+        self.set_global("Sentinel", Value::ObjClass(sentinel_class));
+        let obj_closure_class = self.class_store.get_obj_closure_class();
+        self.set_global("Func", Value::ObjClass(obj_closure_class));
+        let obj_native_class = self.class_store.get_obj_native_class();
+        self.set_global("BuiltIn", Value::ObjClass(obj_native_class));
+        let obj_closure_method_class = self.class_store.get_obj_closure_method_class();
+        self.set_global("Method", Value::ObjClass(obj_closure_method_class));
+        let obj_native_method_class = self.class_store.get_obj_native_method_class();
+        self.set_global("BuiltInMethod", Value::ObjClass(obj_native_method_class));
         let obj_string_class = self.string_class.as_gc();
         self.set_global("String", Value::ObjClass(obj_string_class));
         let obj_iter_class = self.class_store.get_obj_iter_class();
