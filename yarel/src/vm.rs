@@ -279,7 +279,7 @@ impl Vm {
 
         macro_rules! read_constant {
             () => {{
-                let index = read_byte!() as usize;
+                let index = read_short!() as usize;
                 self.active_chunk.constants[index]
             }};
         }

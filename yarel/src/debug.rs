@@ -137,7 +137,7 @@ fn jump_instruction(name: &str, sign: i32, chunk: &Chunk, offset: usize) -> usiz
 }
 
 fn constant_instruction(name: &str, chunk: &Chunk, offset: usize) -> usize {
-    let constant = chunk.code[offset + 1];
+    let constant = u16::from_ne_bytes([chunk.code[offset + 1], chunk.code[offset + 2]]);
     println!(
         "{:16} {:4} '{}'",
         name, constant, chunk.constants[constant as usize]

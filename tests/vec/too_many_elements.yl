@@ -1,7 +1,9 @@
-// [line 258] Error at 'a': Too many constants in one chunk.
+// [line 260] Error at 'a': Cannot have more than 255 Vec elements.
 // 65
 var a = 1;
 var v = [
+  a,
+  a,
   a,
   a,
   a,

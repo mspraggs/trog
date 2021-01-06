@@ -383,7 +383,7 @@ impl<'a> Parser<'a> {
         let (function, upvalues) = self.finalise_compiler();
 
         let constant = self.make_constant(value::Value::ObjFunction(function.as_gc()));
-        self.emit_bytes([OpCode::Closure as u8, constant]);
+        self.emit_constant_op(OpCode::Closure, constant);
 
         for upvalue in upvalues.iter() {
             self.emit_byte(upvalue.is_local as u8);
@@ -415,7 +415,7 @@ impl<'a> Parser<'a> {
         } else {
             OpCode::Method
         };
-        self.emit_bytes([opcode as u8, constant]);
+        self.emit_constant_op(opcode, constant);
     }
 
     fn class_declaration(&mut self) {
@@ -424,7 +424,7 @@ impl<'a> Parser<'a> {
         let name_constant = self.identifier_constant(&name);
         self.declare_variable();
 
-        self.emit_bytes([OpCode::DeclareClass as u8, name_constant]);
+        self.emit_constant_op(OpCode::DeclareClass, name_constant);
         self.define_variable(name_constant);
 
         self.class_compilers.push(ClassCompiler {
@@ -457,7 +457,7 @@ impl<'a> Parser<'a> {
         }
         self.consume(TokenKind::RightBrace, "Expected '}' after class body.");
         self.emit_byte(OpCode::DefineClass as u8);
-        self.emit_bytes([set_op as u8, arg]);
+        self.emit_variable_op(set_op, arg);
         self.emit_byte(OpCode::Pop as u8);
 
         if self.class_compilers.last().unwrap().has_superclass {
@@ -532,7 +532,7 @@ impl<'a> Parser<'a> {
             .add_local(&Token::from_string(loop_iter_name));
         let iter_method_name = self.identifier_constant(&Token::from_string("__iter__"));
         // Fetch the iterator itself
-        self.emit_bytes([OpCode::Invoke as u8, iter_method_name]);
+        self.emit_constant_op(OpCode::Invoke, iter_method_name);
         self.emit_byte(0);
         self.mark_initialised();
 
@@ -714,6 +714,19 @@ impl<'a> Parser<'a> {
         self.emit_byte(bytes[1]);
     }
 
+    fn emit_constant_op(&mut self, opcode: OpCode, constant: u16) {
+        self.emit_byte(opcode as u8);
+        self.emit_bytes(constant.to_ne_bytes());
+    }
+
+    fn emit_variable_op(&mut self, opcode: OpCode, variable: u16) {
+        if opcode.arg_sizes() == &[1] {
+            self.emit_bytes([opcode as u8, variable as u8]);
+        } else {
+            self.emit_constant_op(opcode, variable);
+        }
+    }
+
     fn emit_loop(&mut self, loop_start: usize) {
         self.emit_byte(OpCode::Loop as u8);
 
@@ -743,18 +756,19 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::Return as u8);
     }
 
-    fn make_constant(&mut self, value: value::Value) -> u8 {
+    fn make_constant(&mut self, value: value::Value) -> u16 {
         let constant = self.chunk().add_constant(value);
-        if constant > u8::MAX as usize {
+        if constant > u16::MAX as usize {
             self.error("Too many constants in one chunk.");
             return 0;
         }
-        constant as u8
+        constant as u16
     }
 
     fn emit_constant(&mut self, value: value::Value) {
         let constant = self.make_constant(value);
-        self.emit_bytes([OpCode::Constant as u8, constant]);
+        self.emit_byte(OpCode::Constant as u8);
+        self.emit_bytes(constant.to_ne_bytes());
     }
 
     fn patch_jump(&mut self, offset: usize) {
@@ -795,7 +809,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn identifier_constant(&mut self, token: &Token) -> u8 {
+    fn identifier_constant(&mut self, token: &Token) -> u16 {
         let value = Value::ObjString(self.vm.new_gc_obj_string(&token.source));
         self.make_constant(value)
     }
@@ -823,7 +837,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_variable(&mut self, error_message: &str) -> u8 {
+    fn parse_variable(&mut self, error_message: &str) -> u16 {
         self.consume(TokenKind::Identifier, error_message);
 
         self.declare_variable();
@@ -842,13 +856,14 @@ impl<'a> Parser<'a> {
         self.compiler_mut().locals.last_mut().unwrap().depth = Some(self.compiler().scope_depth);
     }
 
-    fn define_variable(&mut self, global: u8) {
+    fn define_variable(&mut self, global: u16) {
         if self.compiler().scope_depth > 0 {
             self.mark_initialised();
             return;
         }
 
-        self.emit_bytes([OpCode::DefineGlobal as u8, global]);
+        self.emit_byte(OpCode::DefineGlobal as u8);
+        self.emit_bytes(global.to_ne_bytes());
     }
 
     fn argument_list(&mut self, right_delim: TokenKind, count_msg: &str, delim_msg: &str) -> u8 {
@@ -974,10 +989,10 @@ impl<'a> Parser<'a> {
         None
     }
 
-    fn binary_assign(&mut self, get_op: OpCode, variable: u8) {
+    fn binary_assign(&mut self, get_op: OpCode, variable: u16) {
         self.single_target_mode = true;
         let op_kind = self.previous.kind;
-        self.emit_bytes([get_op as u8, variable]);
+        self.emit_variable_op(get_op, variable);
         self.expression();
         match op_kind {
             TokenKind::MinusEqual => self.emit_byte(OpCode::Subtract as u8),
@@ -989,11 +1004,11 @@ impl<'a> Parser<'a> {
         self.single_target_mode = false;
     }
 
-    fn resolve_variable(&mut self, name: &Token) -> (OpCode, OpCode, u8) {
+    fn resolve_variable(&mut self, name: &Token) -> (OpCode, OpCode, u16) {
         if let Some(result) = self.resolve_local(&name) {
-            (OpCode::GetLocal, OpCode::SetLocal, result)
+            (OpCode::GetLocal, OpCode::SetLocal, result as u16)
         } else if let Some(result) = self.resolve_upvalue(&name) {
-            (OpCode::GetUpvalue, OpCode::SetUpvalue, result)
+            (OpCode::GetUpvalue, OpCode::SetUpvalue, result as u16)
         } else {
             (
                 OpCode::GetGlobal,
@@ -1008,12 +1023,16 @@ impl<'a> Parser<'a> {
 
         if can_assign && self.match_token(TokenKind::Equal) {
             self.expression();
-            self.emit_bytes([set_op as u8, arg]);
+            self.emit_variable_op(set_op, arg);
         } else if can_assign && self.match_binary_assignment() {
             self.binary_assign(get_op, arg);
-            self.emit_bytes([set_op as u8, arg]);
+            self.emit_variable_op(set_op, arg);
         } else {
-            self.emit_bytes([get_op as u8, arg]);
+            if get_op.arg_sizes() == &[1] {
+                self.emit_bytes([get_op as u8, arg as u8]);
+            } else {
+                self.emit_constant_op(get_op, arg);
+            }
         }
     }
 
@@ -1070,21 +1089,21 @@ impl<'a> Parser<'a> {
 
         if can_assign && s.match_token(TokenKind::Equal) {
             s.expression();
-            s.emit_bytes([OpCode::SetProperty as u8, name]);
+            s.emit_constant_op(OpCode::SetProperty, name);
         } else if can_assign && s.match_binary_assignment() {
             s.emit_byte(OpCode::CopyTop as u8);
             s.binary_assign(OpCode::GetProperty, name);
-            s.emit_bytes([OpCode::SetProperty as u8, name]);
+            s.emit_constant_op(OpCode::SetProperty, name);
         } else if s.match_token(TokenKind::LeftParen) {
             let arg_count = s.argument_list(
                 TokenKind::RightParen,
                 "Cannot have more than 255 arguments.",
                 "Expected ')' after arguments.",
             );
-            s.emit_bytes([OpCode::Invoke as u8, name]);
+            s.emit_constant_op(OpCode::Invoke, name);
             s.emit_byte(arg_count);
         } else {
-            s.emit_bytes([OpCode::GetProperty as u8, name]);
+            s.emit_constant_op(OpCode::GetProperty, name);
         }
     }
 
@@ -1103,7 +1122,7 @@ impl<'a> Parser<'a> {
         } else {
             (s.identifier_constant(&Token::from_string("__getitem__")), 1)
         };
-        s.emit_bytes([OpCode::Invoke as u8, name]);
+        s.emit_constant_op(OpCode::Invoke, name);
         s.emit_byte(num_args as u8);
     }
 
@@ -1133,7 +1152,7 @@ impl<'a> Parser<'a> {
         let (function, upvalues) = s.finalise_compiler();
 
         let constant = s.make_constant(value::Value::ObjFunction(function.as_gc()));
-        s.emit_bytes([OpCode::Closure as u8, constant]);
+        s.emit_constant_op(OpCode::Closure, constant);
 
         for upvalue in upvalues.iter() {
             s.emit_byte(upvalue.is_local as u8);
@@ -1266,11 +1285,11 @@ impl<'a> Parser<'a> {
                 "Expected ')' after arguments.",
             );
             s.named_variable(Token::from_string("super"), false);
-            s.emit_bytes([OpCode::SuperInvoke as u8, name]);
+            s.emit_constant_op(OpCode::SuperInvoke, name);
             s.emit_byte(arg_count);
         } else {
             s.named_variable(Token::from_string("super"), false);
-            s.emit_bytes([OpCode::GetSuper as u8, name]);
+            s.emit_constant_op(OpCode::GetSuper, name);
         }
     }
 

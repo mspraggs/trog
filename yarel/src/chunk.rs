@@ -66,6 +66,59 @@ pub enum OpCode {
     StaticMethod,
 }
 
+impl OpCode {
+    pub(crate) fn arg_sizes(&self) -> &[usize] {
+        match self {
+            OpCode::Constant => &[2],
+            OpCode::Nil => &[],
+            OpCode::True => &[],
+            OpCode::False => &[],
+            OpCode::Pop => &[],
+            OpCode::CopyTop => &[],
+            OpCode::GetLocal => &[1],
+            OpCode::SetLocal => &[1],
+            OpCode::GetGlobal => &[2],
+            OpCode::DefineGlobal => &[2],
+            OpCode::SetGlobal => &[2],
+            OpCode::GetUpvalue => &[1],
+            OpCode::SetUpvalue => &[1],
+            OpCode::GetProperty => &[2],
+            OpCode::SetProperty => &[2],
+            OpCode::GetClass => &[],
+            OpCode::GetSuper => &[2],
+            OpCode::Equal => &[],
+            OpCode::Greater => &[],
+            OpCode::Less => &[],
+            OpCode::Add => &[],
+            OpCode::Subtract => &[],
+            OpCode::Multiply => &[],
+            OpCode::Divide => &[],
+            OpCode::Not => &[],
+            OpCode::Negate => &[],
+            OpCode::FormatString => &[],
+            OpCode::BuildRange => &[],
+            OpCode::BuildString => &[1],
+            OpCode::BuildVec => &[1],
+            OpCode::IterNext => &[],
+            OpCode::Jump => &[2],
+            OpCode::JumpIfFalse => &[2],
+            OpCode::JumpIfSentinel => &[2],
+            OpCode::Loop => &[2],
+            OpCode::Call => &[1],
+            OpCode::Invoke => &[2, 1],
+            OpCode::SuperInvoke => &[2, 1],
+            OpCode::Closure => &[2],
+            OpCode::CloseUpvalue => &[],
+            OpCode::Return => &[],
+            OpCode::DeclareClass => &[2],
+            OpCode::DefineClass => &[],
+            OpCode::Inherit => &[],
+            OpCode::Method => &[2],
+            OpCode::StaticMethod => &[2],
+        }
+    }
+}
+
 impl From<u8> for OpCode {
     fn from(value: u8) -> Self {
         match value {
