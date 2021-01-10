@@ -20,16 +20,16 @@ pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
     if let Value::Number(n) = value {
         #[allow(clippy::float_cmp)]
         if n.trunc() != n {
-            return error!(
+            return Err(error!(
                 ErrorKind::ValueError,
                 "Expected an integer value but found '{}'.", value
-            );
+            ));
         }
         Ok(n as isize)
     } else {
-        error!(
+        Err(error!(
             ErrorKind::TypeError,
             "Expected an integer value but found '{}'.", value
-        )
+        ))
     }
 }

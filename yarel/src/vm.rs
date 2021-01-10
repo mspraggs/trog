@@ -249,9 +249,9 @@ impl Vm {
                             Value::Number(second)
                         ) => (first, second),
                         _ => {
-                            return error!(
+                            return Err(error!(
                                 ErrorKind::RuntimeError, "Binary operands must both be numbers."
-                            );
+                            ));
                         }
                     };
                     self.push($value_type(first $op second));
@@ -348,10 +348,10 @@ impl Vm {
                     let value = match self.globals.get(&name) {
                         Some(value) => *value,
                         None => {
-                            return error!(
+                            return Err(error!(
                                 ErrorKind::RuntimeError,
                                 "Undefined variable '{}'.", *name
-                            );
+                            ));
                         }
                     };
                     self.push(value);
@@ -370,7 +370,10 @@ impl Vm {
                     let prev = self.globals.insert(name, value);
                     if prev.is_none() {
                         self.globals.remove(&name);
-                        return error!(ErrorKind::RuntimeError, "Undefined variable '{}'.", *name);
+                        return Err(error!(
+                            ErrorKind::RuntimeError,
+                            "Undefined variable '{}'.", *name
+                        ));
                     }
                 }
 
@@ -418,7 +421,10 @@ impl Vm {
                     let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
                         ptr
                     } else {
-                        return error!(ErrorKind::RuntimeError, "Only instances have fields.");
+                        return Err(error!(
+                            ErrorKind::RuntimeError,
+                            "Only instances have fields."
+                        ));
                     };
                     let name = read_string!();
                     let value = *self.peek(0);
@@ -476,10 +482,10 @@ impl Vm {
                         }
 
                         _ => {
-                            return error!(
+                            return Err(error!(
                                 ErrorKind::RuntimeError,
                                 "Binary operands must be two numbers or two strings.",
-                            );
+                            ));
                         }
                     }
                 }
@@ -500,7 +506,10 @@ impl Vm {
                     if let Some(num) = value.try_as_number() {
                         self.push(Value::Number(-num));
                     } else {
-                        return error!(ErrorKind::RuntimeError, "Unary operand must be a number.",);
+                        return Err(error!(
+                            ErrorKind::RuntimeError,
+                            "Unary operand must be a number."
+                        ));
                     }
                 }
 
@@ -692,7 +701,10 @@ impl Vm {
                     let superclass = if let Some(ptr) = self.peek(1).try_as_obj_class() {
                         ptr
                     } else {
-                        return error!(ErrorKind::RuntimeError, "Superclass must be a class.");
+                        return Err(error!(
+                            ErrorKind::RuntimeError,
+                            "Superclass must be a class."
+                        ));
                     };
                     self.working_class_def.as_mut().unwrap().superclass = superclass;
                     self.pop();
@@ -737,10 +749,10 @@ impl Vm {
                 } else if let Some(Value::ObjNative(initialiser)) = init {
                     return self.call_native(*initialiser, arg_count);
                 } else if arg_count != 0 {
-                    return error!(
+                    return Err(error!(
                         ErrorKind::TypeError,
                         "Expected 0 arguments but found {}.", arg_count
-                    );
+                    ));
                 }
 
                 Ok(())
@@ -750,7 +762,10 @@ impl Vm {
 
             Value::ObjNative(wrapped) => self.call_native(wrapped, arg_count),
 
-            _ => error!(ErrorKind::TypeError, "Can only call functions and classes."),
+            _ => Err(error!(
+                ErrorKind::TypeError,
+                "Can only call functions and classes."
+            )),
         }
     }
 
@@ -767,7 +782,10 @@ impl Vm {
                 _ => unreachable!(),
             };
         }
-        error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name)
+        Err(error!(
+            ErrorKind::AttributeError,
+            "Undefined property '{}'.", *name
+        ))
     }
 
     fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), Error> {
@@ -794,16 +812,16 @@ impl Vm {
         arg_count: usize,
     ) -> Result<(), Error> {
         if arg_count as u32 + 1 != closure.borrow().function.arity {
-            return error!(
+            return Err(error!(
                 ErrorKind::TypeError,
                 "Expected {} arguments but found {}.",
                 closure.borrow().function.arity - 1,
                 arg_count
-            );
+            ));
         }
 
         if self.frames.len() == common::FRAMES_MAX {
-            return error!(ErrorKind::IndexError, "Stack overflow.");
+            return Err(error!(ErrorKind::IndexError, "Stack overflow."));
         }
 
         let chunk_index = closure.borrow().function.chunk_index;
@@ -886,7 +904,10 @@ impl Vm {
                 Value::ObjBoundNative(object::new_gc_obj_bound_method(self, instance, *ptr))
             }
             None => {
-                return error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
+                return Err(error!(
+                    ErrorKind::AttributeError,
+                    "Undefined property '{}'.", *name
+                ));
             }
             _ => unreachable!(),
         };

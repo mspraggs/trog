@@ -680,10 +680,10 @@ impl ObjRange {
             self.begin
         };
         if begin < 0 || begin >= limit {
-            return error!(
+            return Err(error!(
                 ErrorKind::IndexError,
                 "{} slice start out of range.", type_name
-            );
+            ));
         }
         let end = if self.end < 0 {
             self.end + limit
@@ -691,10 +691,10 @@ impl ObjRange {
             self.end
         };
         if end < 0 || end > limit {
-            return error!(
+            return Err(error!(
                 ErrorKind::IndexError,
                 "{} slice end out of range.", type_name
-            );
+            ));
         }
         Ok((
             begin as usize,

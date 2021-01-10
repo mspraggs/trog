@@ -26,13 +26,13 @@ use crate::vm::Vm;
 
 fn check_num_args(args: &[Value], expected: usize) -> Result<(), Error> {
     if args.len() != expected + 1 {
-        return error!(
+        return Err(error!(
             ErrorKind::RuntimeError,
             "Expected {} parameter{} but found {}.",
             expected,
             if expected == 1 { "" } else { "s" },
             args.len() - 1
-        );
+        ));
     }
     Ok(())
 }
@@ -61,7 +61,10 @@ pub(crate) fn clock(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
-            return error!(ErrorKind::RuntimeError, "Error calling native function.");
+            return Err(error!(
+                ErrorKind::RuntimeError,
+                "Error calling native function."
+            ));
         }
     };
     let seconds = duration.as_secs_f64();
@@ -71,7 +74,10 @@ pub(crate) fn clock(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
 
 pub(crate) fn print(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     if args.len() != 2 {
-        return error!(ErrorKind::RuntimeError, "Expected one argument to 'print'.");
+        return Err(error!(
+            ErrorKind::RuntimeError,
+            "Expected one argument to 'print'."
+        ));
     }
     println!("{}", args[1]);
     Ok(Value::None)
@@ -85,10 +91,10 @@ pub(crate) fn type_(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
 pub(crate) fn no_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     let class = type_(vm, &[Value::None, args[0]])?;
-    error!(
+    Err(error!(
         ErrorKind::RuntimeError,
         "Construction of type {} is unsupported.", class
-    )
+    ))
 }
 
 pub(crate) fn build_unsupported_methods(
@@ -100,10 +106,10 @@ pub(crate) fn build_unsupported_methods(
 
 pub(crate) fn sentinel(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     if args.len() != 1 {
-        return error!(
+        return Err(error!(
             ErrorKind::RuntimeError,
             "Expected no arguments to 'sentinel'."
-        );
+        ));
     }
     Ok(Value::Sentinel)
 }
@@ -128,9 +134,9 @@ pub(crate) fn object_is_a(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
     let receiver_class = args[0].get_class(&vm.class_store);
     let query_class = args[1].try_as_obj_class().ok_or_else(|| {
-        Error::with_message(
+        error!(
             ErrorKind::ValueError,
-            &format!("Expected a class name but found '{}'.", args[1]),
+            "Expected a class name but found '{}'.", args[1]
         )
     })?;
 
@@ -217,10 +223,10 @@ fn string_from_ascii(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
             )
         })?;
         if num < 0.0 || num > 255.0 || num.trunc() != num {
-            return error!(
+            return Err(error!(
                 ErrorKind::ValueError,
                 "Expected a positive integer less than 256 but found '{}'.", num
-            );
+            ));
         }
         if num > 127.0 {
             bytes.push(195_u8);
@@ -262,10 +268,10 @@ fn string_from_utf8(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
                 )
             })?;
             if num < 0.0 || num > 255.0 || num.trunc() != num {
-                error!(
+                Err(error!(
                     ErrorKind::ValueError,
                     "Expected a positive integer less than 256 but found '{}'.", num
-                )
+                ))
             } else {
                 Ok(num as u8)
             }
@@ -309,20 +315,17 @@ fn string_from_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> 
                 )
             })?;
             if num < 0.0 || num > u32::MAX as f64 || num.trunc() != num {
-                error!(
+                Err(error!(
                     ErrorKind::ValueError,
                     "Expected a positive integer less than {} but found '{}'.",
                     u32::MAX,
                     num
-                )
+                ))
             } else {
                 char::from_u32(num as u32).ok_or_else(|| {
-                    Error::with_message(
+                    error!(
                         ErrorKind::ValueError,
-                        &format!(
-                            "Expected a valid Unicode code point but found '{}'.",
-                            num as u32
-                        ),
+                        "Expected a valid Unicode code point but found '{}'.", num as u32
                     )
                 })
             }
@@ -364,7 +367,12 @@ fn string_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
             check_char_boundary(string, end, "string slice end")?;
             (begin, end)
         }
-        _ => return error!(ErrorKind::TypeError, "Expected an integer or range."),
+        _ => {
+            return Err(error!(
+                ErrorKind::TypeError,
+                "Expected an integer or range."
+            ))
+        }
     };
 
     let new_string = vm.new_gc_obj_string(&string.as_str()[begin..end]);
@@ -418,10 +426,10 @@ fn string_char_byte_index(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> 
             char_count += 1;
         }
     }
-    error!(
+    Err(error!(
         ErrorKind::IndexError,
         "Provided character index out of range."
-    )
+    ))
 }
 
 fn string_find(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
@@ -429,13 +437,13 @@ fn string_find(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
     let substring = args[1].try_as_obj_string().ok_or_else(|| {
-        Error::with_message(
+        error!(
             ErrorKind::RuntimeError,
-            &format!("Expected a string but found '{}'.", args[1]),
+            "Expected a string but found '{}'.", args[1]
         )
     })?;
     if substring.is_empty() {
-        return error!(ErrorKind::ValueError, "Cannot find empty string.");
+        return Err(error!(ErrorKind::ValueError, "Cannot find empty string."));
     }
     let string_len = string.len() as isize;
     let start = {
@@ -447,7 +455,7 @@ fn string_find(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         }
     };
     if start < 0 || start >= string_len {
-        return error!(ErrorKind::ValueError, "String index out of bounds.");
+        return Err(error!(ErrorKind::ValueError, "String index out of bounds."));
     }
     let start = start as usize;
     check_char_boundary(string, start, "string index")?;
@@ -474,7 +482,10 @@ fn string_replace(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         )
     })?;
     if old.is_empty() {
-        return error!(ErrorKind::ValueError, "Cannot replace empty string.");
+        return Err(error!(
+            ErrorKind::ValueError,
+            "Cannot replace empty string."
+        ));
     }
     let new = args[2].try_as_obj_string().ok_or_else(|| {
         Error::with_message(
@@ -497,7 +508,10 @@ fn string_split(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         )
     })?;
     if delim.is_empty() {
-        return error!(ErrorKind::ValueError, "Cannot split using an empty string.");
+        return Err(error!(
+            ErrorKind::ValueError,
+            "Cannot split using an empty string."
+        ));
     }
     let splits = object::new_root_obj_vec(vm, vm.class_store.get_obj_vec_class());
     for substr in string.as_str().split(delim.as_str()) {
@@ -540,10 +554,10 @@ fn string_as_num(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
     let num = string.parse::<f64>().or_else(|_| {
-        error!(
+        Err(error!(
             ErrorKind::ValueError,
             "Unable to parse number from '{}'.", args[0]
-        )
+        ))
     })?;
 
     Ok(Value::Number(num))
@@ -580,10 +594,10 @@ fn string_to_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
 fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<(), Error> {
     if !string.as_str().is_char_boundary(pos) {
-        return error!(
+        return Err(error!(
             ErrorKind::IndexError,
             "Provided {} is not on a character boundary.", desc
-        );
+        ));
     }
     Ok(())
 }
@@ -652,7 +666,7 @@ fn vec_push(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
 
     if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
-        return error!(ErrorKind::RuntimeError, "Vec max capcity reached.");
+        return Err(error!(ErrorKind::RuntimeError, "Vec max capcity reached."));
     }
 
     vec.borrow_mut().elements.push(args[1]);
@@ -698,7 +712,10 @@ fn vec_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
                 .extend_from_slice(&vec.borrow().elements[begin..end]);
             Ok(Value::ObjVec(new_vec))
         }
-        _ => error!(ErrorKind::TypeError, "Expected an integer or range."),
+        _ => Err(error!(
+            ErrorKind::TypeError,
+            "Expected an integer or range."
+        )),
     }
 }
 
@@ -741,7 +758,7 @@ fn get_bounded_index(value: Value, bound: isize, msg: &str) -> Result<usize, Err
         index += bound;
     }
     if index < 0 || index >= bound {
-        return error!(ErrorKind::IndexError, "{}", msg);
+        return Err(error!(ErrorKind::IndexError, "{}", msg));
     }
 
     Ok(index as usize)
