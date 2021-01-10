@@ -799,9 +799,54 @@ impl Vm {
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
             }
-            _ => {
-                let class = receiver.get_class(&self.class_store);
+            Value::ObjVec(vec) => {
+                let class = vec.borrow().class;
                 self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjVecIter(iter) => {
+                let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjRange(range) => {
+                let class = range.class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjRangeIter(iter) => {
+                let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjString(string) => self.invoke_from_class(string.class, name, arg_count),
+            Value::ObjStringIter(iter) => {
+                let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjClass(class) => self.invoke_from_class(class.metaclass, name, arg_count),
+            Value::Boolean(_) => {
+                self.invoke_from_class(self.class_store.get_boolean_class(), name, arg_count)
+            }
+            Value::Number(_) => {
+                self.invoke_from_class(self.class_store.get_number_class(), name, arg_count)
+            }
+            Value::ObjFunction(_) => {
+                self.invoke_from_class(self.class_store.get_obj_closure_class(), name, arg_count)
+            }
+            Value::ObjNative(_) => {
+                self.invoke_from_class(self.class_store.get_obj_native_class(), name, arg_count)
+            }
+            Value::ObjClosure(_) => {
+                self.invoke_from_class(self.class_store.get_obj_closure_class(), name, arg_count)
+            }
+            Value::ObjBoundMethod(_) => {
+                self.invoke_from_class(self.class_store.get_obj_closure_method_class(), name, arg_count)
+            }
+            Value::ObjBoundNative(_) => {
+                self.invoke_from_class(self.class_store.get_obj_native_method_class(), name, arg_count)
+            }
+            Value::None => {
+                self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
+            }
+            Value::Sentinel => {
+                self.invoke_from_class(self.class_store.get_sentinel_class(), name, arg_count)
             }
         }
     }
