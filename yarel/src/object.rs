@@ -340,6 +340,7 @@ impl fmt::Display for ObjClosure {
 pub struct ObjClass {
     pub name: Option<memory::Gc<ObjString>>,
     pub metaclass: Gc<ObjClass>,
+    pub superclass: Option<Gc<ObjClass>>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
@@ -347,29 +348,49 @@ pub fn new_gc_obj_class(
     vm: &mut Vm,
     name: Gc<ObjString>,
     metaclass: Gc<ObjClass>,
+    superclass: Option<Gc<ObjClass>>,
     methods: ObjStringValueMap,
 ) -> Gc<ObjClass> {
-    vm.allocate(ObjClass::with_name(name, metaclass, methods))
+    let mut merged_methods = if let Some(parent) = superclass {
+        parent.methods.clone()
+    } else {
+        new_obj_string_value_map()
+    };
+    for (&k, &v) in &methods {
+        merged_methods.insert(k, v);
+    }
+    vm.allocate(ObjClass::with_name(
+        name,
+        metaclass,
+        superclass,
+        merged_methods,
+    ))
 }
 
 pub fn new_root_obj_class(
     vm: &mut Vm,
     name: Gc<ObjString>,
     metaclass: Gc<ObjClass>,
+    superclass: Option<Gc<ObjClass>>,
     methods: ObjStringValueMap,
 ) -> Root<ObjClass> {
-    new_gc_obj_class(vm, name, metaclass, methods).as_root()
+    new_gc_obj_class(vm, name, metaclass, superclass, methods).as_root()
 }
 
-pub fn new_root_obj_class_anon(vm: &mut Vm, metaclass: Gc<ObjClass>) -> Root<ObjClass> {
-    vm.allocate(ObjClass::new(metaclass)).as_root()
+pub fn new_root_obj_class_anon(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Option<Gc<ObjClass>>,
+) -> Root<ObjClass> {
+    vm.allocate(ObjClass::new(metaclass, superclass)).as_root()
 }
 
 impl ObjClass {
-    pub(crate) fn new(metaclass: Gc<ObjClass>) -> Self {
+    pub(crate) fn new(metaclass: Gc<ObjClass>, superclass: Option<Gc<ObjClass>>) -> Self {
         ObjClass {
             name: None,
             metaclass,
+            superclass,
             methods: new_obj_string_value_map(),
         }
     }
@@ -377,11 +398,13 @@ impl ObjClass {
     fn with_name(
         name: memory::Gc<ObjString>,
         metaclass: Gc<ObjClass>,
+        superclass: Option<Gc<ObjClass>>,
         methods: ObjStringValueMap,
     ) -> Self {
         ObjClass {
             name: Some(name),
             metaclass,
+            superclass,
             methods,
         }
     }

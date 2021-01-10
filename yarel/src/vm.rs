@@ -67,15 +67,17 @@ impl GcManaged for CallFrame {
 struct ClassDef {
     name: Gc<ObjString>,
     metaclass_name: Gc<ObjString>,
+    superclass: Gc<ObjClass>,
     methods: ObjStringValueMap,
     static_methods: ObjStringValueMap,
 }
 
 impl ClassDef {
-    fn new(name: Gc<ObjString>, metaclass_name: Gc<ObjString>) -> Self {
+    fn new(name: Gc<ObjString>, metaclass_name: Gc<ObjString>, superclass: Gc<ObjClass>) -> Self {
         ClassDef {
             name,
             metaclass_name,
+            superclass,
             methods: object::new_obj_string_value_map(),
             static_methods: object::new_obj_string_value_map(),
         }
@@ -408,11 +410,8 @@ impl Vm {
                         }
                     }
 
-                    if let Some(class) = self.peek(0).get_class() {
-                        self.bind_method(class, name)?;
-                    } else {
-                        return error!(ErrorKind::RuntimeError, "Only instances have properties.",);
-                    }
+                    let class = self.peek(0).get_class(&self.class_store);
+                    self.bind_method(class, name)?;
                 }
 
                 byte if byte == OpCode::SetProperty as u8 => {
@@ -438,7 +437,7 @@ impl Vm {
                             *self.peek_mut(0) = Value::ObjClass(instance.borrow().class);
                         }
                         _ => {
-                            let class = value.get_class().expect("Expected object.");
+                            let class = value.get_class(&self.class_store);
                             *self.peek_mut(0) = Value::ObjClass(class);
                         }
                     }
@@ -649,11 +648,13 @@ impl Vm {
                 byte if byte == OpCode::DeclareClass as u8 => {
                     let name = read_string!();
                     let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
-                    self.working_class_def = Some(ClassDef::new(name, metaclass_name));
+                    let superclass = self.class_store.get_object_class();
+                    self.working_class_def = Some(ClassDef::new(name, metaclass_name, superclass));
                     let class = object::new_gc_obj_class(
                         self,
                         name,
-                        self.class_store.get_obj_base_metaclass(),
+                        self.class_store.get_base_metaclass(),
+                        None,
                         object::new_obj_string_value_map(),
                     );
                     self.push(Value::ObjClass(class));
@@ -662,20 +663,27 @@ impl Vm {
                 byte if byte == OpCode::DefineClass as u8 => {
                     let class_def = self.working_class_def.as_ref().expect("Expected ClassDef.");
 
-                    let base_metaclass = self.class_store.get_obj_base_metaclass();
+                    let base_metaclass = self.class_store.get_base_metaclass();
                     let name = class_def.name;
                     let metaclass_name = class_def.metaclass_name;
                     let methods = class_def.methods.clone();
                     let static_methods = class_def.static_methods.clone();
+                    let superclass = class_def.superclass;
                     let metaclass = object::new_root_obj_class(
                         self,
                         metaclass_name,
                         base_metaclass,
+                        Some(self.class_store.get_object_class()),
                         static_methods,
                     );
 
-                    let defined_class =
-                        object::new_root_obj_class(self, name, metaclass.as_gc(), methods);
+                    let defined_class = object::new_root_obj_class(
+                        self,
+                        name,
+                        metaclass.as_gc(),
+                        Some(superclass),
+                        methods,
+                    );
                     self.working_class_def = None;
                     *self.peek_mut(0) = Value::ObjClass(defined_class.as_gc());
                 }
@@ -686,13 +694,7 @@ impl Vm {
                     } else {
                         return error!(ErrorKind::RuntimeError, "Superclass must be a class.");
                     };
-                    for (&name, &method) in &superclass.methods {
-                        self.working_class_def
-                            .as_mut()
-                            .unwrap()
-                            .methods
-                            .insert(name, method);
-                    }
+                    self.working_class_def.as_mut().unwrap().superclass = superclass;
                     self.pop();
                 }
 
@@ -779,29 +781,10 @@ impl Vm {
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
             }
-            Value::ObjVec(vec) => {
-                let class = vec.borrow().class;
+            _ => {
+                let class = receiver.get_class(&self.class_store);
                 self.invoke_from_class(class, name, arg_count)
             }
-            Value::ObjVecIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjRange(range) => {
-                let class = range.class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjRangeIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjString(string) => self.invoke_from_class(string.class, name, arg_count),
-            Value::ObjStringIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjClass(class) => self.invoke_from_class(class.metaclass, name, arg_count),
-            _ => error!(ErrorKind::ValueError, "Only instances have methods."),
         }
     }
 
@@ -975,14 +958,27 @@ impl Vm {
     }
 
     fn init_heap_allocated_data(&mut self) {
-        let mut obj_base_metaclass_ptr = class_store::new_base_metaclass(self);
-        let root_obj_base_metaclass = Root::from(obj_base_metaclass_ptr);
-        let mut string_metaclass_ptr =
-            self.allocate_bare(ObjClass::new(root_obj_base_metaclass.as_gc()));
+        let mut base_metaclass_ptr = unsafe { class_store::new_base_metaclass(self) };
+        let root_base_metaclass = Root::from(base_metaclass_ptr);
+        let mut object_class_ptr = self.allocate_bare(ObjClass {
+            name: None,
+            metaclass: root_base_metaclass.as_gc(),
+            superclass: None,
+            methods: object::new_obj_string_value_map(),
+        });
+        let root_object_class = Root::from(object_class_ptr);
+        let mut string_metaclass_ptr = self.allocate_bare(ObjClass::new(
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
+        ));
         let root_string_metaclass = Root::from(string_metaclass_ptr);
-        let mut string_class_ptr = self.allocate_bare(ObjClass::new(root_string_metaclass.as_gc()));
+        let mut string_class_ptr = self.allocate_bare(ObjClass::new(
+            root_string_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
+        ));
 
         self.string_class = Root::from(string_class_ptr);
+        let object_class_name = self.new_gc_obj_string("Object");
         let base_metaclass_name = self.new_gc_obj_string("Type");
         let string_metaclass_name = self.new_gc_obj_string("StringClass");
         let string_class_name = self.new_gc_obj_string("String");
@@ -990,12 +986,16 @@ impl Vm {
         // We're modifying data for which there are immutable references held by other data
         // structures (namely metaclass and class objects). Because the code is single-threaded and
         // the immutable references aren't being used to access the data at this point in time
-        // (class names are only used by the Display trait, and methods are only accessed once code
-        // is run), mutating the data here should be safe.
+        // (class names are only used by the Display trait, and superclass and methods are only
+        // accessed once code is run), mutating the data here should be safe.
         unsafe {
-            obj_base_metaclass_ptr.as_mut().data.name = Some(base_metaclass_name);
+            object_class_ptr.as_mut().data.name = Some(object_class_name);
+            base_metaclass_ptr.as_mut().data.name = Some(base_metaclass_name);
+            base_metaclass_ptr.as_mut().data.superclass = Some(root_object_class.as_gc());
             string_metaclass_ptr.as_mut().data.name = Some(string_metaclass_name);
             string_class_ptr.as_mut().data.name = Some(string_class_name);
+            core::bind_object_class(self, &mut object_class_ptr);
+            core::bind_type_class(self, &mut base_metaclass_ptr);
             core::bind_gc_obj_string_class(self, &mut string_class_ptr, &mut string_metaclass_ptr);
         }
 
@@ -1005,7 +1005,8 @@ impl Vm {
         self.active_chunk = empty_chunk;
         self.init_string = init_string;
         self.next_string = next_string;
-        let class_store = CoreClassStore::new_with_built_ins(self, root_obj_base_metaclass);
+        let class_store =
+            CoreClassStore::new_with_built_ins(self, root_base_metaclass, root_object_class);
         self.core_chunks = self.chunks.clone();
         self.class_store = class_store;
     }
@@ -1015,8 +1016,10 @@ impl Vm {
         self.define_native("type", core::type_);
         self.define_native("print", core::print);
         self.define_native("sentinel", core::sentinel);
-        let obj_base_metaclass = self.class_store.get_obj_base_metaclass();
-        self.set_global("Type", Value::ObjClass(obj_base_metaclass));
+        let base_metaclass = self.class_store.get_base_metaclass();
+        self.set_global("Type", Value::ObjClass(base_metaclass));
+        let object_class = self.class_store.get_object_class();
+        self.set_global("Object", Value::ObjClass(object_class));
         let nil_class = self.class_store.get_nil_class();
         self.set_global("Nil", Value::ObjClass(nil_class));
         let boolean_class = self.class_store.get_boolean_class();

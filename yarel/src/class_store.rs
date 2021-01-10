@@ -22,7 +22,8 @@ include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 
 #[derive(Clone)]
 pub struct CoreClassStore {
-    root_obj_base_metaclass: Root<ObjClass>,
+    root_base_metaclass: Root<ObjClass>,
+    root_object_class: Root<ObjClass>,
     root_nil_class: Root<ObjClass>,
     root_boolean_class: Root<ObjClass>,
     root_number_class: Root<ObjClass>,
@@ -44,7 +45,8 @@ pub struct CoreClassStore {
 impl CoreClassStore {
     pub(crate) unsafe fn new_empty() -> Self {
         CoreClassStore {
-            root_obj_base_metaclass: Root::dangling(),
+            root_base_metaclass: Root::dangling(),
+            root_object_class: Root::dangling(),
             root_nil_class: Root::dangling(),
             root_boolean_class: Root::dangling(),
             root_number_class: Root::dangling(),
@@ -64,43 +66,131 @@ impl CoreClassStore {
         }
     }
 
-    pub(crate) fn new(vm: &mut Vm, root_obj_base_metaclass: Root<ObjClass>) -> Self {
+    pub(crate) fn new(vm: &mut Vm, root_base_metaclass: Root<ObjClass>) -> Self {
         let empty = vm.new_gc_obj_string("");
         let methods = object::new_obj_string_value_map();
-        let root_obj_iter_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_nil_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_boolean_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_number_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_sentinel_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_closure_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_native_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_closure_method_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_native_method_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_map_iter_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_filter_iter_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_vec_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_vec_iter_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_range_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_range_iter_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
-        let root_obj_string_iter_class =
-            object::new_root_obj_class(vm, empty, root_obj_base_metaclass.as_gc(), methods.clone());
+        let root_obj_iter_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_object_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_nil_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_boolean_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_number_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_sentinel_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_closure_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_native_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_closure_method_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_native_method_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_map_iter_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_filter_iter_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_vec_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_vec_iter_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_range_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_range_iter_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
+        let root_obj_string_iter_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
         CoreClassStore {
-            root_obj_base_metaclass,
+            root_base_metaclass,
+            root_object_class,
             root_nil_class,
             root_boolean_class,
             root_number_class,
@@ -120,8 +210,12 @@ impl CoreClassStore {
         }
     }
 
-    pub(crate) fn new_with_built_ins(vm: &mut Vm, root_obj_base_metaclass: Root<ObjClass>) -> Self {
-        let class_store = Self::new(vm, root_obj_base_metaclass.clone());
+    pub(crate) fn new_with_built_ins(
+        vm: &mut Vm,
+        root_base_metaclass: Root<ObjClass>,
+        root_object_class: Root<ObjClass>,
+    ) -> Self {
+        let class_store = Self::new(vm, root_base_metaclass.clone());
         vm.class_store = class_store;
         let source = String::from(CORE_SOURCE);
         let result = vm::interpret(vm, source);
@@ -134,56 +228,64 @@ impl CoreClassStore {
         let root_nil_class = object::new_root_obj_class(
             vm,
             nil_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let boolean_class_name = vm.new_gc_obj_string("Bool");
         let root_boolean_class = object::new_root_obj_class(
             vm,
             boolean_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let number_class_name = vm.new_gc_obj_string("Num");
         let root_number_class = object::new_root_obj_class(
             vm,
             number_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let sentinel_class_name = vm.new_gc_obj_string("Sentinel");
         let root_sentinel_class = object::new_root_obj_class(
             vm,
             sentinel_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let obj_closure_class_name = vm.new_gc_obj_string("Func");
         let root_obj_closure_class = object::new_root_obj_class(
             vm,
             obj_closure_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let obj_native_class_name = vm.new_gc_obj_string("BuiltIn");
         let root_obj_native_class = object::new_root_obj_class(
             vm,
             obj_native_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let obj_closure_method_class_name = vm.new_gc_obj_string("Method");
         let root_obj_closure_method_class = object::new_root_obj_class(
             vm,
             obj_closure_method_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let obj_native_method_class_name = vm.new_gc_obj_string("BuiltInMethod");
         let root_obj_native_method_class = object::new_root_obj_class(
             vm,
             obj_native_method_class_name,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            Some(root_object_class.as_gc()),
             no_init_methods.clone(),
         );
         let root_obj_iter_class = vm
@@ -206,22 +308,34 @@ impl CoreClassStore {
             .as_root();
         let root_obj_vec_class = core::new_root_obj_vec_class(
             vm,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
             root_obj_iter_class.as_gc(),
         );
-        let root_obj_vec_iter_class =
-            core::new_root_obj_vec_iter_class(vm, root_obj_base_metaclass.as_gc());
+        let root_obj_vec_iter_class = core::new_root_obj_vec_iter_class(
+            vm,
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
+        );
         let root_obj_range_class = core::new_root_obj_range_class(
             vm,
-            root_obj_base_metaclass.as_gc(),
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
             root_obj_iter_class.as_gc(),
         );
-        let root_obj_range_iter_class =
-            core::new_root_obj_range_iter_class(vm, root_obj_base_metaclass.as_gc());
-        let root_obj_string_iter_class =
-            core::new_root_obj_string_iter_class(vm, root_obj_base_metaclass.as_gc());
+        let root_obj_range_iter_class = core::new_root_obj_range_iter_class(
+            vm,
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
+        );
+        let root_obj_string_iter_class = core::new_root_obj_string_iter_class(
+            vm,
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
+        );
         CoreClassStore {
-            root_obj_base_metaclass,
+            root_base_metaclass,
+            root_object_class,
             root_nil_class,
             root_boolean_class,
             root_number_class,
@@ -241,8 +355,12 @@ impl CoreClassStore {
         }
     }
 
-    pub(crate) fn get_obj_base_metaclass(&self) -> Gc<ObjClass> {
-        self.root_obj_base_metaclass.as_gc()
+    pub(crate) fn get_base_metaclass(&self) -> Gc<ObjClass> {
+        self.root_base_metaclass.as_gc()
+    }
+
+    pub(crate) fn get_object_class(&self) -> Gc<ObjClass> {
+        self.root_object_class.as_gc()
     }
 
     pub(crate) fn get_nil_class(&self) -> Gc<ObjClass> {
@@ -310,21 +428,20 @@ impl CoreClassStore {
     }
 }
 
-pub(crate) fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
+pub(crate) unsafe fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
     // # Safety
     // The root metaclass is its own metaclass, so we need to add a pointer to the metaclass to the
     // class's data. To do this we allocate the object and mutate it whilst an immutable reference
     // is held by a local `Root` instance. This is safe because the `Root` instance doesn't access
     // any fields on the pointer it holds whilst the metaclass assignment is being performed.
-    unsafe {
-        let data = ObjClass {
-            name: None,
-            metaclass: Gc::dangling(),
-            methods: object::new_obj_string_value_map(),
-        };
-        let mut ptr = vm.allocate_bare(data);
-        let root = Root::from(ptr);
-        ptr.as_mut().data.metaclass = root.as_gc();
-        ptr
-    }
+    let data = ObjClass {
+        name: None,
+        metaclass: Gc::dangling(),
+        superclass: None,
+        methods: object::new_obj_string_value_map(),
+    };
+    let mut ptr = vm.allocate_bare(data);
+    let root = Root::from(ptr);
+    ptr.as_mut().data.metaclass = root.as_gc();
+    ptr
 }

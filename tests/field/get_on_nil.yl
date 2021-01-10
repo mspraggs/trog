@@ -1,4 +1,4 @@
-// Only instances have properties.
+// Undefined property 'foo'.
 // [line 4] in script
 // 70
 nil.foo;

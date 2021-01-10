@@ -1,0 +1,44 @@
+// true
+// true
+// false
+// true
+// true
+// true
+// false
+// true
+// false
+// true
+// false
+// true
+// false
+// true
+// true
+// 0
+class Foo {
+}
+
+class Bar < Foo {
+
+}
+
+print(Type.is_a(Object));
+
+print(1.is_a(Object));
+print(1.is_a(String));
+print(1.is_a(Num));
+
+print("".is_a(Object));
+print("".is_a(String));
+print("".is_a(Num));
+
+var foo = Foo();
+print(foo.is_a(Object));
+print(foo.is_a(Num));
+print(foo.is_a(Foo));
+print(foo.is_a(Bar));
+
+var bar = Bar();
+print(bar.is_a(Object));
+print(bar.is_a(String));
+print(bar.is_a(Foo));
+print(bar.is_a(Bar));

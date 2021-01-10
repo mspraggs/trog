@@ -17,6 +17,7 @@ use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
 
+use crate::class_store::CoreClassStore;
 use crate::memory::{self, Gc};
 use crate::object::{
     ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjRange,
@@ -53,13 +54,25 @@ impl Value {
         }
     }
 
-    pub(crate) fn get_class(&self) -> Option<Gc<ObjClass>> {
+    pub(crate) fn get_class(&self, class_store: &CoreClassStore) -> Gc<ObjClass> {
         match self {
-            Value::ObjClass(c) => Some(c.metaclass),
-            Value::ObjInstance(i) => Some(i.borrow().class),
-            Value::ObjString(s) => Some(s.class),
-            Value::ObjVec(v) => Some(v.borrow().class),
-            _ => None,
+            Value::Boolean(_) => class_store.get_boolean_class(),
+            Value::Number(_) => class_store.get_number_class(),
+            Value::ObjString(string) => string.class,
+            Value::ObjStringIter(iter) => iter.borrow().class,
+            Value::ObjFunction(_) => unreachable!(),
+            Value::ObjNative(_) => class_store.get_obj_native_class(),
+            Value::ObjClosure(_) => class_store.get_obj_closure_class(),
+            Value::ObjClass(class) => class.metaclass,
+            Value::ObjInstance(instance) => instance.borrow().class,
+            Value::ObjBoundMethod(_) => class_store.get_obj_closure_method_class(),
+            Value::ObjBoundNative(_) => class_store.get_obj_native_method_class(),
+            Value::ObjVec(vec) => vec.borrow().class,
+            Value::ObjVecIter(iter) => iter.borrow().class,
+            Value::ObjRange(range) => range.class,
+            Value::ObjRangeIter(iter) => iter.borrow().class,
+            Value::None => class_store.get_nil_class(),
+            Value::Sentinel => class_store.get_sentinel_class(),
         }
     }
 

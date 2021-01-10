@@ -1,4 +1,5 @@
 // true
+// true
 // false
 // false
 // false
@@ -37,6 +38,7 @@
 // true
 // 0
 print(type(Type) == Type);
+print(type(Object) == Type);
 
 print(type("123") == Type);
 print(type("123") == Nil);

@@ -80,36 +80,21 @@ pub(crate) fn print(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 pub(crate) fn type_(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
-    Ok(Value::ObjClass(match args[1] {
-        Value::Boolean(_) => vm.class_store.get_boolean_class(),
-        Value::Number(_) => vm.class_store.get_number_class(),
-        Value::ObjString(string) => string.class,
-        Value::ObjStringIter(_) => vm.class_store.get_obj_string_iter_class(),
-        Value::ObjFunction(_) => unreachable!(),
-        Value::ObjNative(_) => vm.class_store.get_obj_native_class(),
-        Value::ObjClosure(_) => vm.class_store.get_obj_closure_class(),
-        Value::ObjClass(class) => class.metaclass,
-        Value::ObjInstance(instance) => instance.borrow().class,
-        Value::ObjBoundMethod(_) => vm.class_store.get_obj_closure_method_class(),
-        Value::ObjBoundNative(_) => vm.class_store.get_obj_native_method_class(),
-        Value::ObjVec(vec) => vec.borrow().class,
-        Value::ObjVecIter(iter) => iter.borrow().class,
-        Value::ObjRange(range) => range.class,
-        Value::ObjRangeIter(iter) => iter.borrow().class,
-        Value::None => vm.class_store.get_nil_class(),
-        Value::Sentinel => vm.class_store.get_sentinel_class(),
-    }))
+    Ok(Value::ObjClass(args[1].get_class(&vm.class_store)))
 }
 
 pub(crate) fn no_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     let class = type_(vm, &[Value::None, args[0]])?;
-    error!(ErrorKind::RuntimeError, "Construction of type {} is unsupported.", class)
+    error!(
+        ErrorKind::RuntimeError,
+        "Construction of type {} is unsupported.", class
+    )
 }
 
-pub(crate) fn build_unsupported_methods(vm: &mut Vm) -> (object::ObjStringValueMap, Vec<Root<ObjNative>>) {
-    let method_map = &[
-        ("__init__", no_init as NativeFn),
-    ];
+pub(crate) fn build_unsupported_methods(
+    vm: &mut Vm,
+) -> (object::ObjStringValueMap, Vec<Root<ObjNative>>) {
+    let method_map = &[("__init__", no_init as NativeFn)];
     build_methods(vm, method_map, None)
 }
 
@@ -121,6 +106,51 @@ pub(crate) fn sentinel(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         );
     }
     Ok(Value::Sentinel)
+}
+
+/// Type implementation
+
+pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
+    let methods = class
+        .as_ref()
+        .data
+        .superclass
+        .expect("Expected ObjClass.")
+        .methods
+        .clone();
+    class.as_mut().data.methods = methods;
+}
+
+/// Object implementation
+
+pub(crate) fn object_is_a(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let receiver_class = args[0].get_class(&vm.class_store);
+    let query_class = args[1].try_as_obj_class().ok_or_else(|| {
+        Error::with_message(
+            ErrorKind::ValueError,
+            &format!("Expected a class name but found '{}'.", args[1]),
+        )
+    })?;
+
+    if receiver_class == query_class {
+        return Ok(Value::Boolean(true));
+    }
+    let mut superclass = receiver_class.superclass;
+    while let Some(parent) = superclass {
+        if parent == query_class {
+            return Ok(Value::Boolean(true));
+        }
+        superclass = parent.superclass;
+    }
+    Ok(Value::Boolean(false))
+}
+
+pub(crate) unsafe fn bind_object_class(vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
+    let method_map = [("is_a", object_is_a as NativeFn)];
+    let (methods, _native_roots) = build_methods(vm, &method_map, None);
+    class.as_mut().data.methods = methods;
 }
 
 /// String implementation
@@ -139,6 +169,13 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
 
     metaclass.as_mut().data.methods = static_methods;
 
+    let inherited_methods = class
+        .as_ref()
+        .data
+        .superclass
+        .expect("Expected ObjClass.")
+        .methods
+        .clone();
     let method_map = [
         ("__init__", string_init as NativeFn),
         ("__getitem__", string_get_item as NativeFn),
@@ -155,7 +192,7 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
         ("to_bytes", string_to_bytes as NativeFn),
         ("to_code_points", string_to_code_points as NativeFn),
     ];
-    let (methods, _native_roots) = build_methods(vm, &method_map, None);
+    let (methods, _native_roots) = build_methods(vm, &method_map, Some(inherited_methods));
 
     class.as_mut().data.methods = methods;
 }
@@ -571,11 +608,15 @@ fn string_iter_next(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::Sentinel)
 }
 
-pub fn new_root_obj_string_iter_class(vm: &mut Vm, metaclass: Gc<ObjClass>) -> Root<ObjClass> {
+pub fn new_root_obj_string_iter_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("StringIter");
     let (methods, _native_roots) =
         build_methods(vm, &[("__next__", string_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, methods)
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
 /// Vec implemenation
@@ -583,6 +624,7 @@ pub fn new_root_obj_string_iter_class(vm: &mut Vm, metaclass: Gc<ObjClass>) -> R
 pub fn new_root_obj_vec_class(
     vm: &mut Vm,
     metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
     iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Vec");
@@ -596,7 +638,7 @@ pub fn new_root_obj_vec_class(
         ("__iter__", vec_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
-    object::new_root_obj_class(vm, class_name, metaclass, methods)
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
 fn vec_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
@@ -707,11 +749,15 @@ fn get_bounded_index(value: Value, bound: isize, msg: &str) -> Result<usize, Err
 
 /// VecIter implementation
 
-pub fn new_root_obj_vec_iter_class(vm: &mut Vm, metaclass: Gc<ObjClass>) -> Root<ObjClass> {
+pub fn new_root_obj_vec_iter_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("VecIter");
     let (methods, _native_roots) =
         build_methods(vm, &[("__next__", vec_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, methods)
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
 fn vec_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
@@ -728,6 +774,7 @@ fn vec_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 pub fn new_root_obj_range_class(
     vm: &mut Vm,
     metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
     iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Range");
@@ -736,7 +783,7 @@ pub fn new_root_obj_range_class(
         ("__iter__", range_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
-    object::new_root_obj_class(vm, class_name, metaclass, methods)
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
 fn range_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
@@ -779,9 +826,13 @@ fn range_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(borrowed_iter.next())
 }
 
-pub fn new_root_obj_range_iter_class(vm: &mut Vm, metaclass: Gc<ObjClass>) -> Root<ObjClass> {
+pub fn new_root_obj_range_iter_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("RangeIter");
     let (methods, _native_roots) =
         build_methods(vm, &[("__next__", range_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, methods)
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
