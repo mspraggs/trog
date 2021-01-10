@@ -14,12 +14,8 @@
  */
 
 use std::cell::RefCell;
-use std::fmt;
 use std::fs;
 use std::mem;
-
-use crossterm::queue;
-use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 
 use yarel::compiler;
 use yarel::error::{Error, ErrorKind};
@@ -39,34 +35,6 @@ pub struct Failure {
 }
 
 thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
-
-impl fmt::Display for Failure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        queue!(
-            f,
-            SetForegroundColor(Color::DarkBlue),
-            Print(format!("Test {}\n", self.path)),
-            SetForegroundColor(Color::DarkGreen),
-            Print("  Expected:\n".to_string()),
-            ResetColor,
-        )
-        .unwrap();
-        for line in &self.expected {
-            writeln!(f, "    {}", line)?;
-        }
-        queue!(
-            f,
-            SetForegroundColor(Color::Red),
-            Print("  Actual:\n"),
-            ResetColor,
-        )
-        .unwrap();
-        for line in &self.actual {
-            writeln!(f, "    {}", line)?;
-        }
-        Ok(())
-    }
-}
 
 fn parse_test(source: String) -> Option<Vec<String>> {
     if source.as_str().starts_with("// skip\n") {

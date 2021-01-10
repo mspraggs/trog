@@ -68,7 +68,7 @@ fn main() {
     }
 
     for fail in failures {
-        println!("{}", fail);
+        utils::write_failure(&mut stdout, &fail);
     }
 
     if tests_failed {

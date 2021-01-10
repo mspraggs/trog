@@ -14,12 +14,14 @@
  */
 
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Stdout, Write};
 
 use crossterm::cursor::MoveToColumn;
 use crossterm::queue;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use crossterm::terminal::{Clear, ClearType};
+
+use crate::test::Failure;
 
 pub fn get_paths(root: &str, suffix: Option<&str>) -> Result<Vec<String>, ()> {
     let mut paths = Vec::new();
@@ -60,4 +62,31 @@ pub fn print_stats(s: &mut io::Stdout, num_passed: usize, num_skipped: usize, nu
     )
     .unwrap();
     s.flush().unwrap();
+}
+
+pub(crate) fn write_failure(stdout: &mut Stdout, failure: &Failure) {
+    // Ideally we'd implement the Display trait for Failure, but cross-term doesn't work with
+    // generic Formatter objects, so we have to do this instead.
+    queue!(
+        stdout,
+        SetForegroundColor(Color::DarkBlue),
+        Print(format!("Test {}\n", failure.path)),
+        SetForegroundColor(Color::DarkGreen),
+        Print("  Expected:\n".to_string()),
+        ResetColor,
+    )
+    .unwrap();
+    for line in &failure.expected {
+        writeln!(stdout, "    {}", line).unwrap();
+    }
+    queue!(
+        stdout,
+        SetForegroundColor(Color::Red),
+        Print("  Actual:\n"),
+        ResetColor,
+    )
+    .unwrap();
+    for line in &failure.actual {
+        writeln!(stdout, "    {}", line).unwrap();
+    }
 }
