@@ -1,6 +1,6 @@
-// Outer
-// Outer
-// Inner
+// <class Outer>
+// <class Outer>
+// <class Inner>
 // 0
 class Outer {
   static fn method() {

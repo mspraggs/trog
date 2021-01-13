@@ -1,6 +1,6 @@
-// Outer instance
-// Outer instance
-// Inner instance
+// <Outer instance @ [MEMADDR]>
+// <Outer instance @ [MEMADDR]>
+// <Inner instance @ [MEMADDR]>
 // 0
 class Outer {
 fn method(self) {

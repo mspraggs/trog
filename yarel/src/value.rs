@@ -241,15 +241,27 @@ impl fmt::Display for Value {
             Value::Boolean(underlying) => write!(f, "{}", underlying),
             Value::ObjString(underlying) => write!(f, "{}", **underlying),
             Value::ObjStringIter(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjFunction(underlying) => write!(f, "{}", **underlying),
-            Value::ObjNative(_) => write!(f, "<native fn>"),
-            Value::ObjClosure(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjClass(underlying) => write!(f, "{}", **underlying),
-            Value::ObjInstance(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjBoundMethod(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjBoundNative(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjFunction(underlying) => {
+                write!(f, "<{} @ {:p}>", **underlying, underlying.as_ptr())
+            }
+            Value::ObjNative(native) => write!(f, "<{}>", **native),
+            Value::ObjClosure(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
+            Value::ObjClass(underlying) => write!(f, "<class {}>", **underlying),
+            Value::ObjInstance(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
+            Value::ObjBoundMethod(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
+            Value::ObjBoundNative(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
             Value::ObjVec(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjVecIter(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjVecIter(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
             Value::ObjRange(underlying) => write!(f, "{}", **underlying),
             Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::None => write!(f, "nil"),

@@ -47,7 +47,7 @@ fn build_methods(
 
     for (name, native) in definitions {
         let name = vm.new_gc_obj_string(name);
-        let obj_native = object::new_root_obj_native(vm, *native);
+        let obj_native = object::new_root_obj_native(vm, name, *native);
         roots.push(obj_native.clone());
         methods.insert(name, Value::ObjNative(obj_native.as_gc()));
     }

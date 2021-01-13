@@ -435,7 +435,7 @@ pub(crate) unsafe fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
     // is held by a local `Root` instance. This is safe because the `Root` instance doesn't access
     // any fields on the pointer it holds whilst the metaclass assignment is being performed.
     let data = ObjClass {
-        name: None,
+        name: Gc::dangling(),
         metaclass: Gc::dangling(),
         superclass: None,
         methods: object::new_obj_string_value_map(),

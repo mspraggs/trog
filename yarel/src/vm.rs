@@ -171,8 +171,8 @@ impl Vm {
     }
 
     pub fn define_native(&mut self, name: &str, function: NativeFn) {
-        let native = object::new_root_obj_native(self, function);
         let name = self.new_gc_obj_string(name);
+        let native = object::new_root_obj_native(self, name, function);
         self.globals.insert(name, Value::ObjNative(native.as_gc()));
     }
 
@@ -836,12 +836,16 @@ impl Vm {
             Value::ObjClosure(_) => {
                 self.invoke_from_class(self.class_store.get_obj_closure_class(), name, arg_count)
             }
-            Value::ObjBoundMethod(_) => {
-                self.invoke_from_class(self.class_store.get_obj_closure_method_class(), name, arg_count)
-            }
-            Value::ObjBoundNative(_) => {
-                self.invoke_from_class(self.class_store.get_obj_native_method_class(), name, arg_count)
-            }
+            Value::ObjBoundMethod(_) => self.invoke_from_class(
+                self.class_store.get_obj_closure_method_class(),
+                name,
+                arg_count,
+            ),
+            Value::ObjBoundNative(_) => self.invoke_from_class(
+                self.class_store.get_obj_native_method_class(),
+                name,
+                arg_count,
+            ),
             Value::None => {
                 self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
             }
@@ -1027,20 +1031,24 @@ impl Vm {
         let mut base_metaclass_ptr = unsafe { class_store::new_base_metaclass(self) };
         let root_base_metaclass = Root::from(base_metaclass_ptr);
         let mut object_class_ptr = self.allocate_bare(ObjClass {
-            name: None,
+            name: unsafe { Gc::dangling() },
             metaclass: root_base_metaclass.as_gc(),
             superclass: None,
             methods: object::new_obj_string_value_map(),
         });
         let root_object_class = Root::from(object_class_ptr);
         let mut string_metaclass_ptr = self.allocate_bare(ObjClass::new(
+            unsafe { Gc::dangling() },
             root_base_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
+            object::new_obj_string_value_map(),
         ));
         let root_string_metaclass = Root::from(string_metaclass_ptr);
         let mut string_class_ptr = self.allocate_bare(ObjClass::new(
+            unsafe { Gc::dangling() },
             root_string_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
+            object::new_obj_string_value_map(),
         ));
 
         self.string_class = Root::from(string_class_ptr);
@@ -1055,11 +1063,11 @@ impl Vm {
         // (class names are only used by the Display trait, and superclass and methods are only
         // accessed once code is run), mutating the data here should be safe.
         unsafe {
-            object_class_ptr.as_mut().data.name = Some(object_class_name);
-            base_metaclass_ptr.as_mut().data.name = Some(base_metaclass_name);
+            object_class_ptr.as_mut().data.name = object_class_name;
+            base_metaclass_ptr.as_mut().data.name = base_metaclass_name;
             base_metaclass_ptr.as_mut().data.superclass = Some(root_object_class.as_gc());
-            string_metaclass_ptr.as_mut().data.name = Some(string_metaclass_name);
-            string_class_ptr.as_mut().data.name = Some(string_class_name);
+            string_metaclass_ptr.as_mut().data.name = string_metaclass_name;
+            string_class_ptr.as_mut().data.name = string_class_name;
             core::bind_object_class(self, &mut object_class_ptr);
             core::bind_type_class(self, &mut base_metaclass_ptr);
             core::bind_gc_obj_string_class(self, &mut string_class_ptr, &mut string_metaclass_ptr);

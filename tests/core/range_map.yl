@@ -1,4 +1,4 @@
-// MapIter instance
+// <MapIter instance @ [MEMADDR]>
 // [1, 2, 3, 4]
 // 0
 fn add_one(n) { return n + 1; }

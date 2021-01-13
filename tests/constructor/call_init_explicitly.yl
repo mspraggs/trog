@@ -1,6 +1,6 @@
 // Foo.__init__(one)
 // Foo.__init__(two)
-// Foo instance
+// <Foo instance @ [MEMADDR]>
 // __init__
 // 0
 class Foo {

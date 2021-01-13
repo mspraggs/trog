@@ -193,6 +193,12 @@ impl<T: GcManaged> Gc<T> {
     }
 }
 
+impl<T: 'static + GcManaged> Gc<T> {
+    pub fn as_ptr(&self) -> *const T {
+        &self.gc_box().data
+    }
+}
+
 impl<T: 'static + GcManaged + ?Sized> Gc<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }

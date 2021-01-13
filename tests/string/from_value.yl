@@ -2,10 +2,10 @@
 // value = 42
 // value = true
 // value = false
-// value = <native fn>
-// value = <fn foo>
-// value = Foo
-// value = Foo instance
+// value = <built-in fn clock>
+// value = <fn foo @ [MEMADDR]>
+// value = <class Foo>
+// value = <Foo instance @ [MEMADDR]>
 // 0
 fn foo() {}
 class Foo {}

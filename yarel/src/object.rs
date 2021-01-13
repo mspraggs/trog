@@ -254,8 +254,8 @@ impl memory::GcManaged for ObjFunction {
 impl fmt::Display for ObjFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.name.len() {
-            0 => write!(f, "<script>"),
-            _ => write!(f, "<fn {}>", *self.name),
+            0 => write!(f, "script"),
+            _ => write!(f, "fn {}", *self.name),
         }
     }
 }
@@ -263,20 +263,25 @@ impl fmt::Display for ObjFunction {
 pub type NativeFn = fn(&mut Vm, &[Value]) -> Result<Value, Error>;
 
 pub struct ObjNative {
+    pub(crate) name: Gc<ObjString>,
     pub function: NativeFn,
 }
 
-pub fn new_gc_obj_native(vm: &mut Vm, function: NativeFn) -> Gc<ObjNative> {
-    vm.allocate(ObjNative::new(function))
+pub fn new_gc_obj_native(vm: &mut Vm, name: Gc<ObjString>, function: NativeFn) -> Gc<ObjNative> {
+    vm.allocate(ObjNative::new(name, function))
 }
 
-pub fn new_root_obj_native(vm: &mut Vm, function: NativeFn) -> Root<ObjNative> {
-    new_gc_obj_native(vm, function).as_root()
+pub fn new_root_obj_native(
+    vm: &mut Vm,
+    name: Gc<ObjString>,
+    function: NativeFn,
+) -> Root<ObjNative> {
+    new_gc_obj_native(vm, name, function).as_root()
 }
 
 impl ObjNative {
-    fn new(function: NativeFn) -> Self {
-        ObjNative { function }
+    fn new(name: Gc<ObjString>, function: NativeFn) -> Self {
+        ObjNative { name, function }
     }
 }
 
@@ -288,7 +293,7 @@ impl memory::GcManaged for ObjNative {
 
 impl fmt::Display for ObjNative {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<native fn>")
+        write!(f, "built-in fn {}", *self.name)
     }
 }
 
@@ -338,7 +343,7 @@ impl fmt::Display for ObjClosure {
 }
 
 pub struct ObjClass {
-    pub name: Option<memory::Gc<ObjString>>,
+    pub name: memory::Gc<ObjString>,
     pub metaclass: Gc<ObjClass>,
     pub superclass: Option<Gc<ObjClass>>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
@@ -359,12 +364,7 @@ pub fn new_gc_obj_class(
     for (&k, &v) in &methods {
         merged_methods.insert(k, v);
     }
-    vm.allocate(ObjClass::with_name(
-        name,
-        metaclass,
-        superclass,
-        merged_methods,
-    ))
+    vm.allocate(ObjClass::new(name, metaclass, superclass, merged_methods))
 }
 
 pub fn new_root_obj_class(
@@ -377,32 +377,15 @@ pub fn new_root_obj_class(
     new_gc_obj_class(vm, name, metaclass, superclass, methods).as_root()
 }
 
-pub fn new_root_obj_class_anon(
-    vm: &mut Vm,
-    metaclass: Gc<ObjClass>,
-    superclass: Option<Gc<ObjClass>>,
-) -> Root<ObjClass> {
-    vm.allocate(ObjClass::new(metaclass, superclass)).as_root()
-}
-
 impl ObjClass {
-    pub(crate) fn new(metaclass: Gc<ObjClass>, superclass: Option<Gc<ObjClass>>) -> Self {
-        ObjClass {
-            name: None,
-            metaclass,
-            superclass,
-            methods: new_obj_string_value_map(),
-        }
-    }
-
-    fn with_name(
+    pub(crate) fn new(
         name: memory::Gc<ObjString>,
         metaclass: Gc<ObjClass>,
         superclass: Option<Gc<ObjClass>>,
         methods: ObjStringValueMap,
     ) -> Self {
         ObjClass {
-            name: Some(name),
+            name,
             metaclass,
             superclass,
             methods,
@@ -424,7 +407,7 @@ impl memory::GcManaged for ObjClass {
 
 impl fmt::Display for ObjClass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", *self.name.unwrap())
+        write!(f, "{}", *self.name)
     }
 }
 
@@ -509,13 +492,22 @@ impl<T: 'static + memory::GcManaged> memory::GcManaged for ObjBoundMethod<T> {
 
 impl fmt::Display for ObjBoundMethod<ObjNative> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", *self.method)
+        write!(
+            f,
+            "built-in method {} on {}",
+            *self.method.name, self.receiver
+        )
     }
 }
 
 impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.method.borrow())
+        write!(
+            f,
+            "method {} on {}",
+            *self.method.borrow().function.name,
+            self.receiver
+        )
     }
 }
 

@@ -17,10 +17,14 @@ use std::cell::RefCell;
 use std::fs;
 use std::mem;
 
+use regex::{self, Regex};
+
 use yarel::compiler;
 use yarel::error::{Error, ErrorKind};
 use yarel::value::Value;
 use yarel::vm::Vm;
+
+const WILDCARDS: [(&str, &str); 1] = [("[MEMADDR]", "0x[a-f0-9]+")];
 
 #[derive(Debug)]
 pub struct Success {
@@ -35,6 +39,16 @@ pub struct Failure {
 }
 
 thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
+
+fn parse_line(source: &str) -> String {
+    let mut result = regex::escape(source);
+    for (wildcard, regex) in &WILDCARDS {
+        let escaped_wildcard = &regex::escape(wildcard.to_owned());
+        result = result.replace(escaped_wildcard, regex);
+    }
+
+    format!("^{}$", result)
+}
 
 fn parse_test(source: String) -> Option<Vec<String>> {
     if source.as_str().starts_with("// skip\n") {
@@ -67,7 +81,30 @@ fn local_print(_heap: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::None)
 }
 
-pub fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
+fn match_output(expected: &[String], actual: &[String]) -> bool {
+    if expected.len() != actual.len() {
+        return false;
+    }
+
+    if expected == actual {
+        return true;
+    }
+
+    for (expected, actual) in expected.iter().zip(actual.iter()) {
+        if expected == actual {
+            continue;
+        }
+        let expected = parse_line(expected);
+        let re = Regex::new(&expected).unwrap();
+        if !re.is_match(actual) {
+            return false;
+        }
+    }
+
+    true
+}
+
+pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
     vm.reset();
     vm.define_native("print", local_print);
 
@@ -98,7 +135,7 @@ pub fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
     let mut output = OUTPUT.with(|output| mem::replace(&mut *output.borrow_mut(), vec![]));
     output.extend_from_slice(&error_output);
 
-    if output != expected_output {
+    if !match_output(&expected_output, &output) {
         return Err(Failure {
             path: path.to_owned(),
             expected: expected_output,

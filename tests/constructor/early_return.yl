@@ -1,5 +1,5 @@
 // __init__
-// Foo instance
+// <Foo instance @ [MEMADDR]>
 // 0
 class Foo {
   fn __init__(self) {
