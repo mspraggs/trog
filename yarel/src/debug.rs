@@ -76,8 +76,9 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::SuperInvoke => invoke_instruction("SUPER_INVOKE", chunk, offset),
         OpCode::Closure => {
             let mut offset = offset + 1;
-            let constant = chunk.code[offset] as usize;
-            offset += 1;
+            let constant =
+                u16::from_ne_bytes([chunk.code[offset], chunk.code[offset + 1]]) as usize;
+            offset += 2;
             println!(
                 "{:16} {:4} {}",
                 "CLOSURE", constant, chunk.constants[constant]
@@ -142,15 +143,15 @@ fn constant_instruction(name: &str, chunk: &Chunk, offset: usize) -> usize {
         "{:16} {:4} '{}'",
         name, constant, chunk.constants[constant as usize]
     );
-    offset + 2
+    offset + 3
 }
 
 fn invoke_instruction(name: &str, chunk: &Chunk, offset: usize) -> usize {
-    let constant = chunk.code[offset + 1];
-    let arg_count = chunk.code[offset + 2];
+    let constant = u16::from_ne_bytes([chunk.code[offset + 1], chunk.code[offset + 2]]);
+    let arg_count = chunk.code[offset + 3];
     println!(
         "{:16} ({} args) {:4} '{}'",
         name, arg_count, constant, chunk.constants[constant as usize]
     );
-    offset + 3
+    offset + 4
 }
