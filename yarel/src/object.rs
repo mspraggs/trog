@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::cmp::{self, Eq};
 use std::collections::HashMap;
 use std::fmt;
@@ -514,6 +514,7 @@ impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
 pub struct ObjVec {
     pub class: Gc<ObjClass>,
     pub elements: Vec<Value>,
+    disp_lock: Cell<usize>,
 }
 
 pub fn new_gc_obj_vec(vm: &mut Vm, class: Gc<ObjClass>) -> Gc<RefCell<ObjVec>> {
@@ -529,6 +530,7 @@ impl ObjVec {
         ObjVec {
             class,
             elements: Vec::new(),
+            disp_lock: Cell::new(0),
         }
     }
 }
@@ -547,20 +549,18 @@ impl memory::GcManaged for ObjVec {
 
 impl fmt::Display for ObjVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let count = self.disp_lock.get();
+        if count > 0 {
+            return write!(f, "[...]");
+        }
+        self.disp_lock.set(count + 1);
         write!(f, "[")?;
         let num_elems = self.elements.len();
         for (i, e) in self.elements.iter().enumerate() {
-            let is_self = match e {
-                Value::ObjVec(v) => &(*v.borrow()) as *const _ == self as *const _,
-                _ => false,
-            };
-            if is_self {
-                write!(f, "[...]")?;
-            } else {
-                write!(f, "{}", e)?;
-            }
-            write!(f, "{}", if i == num_elems - 1 { "" } else { ", " })?;
+            write!(f, "{}{}", e, if i == num_elems - 1 { "" } else { ", " })?;
         }
+        let count = self.disp_lock.get();
+        self.disp_lock.set(count - 1);
         write!(f, "]")
     }
 }
