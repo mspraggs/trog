@@ -16,13 +16,15 @@
 use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
+use std::hash::Hash;
 
 use crate::class_store::CoreClassStore;
 use crate::memory::{self, Gc};
 use crate::object::{
-    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjInstance, ObjNative, ObjRange,
-    ObjRangeIter, ObjString, ObjStringIter, ObjVec, ObjVecIter,
+    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjInstance, ObjNative,
+    ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjVec, ObjVecIter,
 };
+use crate::utils;
 
 #[derive(Clone, Copy)]
 pub enum Value {
@@ -41,6 +43,7 @@ pub enum Value {
     ObjVecIter(Gc<RefCell<ObjVecIter>>),
     ObjRange(Gc<ObjRange>),
     ObjRangeIter(Gc<RefCell<ObjRangeIter>>),
+    ObjHashMap(Gc<RefCell<ObjHashMap>>),
     None,
     Sentinel,
 }
@@ -71,8 +74,22 @@ impl Value {
             Value::ObjVecIter(iter) => iter.borrow().class,
             Value::ObjRange(range) => range.class,
             Value::ObjRangeIter(iter) => iter.borrow().class,
+            Value::ObjHashMap(hash_map) => hash_map.borrow().class,
             Value::None => class_store.get_nil_class(),
             Value::Sentinel => class_store.get_sentinel_class(),
+        }
+    }
+
+    pub(crate) fn has_hash(&self) -> bool {
+        match self {
+            Value::Boolean(_) => true,
+            Value::Number(_) => true,
+            Value::ObjString(_) => true,
+            Value::ObjClass(_) => true,
+            Value::ObjRange(_) => true,
+            Value::None => true,
+            Value::Sentinel => true,
+            _ => false,
         }
     }
 
@@ -173,6 +190,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn try_as_obj_hash_map(&self) -> Option<Gc<RefCell<ObjHashMap>>> {
+        match self {
+            Value::ObjHashMap(inner) => Some(*inner),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
@@ -197,6 +220,7 @@ impl memory::GcManaged for Value {
             Value::ObjVecIter(inner) => inner.mark(),
             Value::ObjRange(inner) => inner.mark(),
             Value::ObjRangeIter(inner) => inner.mark(),
+            Value::ObjHashMap(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -216,6 +240,7 @@ impl memory::GcManaged for Value {
             Value::ObjVecIter(inner) => inner.blacken(),
             Value::ObjRange(inner) => inner.blacken(),
             Value::ObjRangeIter(inner) => inner.blacken(),
+            Value::ObjHashMap(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -264,11 +289,14 @@ impl fmt::Display for Value {
             }
             Value::ObjRange(underlying) => write!(f, "{}", **underlying),
             Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjHashMap(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::None => write!(f, "nil"),
             Value::Sentinel => write!(f, "<sentinel>"),
         }
     }
 }
+
+impl cmp::Eq for Value {}
 
 impl cmp::PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
@@ -287,9 +315,38 @@ impl cmp::PartialEq for Value {
             (Value::ObjVecIter(first), Value::ObjVecIter(second)) => *first == *second,
             (Value::ObjRange(first), Value::ObjRange(second)) => *first == *second,
             (Value::ObjRangeIter(first), Value::ObjRangeIter(second)) => *first == *second,
+            (Value::ObjHashMap(first), Value::ObjHashMap(second)) => {
+                *first.borrow() == *second.borrow()
+            }
             (Value::Sentinel, Value::Sentinel) => true,
             (Value::None, Value::None) => true,
             _ => false,
         }
+    }
+}
+
+impl Hash for Value {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let hash = match self {
+            Value::Boolean(b) => {
+                if *b {
+                    1_u64
+                } else {
+                    0_u64
+                }
+            }
+            Value::Number(n) => utils::hash_number(*n),
+            Value::ObjString(s) => s.hash,
+            Value::ObjClass(c) => c.name.hash,
+            Value::ObjRange(r) => {
+                utils::hash_number(r.begin as f64) ^ utils::hash_number(r.end as f64)
+            }
+            Value::None => 2_u64,
+            Value::Sentinel => 3_u64,
+            _ => {
+                panic!("Unhashable value type: {}", self);
+            }
+        };
+        state.write_u64(hash);
     }
 }

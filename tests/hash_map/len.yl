@@ -1,0 +1,8 @@
+// 3
+// 0
+// 1
+// 0
+var d = {1: false, "foo": nil, Vec: "okay"};
+print(d.len());
+print({}.len());
+print({2: 3.14}.len());

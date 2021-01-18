@@ -1,0 +1,14 @@
+// false
+// nil
+// nil
+// nil
+// okay
+// nil
+// 0
+var d = {1: false, "foo": nil, Vec: "okay"};
+print(d.get(1));
+print(d.get(2));
+print(d.get("foo"));
+print(d.get(nil));
+print(d.get(Vec));
+print(d.get(HashMap));

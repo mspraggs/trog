@@ -1,0 +1,14 @@
+// true
+// false
+// true
+// false
+// true
+// false
+// 0
+var d = {1: false, "foo": nil, Vec: "okay"};
+print(d.has_key(1));
+print(d.has_key(2));
+print(d.has_key("foo"));
+print(d.has_key(nil));
+print(d.has_key(Vec));
+print(d.has_key(HashMap));

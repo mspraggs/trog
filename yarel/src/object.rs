@@ -29,7 +29,7 @@ use crate::vm::Vm;
 pub struct ObjString {
     pub(crate) class: Gc<ObjClass>,
     string: String,
-    hash: u64,
+    pub(crate) hash: u64,
 }
 
 impl ObjString {
@@ -514,7 +514,7 @@ impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
 pub struct ObjVec {
     pub class: Gc<ObjClass>,
     pub elements: Vec<Value>,
-    disp_lock: Cell<usize>,
+    disp_lock: Cell<bool>,
 }
 
 pub fn new_gc_obj_vec(vm: &mut Vm, class: Gc<ObjClass>) -> Gc<RefCell<ObjVec>> {
@@ -530,7 +530,7 @@ impl ObjVec {
         ObjVec {
             class,
             elements: Vec::new(),
-            disp_lock: Cell::new(0),
+            disp_lock: Cell::new(false),
         }
     }
 }
@@ -549,18 +549,16 @@ impl memory::GcManaged for ObjVec {
 
 impl fmt::Display for ObjVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let count = self.disp_lock.get();
-        if count > 0 {
+        if self.disp_lock.get() {
             return write!(f, "[...]");
         }
-        self.disp_lock.set(count + 1);
+        let prev_disp_lock = self.disp_lock.replace(true);
         write!(f, "[")?;
         let num_elems = self.elements.len();
         for (i, e) in self.elements.iter().enumerate() {
             write!(f, "{}{}", e, if i == num_elems - 1 { "" } else { ", " })?;
         }
-        let count = self.disp_lock.get();
-        self.disp_lock.set(count - 1);
+        self.disp_lock.set(prev_disp_lock);
         write!(f, "]")
     }
 }
@@ -768,5 +766,72 @@ impl memory::GcManaged for ObjRangeIter {
 impl fmt::Display for ObjRangeIter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ObjRangeIter instance")
+    }
+}
+
+pub struct ObjHashMap {
+    pub class: Gc<ObjClass>,
+    pub elements: HashMap<Value, Value, BuildPassThroughHasher>,
+    disp_lock: Cell<bool>,
+}
+
+pub fn new_gc_obj_hash_map(vm: &mut Vm, class: Gc<ObjClass>) -> Gc<RefCell<ObjHashMap>> {
+    vm.allocate(RefCell::new(ObjHashMap::new(class)))
+}
+
+pub fn new_root_obj_hash_map(vm: &mut Vm, class: Gc<ObjClass>) -> Root<RefCell<ObjHashMap>> {
+    new_gc_obj_hash_map(vm, class).as_root()
+}
+
+impl ObjHashMap {
+    fn new(class: Gc<ObjClass>) -> Self {
+        ObjHashMap {
+            class,
+            elements: HashMap::with_hasher(BuildPassThroughHasher::default()),
+            disp_lock: Cell::new(false),
+        }
+    }
+}
+
+impl memory::GcManaged for ObjHashMap {
+    fn mark(&self) {
+        self.class.mark();
+        self.elements.mark();
+    }
+
+    fn blacken(&self) {
+        self.class.blacken();
+        self.elements.blacken();
+    }
+}
+
+impl fmt::Display for ObjHashMap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.disp_lock.get() {
+            return write!(f, "{{...}}");
+        }
+        let prev_disp_lock = self.disp_lock.replace(true);
+        write!(f, "{{")?;
+        let num_elems = self.elements.len();
+        for (i, (&k, &v)) in self.elements.iter().enumerate() {
+            write!(
+                f,
+                "{}: {}{}",
+                k,
+                v,
+                if i == num_elems - 1 { "" } else { ", " }
+            )?;
+        }
+        self.disp_lock.set(prev_disp_lock);
+        write!(f, "}}")
+    }
+}
+
+impl cmp::PartialEq for ObjHashMap {
+    fn eq(&self, other: &ObjHashMap) -> bool {
+        if self as *const _ == other as *const _ {
+            return true;
+        }
+        self.elements == other.elements
     }
 }

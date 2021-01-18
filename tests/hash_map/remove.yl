@@ -1,0 +1,18 @@
+// {1: false, foo: nil, <class Vec>: okay}
+// false
+// nil
+// nil
+// nil
+// okay
+// nil
+// {}
+// 0
+var d = {1: false, "foo": nil, Vec: "okay"};
+print(d);
+print(d.remove(1));
+print(d.remove(2));
+print(d.remove("foo"));
+print(d.remove(nil));
+print(d.remove(Vec));
+print(d.remove(HashMap));
+print(d);

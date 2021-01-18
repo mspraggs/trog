@@ -853,3 +853,109 @@ pub fn new_root_obj_range_iter_class(
         build_methods(vm, &[("__next__", range_iter_next as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
+
+/// HashMap implementation
+
+pub fn new_root_obj_hash_map_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+    iter_class: Gc<ObjClass>,
+) -> Root<ObjClass> {
+    let class_name = vm.new_gc_obj_string("HashMap");
+    let method_map = [
+        ("__init__", hash_map_init as NativeFn),
+        ("has_key", hash_map_has_key as NativeFn),
+        ("get", hash_map_get as NativeFn),
+        ("insert", hash_map_insert as NativeFn),
+        ("remove", hash_map_remove as NativeFn),
+        ("clear", hash_map_clear as NativeFn),
+        ("len", hash_map_len as NativeFn),
+    ];
+    let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}
+
+fn hash_map_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+    let hash_map = object::new_root_obj_hash_map(vm, vm.class_store.get_obj_hash_map_class());
+    Ok(Value::ObjHashMap(hash_map.as_gc()))
+}
+
+fn hash_map_has_key(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap.");
+
+    let key = validate_hash_map_key(args[1])?;
+    let borrowed_hash_map = hash_map.borrow();
+    Ok(Value::Boolean(
+        borrowed_hash_map.elements.contains_key(&key),
+    ))
+}
+
+fn hash_map_get(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+
+    let key = validate_hash_map_key(args[1])?;
+
+    let borrowed_hash_map = hash_map.borrow();
+    Ok(*borrowed_hash_map.elements.get(&key).unwrap_or(&Value::None))
+}
+
+fn hash_map_insert(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 2)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+
+    let key = validate_hash_map_key(args[1])?;
+    let value = args[2];
+
+    let mut borrowed_hash_map = hash_map.borrow_mut();
+    Ok(borrowed_hash_map
+        .elements
+        .insert(key, value)
+        .unwrap_or(Value::None))
+}
+
+fn hash_map_remove(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+
+    let key = validate_hash_map_key(args[1])?;
+
+    let mut borrowed_hash_map = hash_map.borrow_mut();
+    Ok(borrowed_hash_map
+        .elements
+        .remove(&key)
+        .unwrap_or(Value::None))
+}
+
+fn hash_map_clear(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let mut borrowed_hash_map = hash_map.borrow_mut();
+    borrowed_hash_map.elements.clear();
+    Ok(Value::None)
+}
+
+fn hash_map_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let borrowed_hash_map = hash_map.borrow();
+    Ok(Value::Number(borrowed_hash_map.elements.len() as f64))
+}
+
+fn validate_hash_map_key(key: Value) -> Result<Value, Error> {
+    if !key.has_hash() {
+        return Err(error!(
+            ErrorKind::ValueError,
+            "Cannot use unhashable value '{}' as HashMap key.", key
+        ));
+    }
+    Ok(key)
+}

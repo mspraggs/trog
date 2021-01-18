@@ -514,7 +514,10 @@ impl<'a> Parser<'a> {
         // }
 
         // Set up loop variable
-        self.consume(TokenKind::Identifier, "Expected loop variable name.");
+        if !self.match_token(TokenKind::Identifier) {
+            self.error_at_current("Expected loop variable name.");
+            return;
+        }
         self.declare_variable();
         self.emit_byte(OpCode::Nil as u8);
         self.mark_initialised();
@@ -1160,6 +1163,29 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn hash_map(s: &mut Parser, _can_assign: bool) {
+        let mut num_entries: usize = 0;
+        if !s.check(TokenKind::RightBrace) {
+            loop {
+                s.expression();
+                s.consume(TokenKind::Colon, "Expected ':' after key.");
+                s.expression();
+
+                if num_entries == 255 {
+                    s.error("Cannot have more than 255 HashMap entries.");
+                }
+                num_entries += 1;
+
+                if !s.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+
+        s.consume(TokenKind::RightBrace, "Expected '}' after elements.");
+        s.emit_bytes([OpCode::BuildHashMap as u8, num_entries as u8]);
+    }
+
     fn vector(s: &mut Parser, _can_assign: bool) {
         let num_elems = s.argument_list(
             TokenKind::RightBracket,
@@ -1314,7 +1340,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 51] = [
+const RULES: [ParseRule; 52] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -1329,7 +1355,7 @@ const RULES: [ParseRule; 51] = [
     },
     // LeftBrace
     ParseRule {
-        prefix: None,
+        prefix: Some(Parser::hash_map),
         infix: None,
         precedence: Precedence::None,
     },
@@ -1388,6 +1414,12 @@ const RULES: [ParseRule; 51] = [
         precedence: Precedence::Term,
     },
     // PlusEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Colon
     ParseRule {
         prefix: None,
         infix: None,

@@ -31,6 +31,7 @@ pub enum TokenKind {
     MinusEqual,
     Plus,
     PlusEqual,
+    Colon,
     SemiColon,
     Slash,
     SlashEqual,
@@ -167,6 +168,7 @@ impl Scanner {
             }
             "[" => self.make_token(TokenKind::LeftBracket),
             "]" => self.make_token(TokenKind::RightBracket),
+            ":" => self.make_token(TokenKind::Colon),
             ";" => self.make_token(TokenKind::SemiColon),
             "," => self.make_token(TokenKind::Comma),
             "." => {

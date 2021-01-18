@@ -1,0 +1,16 @@
+// {}
+// {}
+// {1: 2, 2: 3}
+// {foo: bar, 4: nil, false: true}
+// 0
+var m1 = HashMap();
+print(m1);
+
+var m2 = {};
+print(m2);
+
+var m3 = {1: 2, 2: 3};
+print(m3);
+
+var m4 = {"foo": "bar", 4: nil, false: true};
+print(m4);

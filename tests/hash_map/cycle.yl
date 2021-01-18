@@ -1,0 +1,7 @@
+// {1: {2: {...}}}
+// 0
+var m1 = {};
+var m2 = {};
+m1.insert(2, m2);
+m2.insert(1, m1);
+print(m2);

@@ -1,0 +1,4 @@
+// Cannot use unhashable value '[]' as HashMap key.
+// [line 4] in script
+// 70
+var d = {[]: 2, 3: 4};

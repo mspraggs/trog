@@ -33,3 +33,14 @@ pub(crate) fn validate_integer(value: Value) -> Result<isize, Error> {
         ))
     }
 }
+
+pub(crate) fn hash_number(num: f64) -> u64 {
+    let mut hash = u64::from_ne_bytes(num.to_ne_bytes()) as u128;
+    hash = (!hash).wrapping_add(hash.wrapping_shl(18));
+    hash = hash ^ hash.wrapping_shr(31);
+    hash = hash.wrapping_mul(21);
+    hash = hash ^ hash.wrapping_shr(11);
+    hash = hash + hash.wrapping_shl(6);
+    hash = hash ^ hash.wrapping_shr(22);
+    hash as u64
+}

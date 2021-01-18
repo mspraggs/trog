@@ -1,0 +1,11 @@
+// true
+// true
+// false
+// true
+// 0
+var m = {};
+print(m == m);
+print(m == {});
+print(m == {1: false});
+m.insert(1, m);
+print(m == m);

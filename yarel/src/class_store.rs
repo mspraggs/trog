@@ -39,6 +39,7 @@ pub struct CoreClassStore {
     root_obj_vec_iter_class: Root<ObjClass>,
     root_obj_range_class: Root<ObjClass>,
     root_obj_range_iter_class: Root<ObjClass>,
+    root_obj_hash_map_class: Root<ObjClass>,
     root_obj_string_iter_class: Root<ObjClass>,
 }
 
@@ -62,6 +63,7 @@ impl CoreClassStore {
             root_obj_vec_iter_class: Root::dangling(),
             root_obj_range_class: Root::dangling(),
             root_obj_range_iter_class: Root::dangling(),
+            root_obj_hash_map_class: Root::dangling(),
             root_obj_string_iter_class: Root::dangling(),
         }
     }
@@ -181,6 +183,13 @@ impl CoreClassStore {
             None,
             methods.clone(),
         );
+        let root_obj_hash_map_class = object::new_root_obj_class(
+            vm,
+            empty,
+            root_base_metaclass.as_gc(),
+            None,
+            methods.clone(),
+        );
         let root_obj_string_iter_class = object::new_root_obj_class(
             vm,
             empty,
@@ -206,6 +215,7 @@ impl CoreClassStore {
             root_obj_vec_iter_class,
             root_obj_range_class,
             root_obj_range_iter_class,
+            root_obj_hash_map_class,
             root_obj_string_iter_class,
         }
     }
@@ -328,6 +338,12 @@ impl CoreClassStore {
             root_base_metaclass.as_gc(),
             root_object_class.as_gc(),
         );
+        let root_obj_hash_map_class = core::new_root_obj_hash_map_class(
+            vm,
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
+            root_obj_iter_class.as_gc(),
+        );
         let root_obj_string_iter_class = core::new_root_obj_string_iter_class(
             vm,
             root_base_metaclass.as_gc(),
@@ -351,6 +367,7 @@ impl CoreClassStore {
             root_obj_vec_iter_class,
             root_obj_range_class,
             root_obj_range_iter_class,
+            root_obj_hash_map_class,
             root_obj_string_iter_class,
         }
     }
@@ -421,6 +438,10 @@ impl CoreClassStore {
 
     pub(crate) fn get_obj_range_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_range_iter_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_hash_map_class(&self) -> Gc<ObjClass> {
+        self.root_obj_hash_map_class.as_gc()
     }
 
     pub(crate) fn get_obj_string_iter_class(&self) -> Gc<ObjClass> {

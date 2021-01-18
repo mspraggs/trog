@@ -1,0 +1,7 @@
+// {1: false, foo: nil, <class Vec>: okay}
+// {}
+// 0
+var d = {1: false, "foo": nil, Vec: "okay"};
+print(d);
+d.clear();
+print(d);

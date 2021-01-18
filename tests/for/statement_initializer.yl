@@ -1,3 +1,3 @@
-// [line 3] Error at '{': Expected loop variable name.
+// [line 3] Error at 'or': Expected loop variable name.
 // 65
-for {} in 0..1} {}
+for or in 0..1 {}

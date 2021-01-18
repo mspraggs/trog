@@ -523,6 +523,28 @@ impl Vm {
                     *self.peek_mut(0) = obj;
                 }
 
+                byte if byte == OpCode::BuildHashMap as u8 => {
+                    let num_elements = read_byte!() as usize;
+                    let map = object::new_root_obj_hash_map(
+                        self,
+                        self.class_store.get_obj_hash_map_class(),
+                    );
+                    let begin = self.stack.len() - num_elements * 2;
+                    for i in 0..num_elements {
+                        let key = self.stack[begin + 2 * i];
+                        if !key.has_hash() {
+                            return Err(error!(
+                                ErrorKind::ValueError,
+                                "Cannot use unhashable value '{}' as HashMap key.", key
+                            ));
+                        }
+                        let value = self.stack[begin + 2 * i + 1];
+                        map.borrow_mut().elements.insert(key, value);
+                    }
+                    self.stack.truncate(begin);
+                    self.push(Value::ObjHashMap(map.as_gc()));
+                }
+
                 byte if byte == OpCode::BuildRange as u8 => {
                     let end = utils::validate_integer(self.pop())?;
                     let begin = utils::validate_integer(self.pop())?;
@@ -813,6 +835,10 @@ impl Vm {
             }
             Value::ObjRangeIter(iter) => {
                 let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjHashMap(map) => {
+                let class = map.borrow().class;
                 self.invoke_from_class(class, name, arg_count)
             }
             Value::ObjString(string) => self.invoke_from_class(string.class, name, arg_count),
@@ -1122,6 +1148,8 @@ impl Vm {
         self.set_global("Vec", Value::ObjClass(obj_vec_class));
         let obj_range_class = self.class_store.get_obj_range_class();
         self.set_global("Range", Value::ObjClass(obj_range_class));
+        let obj_hash_map_class = self.class_store.get_obj_hash_map_class();
+        self.set_global("HashMap", Value::ObjClass(obj_hash_map_class));
     }
 
     fn frame(&self) -> &CallFrame {

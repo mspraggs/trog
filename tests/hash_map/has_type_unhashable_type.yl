@@ -1,0 +1,5 @@
+// Cannot use unhashable value '[]' as HashMap key.
+// [line 5] in script
+// 70
+var d = {};
+d.has_key([]);

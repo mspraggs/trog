@@ -1,0 +1,7 @@
+// {1: foo, <class Vec>: 1, bar: false}
+// 0
+var d = {};
+d.insert(1, "foo");
+d.insert("bar", false);
+d.insert(Vec, 1);
+print(d);
