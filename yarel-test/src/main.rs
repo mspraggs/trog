@@ -13,65 +13,46 @@
  * limitations under the License.
  */
 
-use std::{io, process};
+use regex::{self, Regex};
 
-mod test;
-mod utils;
+const WILDCARDS: [(&str, &str); 1] = [("[MEMADDR]", "0x[a-f0-9]+")];
 
-use yarel::vm::Vm;
+fn parse_line(source: &str) -> String {
+    let mut result = regex::escape(source);
+    for (wildcard, regex) in &WILDCARDS {
+        let escaped_wildcard = &regex::escape(wildcard.to_owned());
+        result = result.replace(escaped_wildcard, regex);
+    }
+
+    format!("^{}$", result)
+}
+
+fn match_output(expected: &[String], actual: &[String]) -> bool {
+    if expected.len() != actual.len() {
+        return false;
+    }
+
+    if expected == actual {
+        return true;
+    }
+
+    for (expected, actual) in expected.iter().zip(actual.iter()) {
+        if expected == actual {
+            continue;
+        }
+        let expected = parse_line(expected);
+        let re = Regex::new(&expected).unwrap();
+        if !re.is_match(actual) {
+            return false;
+        }
+    }
+
+    true
+}
 
 fn main() {
-    let paths = match utils::get_paths("tests", Some(".yl")) {
-        Ok(p) => p,
-        Err(_) => {
-            eprintln!("Error reading test paths");
-            return;
-        }
-    };
+    let expected_output = vec!["[MEMADDR]".to_owned()];
+    let output = vec!["0x1234".to_owned()];
 
-    let mut num_passed = 0;
-    let mut num_skipped = 0;
-    let mut num_failed = 0;
-    let mut stdout = io::stdout();
-
-    let mut vm = Vm::with_built_ins();
-
-    let failures: Vec<test::Failure> = paths
-        .iter()
-        .map(|p| {
-            let ret = test::run_test(p, &mut vm);
-            match ret {
-                Ok(ref success) => {
-                    if !success.skipped {
-                        num_passed += 1;
-                    } else {
-                        num_skipped += 1;
-                    }
-                }
-                Err(_) => {
-                    num_failed += 1;
-                }
-            };
-            utils::print_stats(&mut stdout, num_passed, num_skipped, num_failed);
-            ret
-        })
-        .filter(|r| r.is_err())
-        .map(|r| r.unwrap_err())
-        .collect();
-    println!();
-
-    let tests_failed = !failures.is_empty();
-
-    if tests_failed {
-        println!();
-        println!("Failing tests:");
-    }
-
-    for fail in failures {
-        utils::write_failure(&mut stdout, &fail);
-    }
-
-    if tests_failed {
-        process::exit(1);
-    }
+    println!("{}", !match_output(&expected_output, &output));
 }
