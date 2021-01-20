@@ -1,0 +1,5 @@
+// [nil, 1, nil]
+// 0
+var v = [nil, nil, nil];
+v[1] = 1;
+print(v);
