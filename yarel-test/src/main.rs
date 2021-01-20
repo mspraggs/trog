@@ -15,44 +15,7 @@
 
 use regex::{self, Regex};
 
-const WILDCARDS: [(&str, &str); 1] = [("[MEMADDR]", "0x[a-f0-9]+")];
-
-fn parse_line(source: &str) -> String {
-    let mut result = regex::escape(source);
-    for (wildcard, regex) in &WILDCARDS {
-        let escaped_wildcard = &regex::escape(wildcard.to_owned());
-        result = result.replace(escaped_wildcard, regex);
-    }
-
-    format!("^{}$", result)
-}
-
-fn match_output(expected: &[String], actual: &[String]) -> bool {
-    if expected.len() != actual.len() {
-        return false;
-    }
-
-    if expected == actual {
-        return true;
-    }
-
-    for (expected, actual) in expected.iter().zip(actual.iter()) {
-        if expected == actual {
-            continue;
-        }
-        let expected = parse_line(expected);
-        let re = Regex::new(&expected).unwrap();
-        if !re.is_match(actual) {
-            return false;
-        }
-    }
-
-    true
-}
-
 fn main() {
-    let expected_output = vec!["[MEMADDR]".to_owned()];
-    let output = vec!["0x1234".to_owned()];
-
-    println!("{}", !match_output(&expected_output, &output));
+    let re = Regex::new("0x[a-f0-9]+").unwrap();
+    println!("{}", re.is_match("0x1234"));
 }
