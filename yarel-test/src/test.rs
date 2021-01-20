@@ -14,17 +14,18 @@
  */
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs;
 use std::mem;
-
-use regex::{self, Regex};
 
 use yarel::compiler;
 use yarel::error::{Error, ErrorKind};
 use yarel::value::Value;
 use yarel::vm::Vm;
 
-const WILDCARDS: [(&str, &str); 1] = [("[MEMADDR]", "0x[a-f0-9]+")];
+type Matcher = fn(&str) -> Option<usize>;
+
+const WILDCARDS: [(&str, Matcher); 1] = [("[MEMADDR]", match_memaddr)];
 
 #[derive(Debug)]
 pub struct Success {
@@ -40,14 +41,61 @@ pub struct Failure {
 
 thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
 
-fn parse_line(source: &str) -> String {
-    let mut result = regex::escape(source);
-    for (wildcard, regex) in &WILDCARDS {
-        let escaped_wildcard = &regex::escape(wildcard.to_owned());
-        result = result.replace(escaped_wildcard, regex);
+fn match_memaddr(s: &str) -> Option<usize> {
+    if !s.is_char_boundary(2) {
+        return None;
+    }
+    for (i, c) in s[2..].chars().enumerate() {
+        if !c.is_ascii_hexdigit() {
+            return if i > 0 { Some(i + 2) } else { None };
+        }
+    }
+    Some(s.len())
+}
+
+fn get_next_char_boundary(s: &str, i: usize) -> usize {
+    for pos in (i + 1)..s.len() {
+        if s.is_char_boundary(pos) {
+            return pos;
+        }
+    }
+    s.len()
+}
+
+fn match_line(expected: &str, actual: &str) -> bool {
+    if expected == actual {
+        return true;
     }
 
-    format!("^{}$", result)
+    let mut matchers = HashMap::new();
+    for (pattern, matcher) in &WILDCARDS {
+        for (pos, _) in expected.match_indices(pattern) {
+            matchers.insert(pos, (pattern.len(), matcher));
+        }
+    }
+
+    let mut i = 0;
+    let mut j = 0;
+    while i < expected.len() && j < actual.len() {
+        if let Some((i_offset, matcher)) = matchers.get(&i) {
+            if let Some(j_offset) = matcher(&actual[j..]) {
+                i += i_offset;
+                j += j_offset;
+                continue;
+            } else {
+                return false;
+            }
+        }
+        let next_i = get_next_char_boundary(expected, i);
+        let next_j = get_next_char_boundary(actual, j);
+        if expected[i..next_i] != actual[j..next_j] {
+            return false;
+        }
+        i = next_i;
+        j = next_j;
+    }
+
+    true
 }
 
 fn parse_test(source: String) -> Option<Vec<String>> {
@@ -91,12 +139,7 @@ fn match_output(expected: &[String], actual: &[String]) -> bool {
     }
 
     for (expected, actual) in expected.iter().zip(actual.iter()) {
-        if expected == actual {
-            continue;
-        }
-        let expected = parse_line(expected);
-        let re = Regex::new(&expected).unwrap();
-        if !re.is_match(actual) {
+        if !match_line(expected, actual) {
             return false;
         }
     }

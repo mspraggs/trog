@@ -9,4 +9,3 @@ edition = "2018"
 [dependencies]
 yarel = { path = "../yarel" }
 crossterm = "*"
-regex = "*"
