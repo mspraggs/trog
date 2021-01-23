@@ -1,0 +1,5 @@
+// Tuple index parameter out of bounds
+// [line 5] in script
+// 70
+var t = (1, 2);
+t[-3];

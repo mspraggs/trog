@@ -1052,8 +1052,36 @@ impl<'a> Parser<'a> {
     }
 
     fn grouping(s: &mut Parser, _can_assign: bool) {
-        s.expression();
-        s.consume(TokenKind::RightParen, "Expected ')' after expression.");
+        let mut single_elem_tuple = false;
+        let mut num_elems: usize = 0;
+        if !s.check(TokenKind::RightParen) {
+            loop {
+                s.expression();
+                if num_elems == 255 {
+                    s.error("Cannot have more than 255 Tuple elements.");
+                }
+                num_elems += 1;
+
+                if !s.match_token(TokenKind::Comma) {
+                    break;
+                }
+                if num_elems == 1 && s.check(TokenKind::RightParen) {
+                    single_elem_tuple = true;
+                    break;
+                }
+            }
+        }
+
+        let is_tuple = num_elems != 1 || single_elem_tuple;
+        if is_tuple {
+            s.emit_bytes([OpCode::BuildTuple as u8, num_elems as u8]);
+        }
+
+        let msg = &format!(
+            "Expected ')' after {}.",
+            if is_tuple { "elements" } else { "expression" }
+        );
+        s.consume(TokenKind::RightParen, msg);
     }
 
     fn binary(s: &mut Parser, _can_assign: bool) {

@@ -21,7 +21,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use crate::error::{Error, ErrorKind};
-use crate::hash::BuildPassThroughHasher;
+use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
 use crate::memory::{self, Gc, Root};
 use crate::value::Value;
 use crate::vm::Vm;
@@ -833,5 +833,163 @@ impl cmp::PartialEq for ObjHashMap {
             return true;
         }
         self.elements == other.elements
+    }
+}
+
+pub struct ObjTuple {
+    pub class: Gc<ObjClass>,
+    pub elements: Vec<Value>,
+    self_lock: Cell<bool>,
+}
+
+pub fn new_gc_obj_tuple(vm: &mut Vm, class: Gc<ObjClass>, elements: Vec<Value>) -> Gc<ObjTuple> {
+    vm.allocate(ObjTuple::new(class, elements))
+}
+
+pub fn new_root_obj_tuple(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    elements: Vec<Value>,
+) -> Root<ObjTuple> {
+    new_gc_obj_tuple(vm, class, elements).as_root()
+}
+
+impl ObjTuple {
+    fn new(class: Gc<ObjClass>, elements: Vec<Value>) -> Self {
+        ObjTuple {
+            class,
+            elements,
+            self_lock: Cell::new(false),
+        }
+    }
+
+    pub(crate) fn has_hash(&self) -> bool {
+        if self.self_lock.get() {
+            return true;
+        }
+        let self_lock_prev = self.self_lock.replace(true);
+        let ret = self
+            .elements
+            .iter()
+            .map(|v| v.has_hash())
+            .fold(true, |a, b| a && b);
+        self.self_lock.set(self_lock_prev);
+        ret
+    }
+}
+
+impl memory::GcManaged for ObjTuple {
+    fn mark(&self) {
+        self.class.mark();
+        self.elements.mark();
+    }
+
+    fn blacken(&self) {
+        self.class.blacken();
+        self.elements.blacken();
+    }
+}
+
+impl fmt::Display for ObjTuple {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.self_lock.get() {
+            return write!(f, "(...)");
+        }
+        let prev_self_lock = self.self_lock.replace(true);
+        write!(f, "(")?;
+        let num_elems = self.elements.len();
+        for (i, e) in self.elements.iter().enumerate() {
+            let suffix = if num_elems == 1 {
+                ","
+            } else if i == num_elems - 1 {
+                ""
+            } else {
+                ", "
+            };
+            write!(f, "{}{}", e, suffix)?;
+        }
+        self.self_lock.set(prev_self_lock);
+        write!(f, ")")
+    }
+}
+
+impl cmp::PartialEq for ObjTuple {
+    fn eq(&self, other: &ObjTuple) -> bool {
+        if self as *const _ == other as *const _ {
+            return true;
+        }
+        self.elements == other.elements
+    }
+}
+
+impl Hash for Gc<ObjTuple> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let hash = self
+            .elements
+            .iter()
+            .map(|v| {
+                let mut hasher = PassThroughHasher::default();
+                v.hash(&mut hasher);
+                hasher.finish()
+            })
+            .fold(0_64, |a, b| a ^ b);
+        state.write_u64(hash);
+    }
+}
+
+pub struct ObjTupleIter {
+    pub class: Gc<ObjClass>,
+    pub iterable: Gc<ObjTuple>,
+    pub current: usize,
+}
+
+pub fn new_gc_obj_tuple_iter(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    vec: Gc<ObjTuple>,
+) -> Gc<RefCell<ObjTupleIter>> {
+    vm.allocate(RefCell::new(ObjTupleIter::new(class, vec)))
+}
+
+pub fn new_root_obj_tuple_iter(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    vec: Gc<ObjTuple>,
+) -> Root<RefCell<ObjTupleIter>> {
+    new_gc_obj_tuple_iter(vm, class, vec).as_root()
+}
+
+impl ObjTupleIter {
+    fn new(class: Gc<ObjClass>, iterable: Gc<ObjTuple>) -> Self {
+        ObjTupleIter {
+            class,
+            iterable,
+            current: 0,
+        }
+    }
+
+    pub(crate) fn next(&mut self) -> Value {
+        if self.current >= self.iterable.elements.len() {
+            return Value::Sentinel;
+        }
+        let ret = self.iterable.elements[self.current];
+        self.current += 1;
+        ret
+    }
+}
+
+impl memory::GcManaged for ObjTupleIter {
+    fn mark(&self) {
+        self.iterable.mark();
+    }
+
+    fn blacken(&self) {
+        self.iterable.blacken();
+    }
+}
+
+impl fmt::Display for ObjTupleIter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ObjTupleIter instance")
     }
 }

@@ -567,6 +567,20 @@ impl Vm {
                     self.push(value);
                 }
 
+                byte if byte == OpCode::BuildTuple as u8 => {
+                    let num_operands = read_byte!() as usize;
+                    let begin = self.stack.len() - num_operands;
+                    let end = self.stack.len();
+                    let elements = self.stack[begin..end].iter().copied().collect();
+                    let tuple = object::new_root_obj_tuple(
+                        self,
+                        self.class_store.get_obj_tuple_class(),
+                        elements,
+                    );
+                    self.stack.truncate(begin);
+                    self.push(Value::ObjTuple(tuple.as_gc()));
+                }
+
                 byte if byte == OpCode::BuildVec as u8 => {
                     let num_operands = read_byte!() as usize;
                     let vec = object::new_root_obj_vec(self, self.class_store.get_obj_vec_class());
@@ -820,6 +834,14 @@ impl Vm {
                 }
 
                 self.invoke_from_class(instance.borrow().class, name, arg_count)
+            }
+            Value::ObjTuple(tuple) => {
+                let class = tuple.class;
+                self.invoke_from_class(class, name, arg_count)
+            }
+            Value::ObjTupleIter(iter) => {
+                let class = iter.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
             }
             Value::ObjVec(vec) => {
                 let class = vec.borrow().class;
@@ -1144,6 +1166,8 @@ impl Vm {
         self.set_global("MapIter", Value::ObjClass(obj_map_iter_class));
         let obj_filter_iter_class = self.class_store.get_obj_filter_iter_class();
         self.set_global("FilterIter", Value::ObjClass(obj_filter_iter_class));
+        let obj_tuple_class = self.class_store.get_obj_tuple_class();
+        self.set_global("Tuple", Value::ObjClass(obj_tuple_class));
         let obj_vec_class = self.class_store.get_obj_vec_class();
         self.set_global("Vec", Value::ObjClass(obj_vec_class));
         let obj_range_class = self.class_store.get_obj_range_class();

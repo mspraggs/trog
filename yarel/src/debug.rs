@@ -65,6 +65,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::BuildHashMap => byte_instruction("BUILD_HASH_MAP", chunk, offset),
         OpCode::BuildRange => simple_instruction("BUILD_RANGE", offset),
         OpCode::BuildString => byte_instruction("BUILD_STRING", chunk, offset),
+        OpCode::BuildTuple => byte_instruction("BUILD_TUPLE", chunk, offset),
         OpCode::FormatString => simple_instruction("FORMAT_STRING", offset),
         OpCode::BuildVec => byte_instruction("BUILD_VEC", chunk, offset),
         OpCode::IterNext => simple_instruction("ITER_NEXT", offset),

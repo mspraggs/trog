@@ -1,0 +1,12 @@
+// true
+// true
+// false
+// true
+// 0
+var t = ();
+print(t == t);
+print(t == ());
+print(t == (1,));
+t = ([],);
+t[0].push(t);
+print(t == t);

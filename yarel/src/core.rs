@@ -633,6 +633,100 @@ pub fn new_root_obj_string_iter_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
+/// Tuple implementation
+
+pub fn new_root_obj_tuple_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+    iter_class: Gc<ObjClass>,
+) -> Root<ObjClass> {
+    let class_name = vm.new_gc_obj_string("Tuple");
+    let method_map = [
+        ("__init__", tuple_init as NativeFn),
+        ("__getitem__", tuple_get_item as NativeFn),
+        ("len", tuple_len as NativeFn),
+        ("__iter__", tuple_iter as NativeFn),
+    ];
+    let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}
+
+fn tuple_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+    let vec = object::new_root_obj_tuple(vm, vm.class_store.get_obj_tuple_class(), Vec::new());
+    Ok(Value::ObjTuple(vec.as_gc()))
+}
+
+fn tuple_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 1)?;
+
+    let tuple = args[0].try_as_obj_tuple().expect("Expected ObjTuple");
+
+    match args[1] {
+        Value::Number(_) => {
+            let index = get_bounded_index(
+                args[1],
+                tuple.elements.len() as isize,
+                "Tuple index parameter out of bounds",
+            )?;
+            Ok(tuple.elements[index])
+        }
+        Value::ObjRange(r) => {
+            let tuple_len = tuple.elements.len() as isize;
+            let (begin, end) = r.get_bounded_range(tuple_len, "Tuple")?;
+            let new_elements = Vec::from(&tuple.elements[begin..end]);
+            let new_tuple = object::new_gc_obj_tuple(vm, tuple.class, new_elements);
+            Ok(Value::ObjTuple(new_tuple))
+        }
+        _ => Err(error!(
+            ErrorKind::TypeError,
+            "Expected an integer or range."
+        )),
+    }
+}
+
+fn tuple_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let tuple = args[0].try_as_obj_tuple().expect("Expected ObjTuple");
+    Ok(Value::from(tuple.elements.len() as f64))
+}
+
+fn tuple_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let iter = object::new_root_obj_tuple_iter(
+        vm,
+        vm.class_store.get_obj_tuple_iter_class(),
+        args[0]
+            .try_as_obj_tuple()
+            .expect("Expected ObjTuple instance."),
+    );
+    Ok(Value::ObjTupleIter(iter.as_gc()))
+}
+
+/// TupleIter implementation
+
+pub fn new_root_obj_tuple_iter_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
+    let class_name = vm.new_gc_obj_string("TupleIter");
+    let (methods, _native_roots) =
+        build_methods(vm, &[("__next__", tuple_iter_next as NativeFn)], None);
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}
+
+fn tuple_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    assert!(args.len() == 1);
+    let iter = args[0]
+        .try_as_obj_tuple_iter()
+        .expect("Expected ObjTupleIter instance.");
+    let mut borrowed_iter = iter.borrow_mut();
+    Ok(borrowed_iter.next())
+}
+
 /// Vec implemenation
 
 pub fn new_root_obj_vec_class(
@@ -705,7 +799,7 @@ fn vec_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         Value::ObjRange(r) => {
             let vec_len = vec.borrow().elements.len() as isize;
             let (begin, end) = r.get_bounded_range(vec_len, "Vec")?;
-            let new_vec = object::new_gc_obj_vec(vm, vm.class_store.get_obj_vec_class());
+            let new_vec = object::new_gc_obj_vec(vm, vec.borrow().class);
             new_vec
                 .borrow_mut()
                 .elements

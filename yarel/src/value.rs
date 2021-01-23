@@ -16,13 +16,14 @@
 use std::cell::RefCell;
 use std::cmp;
 use std::fmt;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 
 use crate::class_store::CoreClassStore;
+use crate::hash::PassThroughHasher;
 use crate::memory::{self, Gc};
 use crate::object::{
     ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjInstance, ObjNative,
-    ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjVec, ObjVecIter,
+    ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjTuple, ObjTupleIter, ObjVec, ObjVecIter,
 };
 use crate::utils;
 
@@ -39,6 +40,8 @@ pub enum Value {
     ObjInstance(Gc<RefCell<ObjInstance>>),
     ObjBoundMethod(Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>),
     ObjBoundNative(Gc<RefCell<ObjBoundMethod<ObjNative>>>),
+    ObjTuple(Gc<ObjTuple>),
+    ObjTupleIter(Gc<RefCell<ObjTupleIter>>),
     ObjVec(Gc<RefCell<ObjVec>>),
     ObjVecIter(Gc<RefCell<ObjVecIter>>),
     ObjRange(Gc<ObjRange>),
@@ -70,6 +73,8 @@ impl Value {
             Value::ObjInstance(instance) => instance.borrow().class,
             Value::ObjBoundMethod(_) => class_store.get_obj_closure_method_class(),
             Value::ObjBoundNative(_) => class_store.get_obj_native_method_class(),
+            Value::ObjTuple(tuple) => tuple.class,
+            Value::ObjTupleIter(iter) => iter.borrow().class,
             Value::ObjVec(vec) => vec.borrow().class,
             Value::ObjVecIter(iter) => iter.borrow().class,
             Value::ObjRange(range) => range.class,
@@ -86,6 +91,7 @@ impl Value {
             Value::Number(_) => true,
             Value::ObjString(_) => true,
             Value::ObjClass(_) => true,
+            Value::ObjTuple(t) => t.has_hash(),
             Value::ObjRange(_) => true,
             Value::None => true,
             Value::Sentinel => true,
@@ -166,6 +172,18 @@ impl Value {
             _ => None,
         }
     }
+    pub fn try_as_obj_tuple(&self) -> Option<Gc<ObjTuple>> {
+        match self {
+            Value::ObjTuple(inner) => Some(*inner),
+            _ => None,
+        }
+    }
+    pub fn try_as_obj_tuple_iter(&self) -> Option<Gc<RefCell<ObjTupleIter>>> {
+        match self {
+            Value::ObjTupleIter(inner) => Some(*inner),
+            _ => None,
+        }
+    }
     pub fn try_as_obj_vec(&self) -> Option<Gc<RefCell<ObjVec>>> {
         match self {
             Value::ObjVec(inner) => Some(*inner),
@@ -216,6 +234,8 @@ impl memory::GcManaged for Value {
             Value::ObjInstance(inner) => inner.mark(),
             Value::ObjBoundMethod(inner) => inner.mark(),
             Value::ObjBoundNative(inner) => inner.mark(),
+            Value::ObjTuple(inner) => inner.mark(),
+            Value::ObjTupleIter(inner) => inner.mark(),
             Value::ObjVec(inner) => inner.mark(),
             Value::ObjVecIter(inner) => inner.mark(),
             Value::ObjRange(inner) => inner.mark(),
@@ -236,6 +256,8 @@ impl memory::GcManaged for Value {
             Value::ObjInstance(inner) => inner.blacken(),
             Value::ObjBoundMethod(inner) => inner.blacken(),
             Value::ObjBoundNative(inner) => inner.blacken(),
+            Value::ObjTuple(inner) => inner.blacken(),
+            Value::ObjTupleIter(inner) => inner.blacken(),
             Value::ObjVec(inner) => inner.blacken(),
             Value::ObjVecIter(inner) => inner.blacken(),
             Value::ObjRange(inner) => inner.blacken(),
@@ -283,6 +305,10 @@ impl fmt::Display for Value {
             Value::ObjBoundNative(underlying) => {
                 write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
             }
+            Value::ObjTuple(underlying) => write!(f, "{}", **underlying),
+            Value::ObjTupleIter(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
             Value::ObjVec(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjVecIter(underlying) => {
                 write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
@@ -311,6 +337,8 @@ impl cmp::PartialEq for Value {
             (Value::ObjClass(first), Value::ObjClass(second)) => *first == *second,
             (Value::ObjInstance(first), Value::ObjInstance(second)) => *first == *second,
             (Value::ObjBoundMethod(first), Value::ObjBoundMethod(second)) => *first == *second,
+            (Value::ObjTuple(first), Value::ObjTuple(second)) => **first == **second,
+            (Value::ObjTupleIter(first), Value::ObjTupleIter(second)) => *first == *second,
             (Value::ObjVec(first), Value::ObjVec(second)) => *first.borrow() == *second.borrow(),
             (Value::ObjVecIter(first), Value::ObjVecIter(second)) => *first == *second,
             (Value::ObjRange(first), Value::ObjRange(second)) => *first == *second,
@@ -338,6 +366,11 @@ impl Hash for Value {
             Value::Number(n) => utils::hash_number(*n),
             Value::ObjString(s) => s.hash,
             Value::ObjClass(c) => c.name.hash,
+            Value::ObjTuple(t) => {
+                let mut hasher = PassThroughHasher::default();
+                t.hash(&mut hasher);
+                hasher.finish()
+            }
             Value::ObjRange(r) => {
                 utils::hash_number(r.begin as f64) ^ utils::hash_number(r.end as f64)
             }
