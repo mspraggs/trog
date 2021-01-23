@@ -31,8 +31,9 @@ use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, GcBoxPtr, GcManaged, Heap, Root};
 use crate::object::{
-    self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjNative, ObjRange, ObjString,
-    ObjStringValueMap, ObjUpvalue,
+    self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjNative, ObjRange,
+    ObjRangeIter, ObjString, ObjStringIter, ObjStringValueMap, ObjTuple, ObjTupleIter, ObjUpvalue,
+    ObjVec, ObjVecIter,
 };
 use crate::stack::Stack;
 use crate::utils;
@@ -176,6 +177,10 @@ impl Vm {
         self.globals.insert(name, Value::ObjNative(native.as_gc()));
     }
 
+    pub fn get_class(&self, value: Value) -> Gc<ObjClass> {
+        value.get_class(&self.class_store)
+    }
+
     pub fn new_gc_obj_string(&mut self, data: &str) -> Gc<ObjString> {
         let hash = {
             let mut hasher = FnvHasher::new();
@@ -188,6 +193,48 @@ impl Vm {
         let ret = self.allocate(ObjString::new(self.string_class.as_gc(), data, hash));
         self.string_store.insert(hash, ret.as_root());
         ret
+    }
+
+    pub fn new_root_obj_string_iter(
+        &mut self,
+        string: Gc<ObjString>,
+    ) -> Root<RefCell<ObjStringIter>> {
+        let class = self.class_store.get_obj_string_iter_class();
+        object::new_root_obj_string_iter(self, class, string)
+    }
+
+    pub fn new_root_obj_hash_map(&mut self) -> Root<RefCell<ObjHashMap>> {
+        let class = self.class_store.get_obj_hash_map_class();
+        object::new_root_obj_hash_map(self, class)
+    }
+
+    pub fn new_root_obj_range(&mut self, begin: isize, end: isize) -> Root<ObjRange> {
+        self.build_range(begin, end).as_root()
+    }
+
+    pub fn new_root_obj_range_iter(&mut self, range: Gc<ObjRange>) -> Root<RefCell<ObjRangeIter>> {
+        let class = self.class_store.get_obj_range_iter_class();
+        object::new_root_obj_range_iter(self, class, range)
+    }
+
+    pub fn new_root_obj_tuple(&mut self, elements: Vec<Value>) -> Root<ObjTuple> {
+        let class = self.class_store.get_obj_tuple_class();
+        object::new_root_obj_tuple(self, class, elements)
+    }
+
+    pub fn new_root_obj_tuple_iter(&mut self, tuple: Gc<ObjTuple>) -> Root<RefCell<ObjTupleIter>> {
+        let class = self.class_store.get_obj_tuple_iter_class();
+        object::new_root_obj_tuple_iter(self, class, tuple)
+    }
+
+    pub fn new_root_obj_vec(&mut self) -> Root<RefCell<ObjVec>> {
+        let class = self.class_store.get_obj_vec_class();
+        object::new_root_obj_vec(self, class)
+    }
+
+    pub fn new_root_obj_vec_iter(&mut self, vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIter>> {
+        let class = self.class_store.get_obj_vec_iter_class();
+        object::new_root_obj_vec_iter(self, class, vec)
     }
 
     pub fn reset(&mut self) {

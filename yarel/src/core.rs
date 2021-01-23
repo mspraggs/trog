@@ -86,7 +86,7 @@ pub(crate) fn print(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 pub(crate) fn type_(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
-    Ok(Value::ObjClass(args[1].get_class(&vm.class_store)))
+    Ok(Value::ObjClass(vm.get_class(args[1])))
 }
 
 pub(crate) fn no_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
@@ -132,7 +132,7 @@ pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass
 pub(crate) fn object_is_a(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 1)?;
 
-    let receiver_class = args[0].get_class(&vm.class_store);
+    let receiver_class = vm.get_class(args[0]);
     let query_class = args[1].try_as_obj_class().ok_or_else(|| {
         error!(
             ErrorKind::ValueError,
@@ -383,9 +383,7 @@ fn string_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 fn string_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
-    let iter = object::new_root_obj_string_iter(
-        vm,
-        vm.class_store.get_obj_string_iter_class(),
+    let iter = vm.new_root_obj_string_iter(
         args[0]
             .try_as_obj_string()
             .expect("Expected ObjString instance."),
@@ -513,7 +511,7 @@ fn string_split(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
             "Cannot split using an empty string."
         ));
     }
-    let splits = object::new_root_obj_vec(vm, vm.class_store.get_obj_vec_class());
+    let splits = vm.new_root_obj_vec();
     for substr in string.as_str().split(delim.as_str()) {
         let new_str = Value::ObjString(vm.new_gc_obj_string(substr));
         splits.borrow_mut().elements.push(new_str);
@@ -568,14 +566,14 @@ fn string_to_bytes(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
 
-    let vec = object::new_gc_obj_vec(vm, vm.class_store.get_obj_vec_class());
+    let vec = vm.new_root_obj_vec();
     vec.borrow_mut().elements = string
         .as_bytes()
         .iter()
         .map(|&b| Value::Number(b as f64))
         .collect();
 
-    Ok(Value::ObjVec(vec))
+    Ok(Value::ObjVec(vec.as_gc()))
 }
 
 fn string_to_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
@@ -583,13 +581,13 @@ fn string_to_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
     let string = args[0].try_as_obj_string().expect("Expected ObjString.");
 
-    let vec = object::new_gc_obj_vec(vm, vm.class_store.get_obj_vec_class());
+    let vec = vm.new_root_obj_vec();
     vec.borrow_mut().elements = string
         .chars()
         .map(|c| Value::Number((c as u32) as f64))
         .collect();
 
-    Ok(Value::ObjVec(vec))
+    Ok(Value::ObjVec(vec.as_gc()))
 }
 
 fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<(), Error> {
@@ -653,7 +651,7 @@ pub fn new_root_obj_tuple_class(
 }
 
 fn tuple_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
-    let vec = object::new_root_obj_tuple(vm, vm.class_store.get_obj_tuple_class(), Vec::new());
+    let vec = vm.new_root_obj_tuple(Vec::new());
     Ok(Value::ObjTuple(vec.as_gc()))
 }
 
@@ -695,9 +693,7 @@ fn tuple_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 fn tuple_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
-    let iter = object::new_root_obj_tuple_iter(
-        vm,
-        vm.class_store.get_obj_tuple_iter_class(),
+    let iter = vm.new_root_obj_tuple_iter(
         args[0]
             .try_as_obj_tuple()
             .expect("Expected ObjTuple instance."),
@@ -750,7 +746,7 @@ pub fn new_root_obj_vec_class(
 }
 
 fn vec_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
-    let vec = object::new_root_obj_vec(vm, vm.class_store.get_obj_vec_class());
+    let vec = vm.new_root_obj_vec();
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
@@ -838,11 +834,8 @@ fn vec_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 fn vec_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
-    let iter = object::new_root_obj_vec_iter(
-        vm,
-        vm.class_store.get_obj_vec_iter_class(),
-        args[0].try_as_obj_vec().expect("Expected ObjVec instance."),
-    );
+    let iter =
+        vm.new_root_obj_vec_iter(args[0].try_as_obj_vec().expect("Expected ObjVec instance."));
     Ok(Value::ObjVecIter(iter.as_gc()))
 }
 
@@ -904,21 +897,14 @@ fn range_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     for i in 0..2 {
         bounds[i] = utils::validate_integer(args[i + 1])?;
     }
-    let range = object::new_root_obj_range(
-        vm,
-        vm.class_store.get_obj_range_class(),
-        bounds[0],
-        bounds[1],
-    );
+    let range = vm.new_root_obj_range(bounds[0], bounds[1]);
     Ok(Value::ObjRange(range.as_gc()))
 }
 
 fn range_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     check_num_args(args, 0)?;
 
-    let iter = object::new_root_obj_range_iter(
-        vm,
-        vm.class_store.get_obj_range_iter_class(),
+    let iter = vm.new_root_obj_range_iter(
         args[0]
             .try_as_obj_range()
             .expect("Expected ObjRange instance."),
@@ -971,7 +957,7 @@ pub fn new_root_obj_hash_map_class(
 }
 
 fn hash_map_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
-    let hash_map = object::new_root_obj_hash_map(vm, vm.class_store.get_obj_hash_map_class());
+    let hash_map = vm.new_root_obj_hash_map();
     Ok(Value::ObjHashMap(hash_map.as_gc()))
 }
 
