@@ -17,11 +17,11 @@ class Foo {
         self.second = 1;
     }
 
-    fn __iter__(self) {
+    fn iter(self) {
         return self;
     }
 
-    fn __next__(self) {
+    fn next(self) {
         if (self.counter == self.max) {
             return sentinel();
         }

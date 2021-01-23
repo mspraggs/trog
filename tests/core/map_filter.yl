@@ -1,10 +1,10 @@
 // [2.5, 3, 3.5, 4, 4.5, 5, 5.5]
 // [yes, true]
 // 0
-print((-10..10).__iter__().map(|n| n / 2).filter(|x| x > 1).map(|x| x + 1).collect());
+print((-10..10).iter().map(|n| n / 2).filter(|x| x > 1).map(|x| x + 1).collect());
 print(
     [nil, "yes", "no", true, false]
-    .__iter__()
+    .iter()
     .filter(|e| e)
     .filter(|e| e != "no")
     .collect()

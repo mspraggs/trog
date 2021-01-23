@@ -185,7 +185,7 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
     let method_map = [
         ("__init__", string_init as NativeFn),
         ("__getitem__", string_get_item as NativeFn),
-        ("__iter__", string_iter as NativeFn),
+        ("iter", string_iter as NativeFn),
         ("len", string_len as NativeFn),
         ("count_chars", string_count_chars as NativeFn),
         ("char_byte_index", string_char_byte_index as NativeFn),
@@ -627,7 +627,7 @@ pub fn new_root_obj_string_iter_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("StringIter");
     let (methods, _native_roots) =
-        build_methods(vm, &[("__next__", string_iter_next as NativeFn)], None);
+        build_methods(vm, &[("next", string_iter_next as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -643,7 +643,7 @@ pub fn new_root_obj_tuple_class(
         ("__init__", tuple_init as NativeFn),
         ("__getitem__", tuple_get_item as NativeFn),
         ("len", tuple_len as NativeFn),
-        ("__iter__", tuple_iter as NativeFn),
+        ("iter", tuple_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
@@ -709,7 +709,7 @@ pub fn new_root_obj_tuple_iter_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("TupleIter");
     let (methods, _native_roots) =
-        build_methods(vm, &[("__next__", tuple_iter_next as NativeFn)], None);
+        build_methods(vm, &[("next", tuple_iter_next as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -737,7 +737,7 @@ pub fn new_root_obj_vec_class(
         ("__getitem__", vec_get_item as NativeFn),
         ("__setitem__", vec_set_item as NativeFn),
         ("len", vec_len as NativeFn),
-        ("__iter__", vec_iter as NativeFn),
+        ("iter", vec_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
@@ -858,7 +858,7 @@ pub fn new_root_obj_vec_iter_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("VecIter");
     let (methods, _native_roots) =
-        build_methods(vm, &[("__next__", vec_iter_next as NativeFn)], None);
+        build_methods(vm, &[("next", vec_iter_next as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -881,7 +881,7 @@ pub fn new_root_obj_range_class(
     let class_name = vm.new_gc_obj_string("Range");
     let method_map = [
         ("__init__", range_init as NativeFn),
-        ("__iter__", range_iter as NativeFn),
+        ("iter", range_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
@@ -927,7 +927,7 @@ pub fn new_root_obj_range_iter_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("RangeIter");
     let (methods, _native_roots) =
-        build_methods(vm, &[("__next__", range_iter_next as NativeFn)], None);
+        build_methods(vm, &[("next", range_iter_next as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 

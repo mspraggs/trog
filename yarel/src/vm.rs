@@ -1170,7 +1170,7 @@ impl Vm {
 
         let empty_chunk = self.allocate(Chunk::new());
         let init_string = self.new_gc_obj_string("__init__");
-        let next_string = self.new_gc_obj_string("__next__");
+        let next_string = self.new_gc_obj_string("next");
         self.active_chunk = empty_chunk;
         self.init_string = init_string;
         self.next_string = next_string;

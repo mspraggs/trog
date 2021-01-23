@@ -1,10 +1,10 @@
 class Iter {
-    fn __iter__(self) {
+    fn iter(self) {
         return self;
     }
 
     fn map(self, f) {
-        return MapIter(self.__iter__(), f);
+        return MapIter(self.iter(), f);
     }
 
     fn collect(self) {
@@ -16,7 +16,7 @@ class Iter {
     }
 
     fn filter(self, pred) {
-        return FilterIter(self.__iter__(), pred);
+        return FilterIter(self.iter(), pred);
     }
 
     fn reduce(self, func, init) {
@@ -35,12 +35,12 @@ class MapIter < Iter {
         self.sentinel = sentinel();
     }
 
-    fn __iter__(self) {
+    fn iter(self) {
         return self;
     }
 
-    fn __next__(self) {
-        var next = self.iterable.__next__();
+    fn next(self) {
+        var next = self.iterable.next();
         if next == self.sentinel {
             return self.sentinel;
         }
@@ -55,15 +55,15 @@ class FilterIter < Iter {
         self.sentinel = sentinel();
     }
 
-    fn __iter__(self) {
+    fn iter(self) {
         return self;
     }
 
-    fn __next__(self) {
+    fn next(self) {
         var sentinel = self.sentinel;
-        var next = self.iterable.__next__();
+        var next = self.iterable.next();
         while next != sentinel and !self.predicate(next) {
-            next = self.iterable.__next__();
+            next = self.iterable.next();
         }
         return next;
     }

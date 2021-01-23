@@ -508,8 +508,8 @@ impl<'a> Parser<'a> {
         //
         // To support this we generate code equivalent to the following:
         // var v;
-        // var it = [1, 2, 3].__iter__();
-        // while ((v = it.__next__()) != <sentinel>) {
+        // var it = [1, 2, 3].iter();
+        // while ((v = it.next()) != <sentinel>) {
         //     ... loop body ...
         // }
 
@@ -533,7 +533,7 @@ impl<'a> Parser<'a> {
         self.expression();
         self.compiler_mut()
             .add_local(&Token::from_string(loop_iter_name));
-        let iter_method_name = self.identifier_constant(&Token::from_string("__iter__"));
+        let iter_method_name = self.identifier_constant(&Token::from_string("iter"));
         // Fetch the iterator itself
         self.emit_constant_op(OpCode::Invoke, iter_method_name);
         self.emit_byte(0);

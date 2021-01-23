@@ -4,8 +4,8 @@
 // <sentinel>
 // 0
 var t = (3, 4, 1);
-var it = t.__iter__();
-print(it.__next__());
-print(it.__next__());
-print(it.__next__());
-print(it.__next__());
+var it = t.iter();
+print(it.next());
+print(it.next());
+print(it.next());
+print(it.next());

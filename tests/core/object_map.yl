@@ -8,11 +8,11 @@ class Foo < Iter {
         self.max = max;
     }
 
-    fn __iter__(self) {
+    fn iter(self) {
         return self;
     }
 
-    fn __next__(self) {
+    fn next(self) {
         if self.count == self.max {
             return sentinel();
         }
