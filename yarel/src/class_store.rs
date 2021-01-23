@@ -79,139 +79,34 @@ impl CoreClassStore {
     ) -> Self {
         let empty = vm.new_gc_obj_string("");
         let methods = object::new_obj_string_value_map();
-        let root_obj_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_nil_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_boolean_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_number_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_sentinel_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_closure_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_native_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_closure_method_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_native_method_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_map_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_filter_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_tuple_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_tuple_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_vec_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_vec_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_range_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_range_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_hash_map_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_obj_string_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
+        let mut build_empty_class = || {
+            object::new_root_obj_class(
+                vm,
+                empty,
+                root_base_metaclass.as_gc(),
+                None,
+                methods.clone(),
+            )
+        };
+        let root_obj_iter_class = build_empty_class();
+        let root_nil_class = build_empty_class();
+        let root_boolean_class = build_empty_class();
+        let root_number_class = build_empty_class();
+        let root_sentinel_class = build_empty_class();
+        let root_obj_closure_class = build_empty_class();
+        let root_obj_native_class = build_empty_class();
+        let root_obj_closure_method_class = build_empty_class();
+        let root_obj_native_method_class = build_empty_class();
+        let root_obj_map_iter_class = build_empty_class();
+        let root_obj_filter_iter_class = build_empty_class();
+        let root_obj_tuple_class = build_empty_class();
+        let root_obj_tuple_iter_class = build_empty_class();
+        let root_obj_vec_class = build_empty_class();
+        let root_obj_vec_iter_class = build_empty_class();
+        let root_obj_range_class = build_empty_class();
+        let root_obj_range_iter_class = build_empty_class();
+        let root_obj_hash_map_class = build_empty_class();
+        let root_obj_string_iter_class = build_empty_class();
         CoreClassStore {
             root_base_metaclass,
             root_object_class,
@@ -250,71 +145,26 @@ impl CoreClassStore {
             Ok(_) => {}
             Err(error) => eprint!("{}", error),
         }
+
         let (no_init_methods, _method_roots) = core::build_unsupported_methods(vm);
-        let nil_class_name = vm.new_gc_obj_string("Nil");
-        let root_nil_class = object::new_root_obj_class(
-            vm,
-            nil_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let boolean_class_name = vm.new_gc_obj_string("Bool");
-        let root_boolean_class = object::new_root_obj_class(
-            vm,
-            boolean_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let number_class_name = vm.new_gc_obj_string("Num");
-        let root_number_class = object::new_root_obj_class(
-            vm,
-            number_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let sentinel_class_name = vm.new_gc_obj_string("Sentinel");
-        let root_sentinel_class = object::new_root_obj_class(
-            vm,
-            sentinel_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let obj_closure_class_name = vm.new_gc_obj_string("Func");
-        let root_obj_closure_class = object::new_root_obj_class(
-            vm,
-            obj_closure_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let obj_native_class_name = vm.new_gc_obj_string("BuiltIn");
-        let root_obj_native_class = object::new_root_obj_class(
-            vm,
-            obj_native_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let obj_closure_method_class_name = vm.new_gc_obj_string("Method");
-        let root_obj_closure_method_class = object::new_root_obj_class(
-            vm,
-            obj_closure_method_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
-        let obj_native_method_class_name = vm.new_gc_obj_string("BuiltInMethod");
-        let root_obj_native_method_class = object::new_root_obj_class(
-            vm,
-            obj_native_method_class_name,
-            root_base_metaclass.as_gc(),
-            Some(root_object_class.as_gc()),
-            no_init_methods.clone(),
-        );
+        let mut build_value_type_class = |name| {
+            let name = vm.new_gc_obj_string(name);
+            object::new_root_obj_class(
+                vm,
+                name,
+                root_base_metaclass.as_gc(),
+                Some(root_object_class.as_gc()),
+                no_init_methods.clone(),
+            )
+        };
+        let root_nil_class = build_value_type_class("Nil");
+        let root_boolean_class = build_value_type_class("Bool");
+        let root_number_class = build_value_type_class("Num");
+        let root_sentinel_class = build_value_type_class("Sentinel");
+        let root_obj_closure_class = build_value_type_class("Func");
+        let root_obj_native_class = build_value_type_class("BuiltIn");
+        let root_obj_closure_method_class = build_value_type_class("Method");
+        let root_obj_native_method_class = build_value_type_class("BuiltInMethod");
         let root_obj_iter_class = vm
             .get_global("Iter")
             .unwrap()
