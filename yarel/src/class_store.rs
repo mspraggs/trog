@@ -72,17 +72,14 @@ impl CoreClassStore {
         }
     }
 
-    pub(crate) fn new(vm: &mut Vm, root_base_metaclass: Root<ObjClass>) -> Self {
+    pub(crate) fn new(
+        vm: &mut Vm,
+        root_base_metaclass: Root<ObjClass>,
+        root_object_class: Root<ObjClass>,
+    ) -> Self {
         let empty = vm.new_gc_obj_string("");
         let methods = object::new_obj_string_value_map();
         let root_obj_iter_class = object::new_root_obj_class(
-            vm,
-            empty,
-            root_base_metaclass.as_gc(),
-            None,
-            methods.clone(),
-        );
-        let root_object_class = object::new_root_obj_class(
             vm,
             empty,
             root_base_metaclass.as_gc(),
@@ -245,7 +242,7 @@ impl CoreClassStore {
         root_base_metaclass: Root<ObjClass>,
         root_object_class: Root<ObjClass>,
     ) -> Self {
-        let class_store = Self::new(vm, root_base_metaclass.clone());
+        let class_store = Self::new(vm, root_base_metaclass.clone(), root_object_class.clone());
         vm.class_store = class_store;
         let source = String::from(CORE_SOURCE);
         let result = vm::interpret(vm, source);
@@ -340,45 +337,41 @@ impl CoreClassStore {
             vm,
             root_base_metaclass.as_gc(),
             root_object_class.as_gc(),
-            root_obj_iter_class.as_gc(),
         );
         let root_obj_tuple_iter_class = core::new_root_obj_tuple_iter_class(
             vm,
             root_base_metaclass.as_gc(),
-            root_object_class.as_gc(),
+            root_obj_iter_class.as_gc(),
         );
         let root_obj_vec_class = core::new_root_obj_vec_class(
             vm,
             root_base_metaclass.as_gc(),
             root_object_class.as_gc(),
-            root_obj_iter_class.as_gc(),
         );
         let root_obj_vec_iter_class = core::new_root_obj_vec_iter_class(
             vm,
             root_base_metaclass.as_gc(),
-            root_object_class.as_gc(),
+            root_obj_iter_class.as_gc(),
         );
         let root_obj_range_class = core::new_root_obj_range_class(
             vm,
             root_base_metaclass.as_gc(),
             root_object_class.as_gc(),
-            root_obj_iter_class.as_gc(),
         );
         let root_obj_range_iter_class = core::new_root_obj_range_iter_class(
             vm,
             root_base_metaclass.as_gc(),
-            root_object_class.as_gc(),
+            root_obj_iter_class.as_gc(),
         );
         let root_obj_hash_map_class = core::new_root_obj_hash_map_class(
             vm,
             root_base_metaclass.as_gc(),
             root_object_class.as_gc(),
-            root_obj_iter_class.as_gc(),
         );
         let root_obj_string_iter_class = core::new_root_obj_string_iter_class(
             vm,
             root_base_metaclass.as_gc(),
-            root_object_class.as_gc(),
+            root_obj_iter_class.as_gc(),
         );
         CoreClassStore {
             root_base_metaclass,

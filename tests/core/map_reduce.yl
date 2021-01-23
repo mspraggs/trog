@@ -1,7 +1,7 @@
 // 4950
 // Hello, World!
 // 0
-print((0..100).reduce(|m, n| m + n, 0));
+print((0..100).__iter__().reduce(|m, n| m + n, 0));
 print(
-    ["Hello, ", "World!"].reduce(|r, s| r + s, "")
+    ["Hello, ", "World!"].__iter__().reduce(|r, s| r + s, "")
 );

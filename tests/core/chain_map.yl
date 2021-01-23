@@ -3,4 +3,4 @@
 fn add_one(n) { return n + 1; }
 fn square(n) { return n * n; }
 
-print((0..4).map(add_one).map(square).collect());
+print((0..4).__iter__().map(add_one).map(square).collect());

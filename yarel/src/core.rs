@@ -637,7 +637,6 @@ pub fn new_root_obj_tuple_class(
     vm: &mut Vm,
     metaclass: Gc<ObjClass>,
     superclass: Gc<ObjClass>,
-    iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Tuple");
     let method_map = [
@@ -646,7 +645,7 @@ pub fn new_root_obj_tuple_class(
         ("len", tuple_len as NativeFn),
         ("__iter__", tuple_iter as NativeFn),
     ];
-    let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
+    let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -729,7 +728,6 @@ pub fn new_root_obj_vec_class(
     vm: &mut Vm,
     metaclass: Gc<ObjClass>,
     superclass: Gc<ObjClass>,
-    iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Vec");
     let method_map = [
@@ -741,7 +739,7 @@ pub fn new_root_obj_vec_class(
         ("len", vec_len as NativeFn),
         ("__iter__", vec_iter as NativeFn),
     ];
-    let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
+    let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -879,14 +877,13 @@ pub fn new_root_obj_range_class(
     vm: &mut Vm,
     metaclass: Gc<ObjClass>,
     superclass: Gc<ObjClass>,
-    iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Range");
     let method_map = [
         ("__init__", range_init as NativeFn),
         ("__iter__", range_iter as NativeFn),
     ];
-    let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
+    let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -940,7 +937,6 @@ pub fn new_root_obj_hash_map_class(
     vm: &mut Vm,
     metaclass: Gc<ObjClass>,
     superclass: Gc<ObjClass>,
-    iter_class: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("HashMap");
     let method_map = [
@@ -952,7 +948,7 @@ pub fn new_root_obj_hash_map_class(
         ("clear", hash_map_clear as NativeFn),
         ("len", hash_map_len as NativeFn),
     ];
-    let (methods, _native_roots) = build_methods(vm, &method_map, Some(iter_class.methods.clone()));
+    let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 

@@ -1,4 +1,8 @@
 class Iter {
+    fn __iter__(self) {
+        return self;
+    }
+
     fn map(self, f) {
         return MapIter(self.__iter__(), f);
     }
