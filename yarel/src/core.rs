@@ -857,8 +857,7 @@ pub fn new_root_obj_vec_iter_class(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("VecIter");
-    let (methods, _native_roots) =
-        build_methods(vm, &[("next", vec_iter_next as NativeFn)], None);
+    let (methods, _native_roots) = build_methods(vm, &[("next", vec_iter_next as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
@@ -947,6 +946,9 @@ pub fn new_root_obj_hash_map_class(
         ("remove", hash_map_remove as NativeFn),
         ("clear", hash_map_clear as NativeFn),
         ("len", hash_map_len as NativeFn),
+        ("keys", hash_map_keys as NativeFn),
+        ("values", hash_map_values as NativeFn),
+        ("items", hash_map_items as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
@@ -1024,6 +1026,47 @@ fn hash_map_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
     let borrowed_hash_map = hash_map.borrow();
     Ok(Value::Number(borrowed_hash_map.elements.len() as f64))
+}
+
+fn hash_map_keys(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let borrowed_hash_map = hash_map.borrow();
+    let keys: Vec<_> = borrowed_hash_map.elements.keys().map(|&v| v).collect();
+    let obj_keys = vm.new_root_obj_vec();
+    obj_keys.borrow_mut().elements = keys;
+    Ok(Value::ObjVec(obj_keys.as_gc()))
+}
+
+fn hash_map_values(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let borrowed_hash_map = hash_map.borrow();
+    let values: Vec<_> = borrowed_hash_map.elements.values().map(|&v| v).collect();
+    let obj_values = vm.new_root_obj_vec();
+    obj_values.borrow_mut().elements = values;
+    Ok(Value::ObjVec(obj_values.as_gc()))
+}
+
+fn hash_map_items(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+    check_num_args(args, 0)?;
+
+    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let borrowed_hash_map = hash_map.borrow();
+    let root_obj_pairs: Vec<_> = borrowed_hash_map
+        .elements
+        .iter()
+        .map(|(&k, &v)| vm.new_root_obj_tuple(vec![k, v]))
+        .collect();
+    let vec_elements = root_obj_pairs
+        .iter()
+        .map(|o| Value::ObjTuple(o.as_gc()))
+        .collect();
+    let obj_items = vm.new_root_obj_vec();
+    obj_items.borrow_mut().elements = vec_elements;
+    Ok(Value::ObjVec(obj_items.as_gc()))
 }
 
 fn validate_hash_map_key(key: Value) -> Result<Value, Error> {

@@ -1,0 +1,9 @@
+// []
+// [(1, {1: {...}})]
+// [(1, false), (foo, nil), (<class Vec>, okay)]
+// 0
+var d = {};
+print(d.items());
+d.insert(1, d);
+print(d.items());
+print({1: false, "foo": nil, Vec: "okay"}.items());

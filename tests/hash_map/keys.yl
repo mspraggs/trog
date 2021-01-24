@@ -1,0 +1,5 @@
+// []
+// [1, foo, <class Vec>]
+// 0
+print({}.keys());
+print({1: false, "foo": nil, Vec: "okay"}.keys());

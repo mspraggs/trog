@@ -40,7 +40,7 @@ pub(crate) fn hash_number(num: f64) -> u64 {
     hash = hash ^ hash.wrapping_shr(31);
     hash = hash.wrapping_mul(21);
     hash = hash ^ hash.wrapping_shr(11);
-    hash = hash + hash.wrapping_shl(6);
+    hash = hash.wrapping_add(hash.wrapping_shl(6));
     hash = hash ^ hash.wrapping_shr(22);
     hash as u64
 }
