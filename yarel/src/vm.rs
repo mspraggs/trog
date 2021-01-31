@@ -110,6 +110,7 @@ pub struct Vm {
     chunks: Vec<Root<Chunk>>,
     core_chunks: Vec<Root<Chunk>>,
     string_class: Root<ObjClass>,
+    /// TODO: Rewrite the string store to prevent key collisions.
     string_store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
     working_class_def: Option<ClassDef>,
