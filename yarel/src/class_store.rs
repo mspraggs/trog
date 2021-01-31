@@ -166,19 +166,19 @@ impl CoreClassStore {
         let root_obj_closure_method_class = build_value_type_class("Method");
         let root_obj_native_method_class = build_value_type_class("BuiltInMethod");
         let root_obj_iter_class = vm
-            .get_global("Iter")
+            .get_global("main", "Iter")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
             .as_root();
         let root_obj_map_iter_class = vm
-            .get_global("MapIter")
+            .get_global("main", "MapIter")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
             .as_root();
         let root_obj_filter_iter_class = vm
-            .get_global("FilterIter")
+            .get_global("main", "FilterIter")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")

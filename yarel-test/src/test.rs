@@ -149,7 +149,7 @@ fn match_output(expected: &[String], actual: &[String]) -> bool {
 
 pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
     vm.reset();
-    vm.define_native("print", local_print);
+    vm.define_native("main", "print", local_print);
 
     let source = match fs::read_to_string(path) {
         Ok(contents) => contents,

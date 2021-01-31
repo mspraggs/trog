@@ -202,6 +202,7 @@ pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
     pub chunk_index: usize,
+    pub(crate) module_index: usize,
     pub name: memory::Gc<ObjString>,
 }
 
@@ -211,8 +212,9 @@ pub fn new_gc_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
+    module_index: usize,
 ) -> Gc<ObjFunction> {
-    vm.allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
+    vm.allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index, module_index))
 }
 
 pub fn new_root_obj_function(
@@ -221,8 +223,9 @@ pub fn new_root_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
+    module_index: usize,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index).as_root()
+    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module_index).as_root()
 }
 
 impl ObjFunction {
@@ -231,12 +234,14 @@ impl ObjFunction {
         arity: u32,
         upvalue_count: usize,
         chunk_index: usize,
+        module_index: usize,
     ) -> Self {
         ObjFunction {
+            name,
             arity,
             upvalue_count,
             chunk_index,
-            name,
+            module_index,
         }
     }
 }
@@ -991,5 +996,27 @@ impl memory::GcManaged for ObjTupleIter {
 impl fmt::Display for ObjTupleIter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ObjTupleIter instance")
+    }
+}
+
+pub struct ObjModule {
+    pub(crate) index: usize,
+    pub(crate) path: Gc<ObjString>,
+}
+
+impl ObjModule {
+    pub(crate) fn new(index: usize, path: Gc<ObjString>) -> Self {
+        ObjModule {
+            index,
+            path,
+        }
+    }
+}
+
+impl memory::GcManaged for ObjModule {
+    fn mark(&self) {
+    }
+
+    fn blacken(&self) {
     }
 }

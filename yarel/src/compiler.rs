@@ -23,7 +23,7 @@ use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::memory::Root;
-use crate::object::{self, ObjFunction};
+use crate::object::{self, ObjFunction, ObjModule};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -155,12 +155,19 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm) -> Root<ObjFunction> {
+    fn make_function(&mut self, vm: &mut Vm, module_index: usize) -> Root<ObjFunction> {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = vm.add_chunk(chunk);
-        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk_index)
+        object::new_root_obj_function(
+            vm,
+            name,
+            self.func_arity,
+            num_upvalues,
+            chunk_index,
+            module_index,
+        )
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -229,11 +236,13 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
+    compiled_module: Option<ObjModule>,
     vm: &'a mut Vm,
 }
 
 impl<'a> Parser<'a> {
     fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
+        let module = ObjModule::new(vm.get_num_modules(), vm.new_gc_obj_string("main"));
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -244,6 +253,7 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
+            compiled_module: Some(module),
             vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -270,7 +280,10 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        Ok(self.finalise_compiler().0)
+        let root_func = self.finalise_compiler().0;
+        self.vm
+            .add_module(self.compiled_module.take().expect("Expected ObjModule."));
+        Ok(root_func)
     }
 
     fn advance(&mut self) {
@@ -343,7 +356,10 @@ impl<'a> Parser<'a> {
         self.emit_return();
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.vm);
+        let function = compiler.make_function(
+            self.vm,
+            self.compiled_module.as_ref().expect("Expected ObjModule").index,
+        );
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
