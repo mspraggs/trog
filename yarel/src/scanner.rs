@@ -367,7 +367,7 @@ impl Scanner {
                     };
                 }
                 TokenKind::Identifier
-            },
+            }
             "c" => self.check_keyword(1, "lass", TokenKind::Class),
             "e" => self.check_keyword(1, "lse", TokenKind::Else),
             "f" => {

@@ -99,7 +99,7 @@ impl GcManaged for ClassDef {
 
 pub struct Vm {
     ip: *const u8,
-    module_index: usize,
+    active_module: Gc<ObjModule>,
     active_chunk: Gc<Chunk>,
     frames: Vec<CallFrame>,
     stack: Stack<Value>,
@@ -126,7 +126,7 @@ impl Vm {
         // re-assigned immediately to valid GC pointers by init_heap_allocated_data.
         let mut vm = Vm {
             ip: ptr::null(),
-            module_index: 0,
+            active_module: unsafe { Gc::dangling() },
             active_chunk: unsafe { Gc::dangling() },
             frames: Vec::with_capacity(common::FRAMES_MAX),
             stack: Stack::new(),
@@ -430,7 +430,7 @@ impl Vm {
 
                 byte if byte == OpCode::GetGlobal as u8 => {
                     let name = read_string!();
-                    let globals = &self.globals[self.module_index];
+                    let globals = &self.globals[self.active_module.index];
                     let value = match globals.get(&name) {
                         Some(value) => *value,
                         None => {
@@ -446,7 +446,7 @@ impl Vm {
                 byte if byte == OpCode::DefineGlobal as u8 => {
                     let name = read_string!();
                     let value = *self.peek(0);
-                    let globals = &mut self.globals[self.module_index];
+                    let globals = &mut self.globals[self.active_module.index];
                     globals.insert(name, value);
                     self.pop();
                 }
@@ -454,7 +454,7 @@ impl Vm {
                 byte if byte == OpCode::SetGlobal as u8 => {
                     let name = read_string!();
                     let value = *self.peek(0);
-                    let globals = &mut self.globals[self.module_index];
+                    let globals = &mut self.globals[self.active_module.index];
                     let prev = globals.insert(name, value);
                     if prev.is_none() {
                         globals.remove(&name);
@@ -845,7 +845,7 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::Import as u8 => {
-                    let path = read_string!();
+                    let _path = read_string!();
                     self.push(Value::None);
                 }
 
@@ -1014,7 +1014,11 @@ impl Vm {
             return Err(error!(ErrorKind::IndexError, "Stack overflow."));
         }
 
-        let chunk_index = closure.borrow().function.chunk_index;
+        let (chunk_index, module_path) = {
+            let borrowed_closure = closure.borrow();
+            let function = borrowed_closure.function;
+            (function.chunk_index, function.module_path)
+        };
         self.active_chunk = self.get_chunk(chunk_index);
         self.frames.push(CallFrame {
             closure,
@@ -1022,6 +1026,11 @@ impl Vm {
             slot_base: self.stack.len() - arg_count - 1,
         });
         self.ip = &self.active_chunk.code[0];
+        self.active_module = self
+            .modules
+            .get(&module_path)
+            .expect("Expected ObjModule.")
+            .as_gc();
         Ok(())
     }
 

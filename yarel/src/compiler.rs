@@ -22,8 +22,8 @@ use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::Root;
-use crate::object::{self, ObjFunction, ObjModule};
+use crate::memory::{Gc, Root};
+use crate::object::{self, ObjFunction, ObjModule, ObjString};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -155,7 +155,7 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm, module_index: usize) -> Root<ObjFunction> {
+    fn make_function(&mut self, vm: &mut Vm, module_path: Gc<ObjString>) -> Root<ObjFunction> {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
@@ -166,7 +166,7 @@ impl Compiler {
             self.func_arity,
             num_upvalues,
             chunk_index,
-            module_index,
+            module_path,
         )
     }
 
@@ -358,7 +358,10 @@ impl<'a> Parser<'a> {
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
         let function = compiler.make_function(
             self.vm,
-            self.compiled_module.as_ref().expect("Expected ObjModule").index,
+            self.compiled_module
+                .as_ref()
+                .expect("Expected ObjModule")
+                .path,
         );
         self.compiled_functions.push(function.clone());
 
