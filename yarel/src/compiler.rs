@@ -16,6 +16,7 @@
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::mem;
+use std::path::Path;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::common;
@@ -496,6 +497,30 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::Pop as u8);
     }
 
+    fn import_statement(&mut self) {
+        self.consume(TokenKind::Str, "Expected a module path.");
+        let path = &self.previous.clone();
+        let path_constant = self.identifier_constant(&path);
+        self.declare_variable();
+        self.emit_constant_op(OpCode::Import, path_constant);
+
+        let name = if self.match_token(TokenKind::As) {
+            self.consume(TokenKind::Identifier, "Expected module name.");
+            self.previous.clone()
+        } else {
+            let result = (|| Some(Path::new(&path.source).file_name()?.to_str()?))();
+            if let Some(filename) = result {
+                Token::from_string(filename)
+            } else {
+                self.error("Expected a module path.");
+                return;
+            }
+        };
+
+        let name_constant = self.identifier_constant(&name);
+        self.define_variable(name_constant);
+    }
+
     fn for_statement(&mut self) {
         self.begin_scope();
 
@@ -674,7 +699,9 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) {
-        if self.match_token(TokenKind::For) {
+        if self.match_token(TokenKind::Import) {
+            self.import_statement();
+        } else if self.match_token(TokenKind::For) {
             self.for_statement();
         } else if self.match_token(TokenKind::If) {
             self.if_statement();
@@ -1368,7 +1395,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 52] = [
+const RULES: [ParseRule; 54] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -1604,6 +1631,18 @@ const RULES: [ParseRule; 52] = [
         precedence: Precedence::None,
     },
     // If
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Import
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // As
     ParseRule {
         prefix: None,
         infix: None,

@@ -803,6 +803,11 @@ impl Vm {
                     self.define_method(name, true)?;
                 }
 
+                byte if byte == OpCode::Import as u8 => {
+                    read_string!();
+                    self.push(Value::None);
+                }
+
                 _ => {
                     panic!("Unknown opcode {}", byte);
                 }
