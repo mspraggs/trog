@@ -536,6 +536,8 @@ impl<'a> Parser<'a> {
             }
         };
 
+        self.emit_byte(OpCode::Pop as u8);
+
         let name_constant = self.identifier_constant(&name);
         self.define_variable(name_constant);
     }

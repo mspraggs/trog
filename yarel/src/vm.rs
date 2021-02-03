@@ -846,7 +846,27 @@ impl Vm {
 
                 byte if byte == OpCode::Import as u8 => {
                     let _path = read_string!();
-                    self.push(Value::None);
+
+                    let source = String::from("print(\"Hello, World!\");");
+
+                    let function = match compiler::compile(self, source) {
+                        Ok(f) => f,
+                        Err(_) => {
+                            return Err(error!(ErrorKind::RuntimeError, "Error compiling module."));
+                        }
+                    };
+
+                    let module = self
+                        .modules
+                        .get(&function.module_path)
+                        .expect("Expected ObjModule")
+                        .as_gc();
+                    self.push(Value::ObjModule(module));
+
+                    let closure = object::new_gc_obj_closure(self, function.as_gc());
+                    self.push(Value::ObjClosure(closure));
+
+                    self.call_value(*self.peek(0), 0)?;
                 }
 
                 _ => {
@@ -987,6 +1007,9 @@ impl Vm {
                 name,
                 arg_count,
             ),
+            Value::ObjModule(_) => {
+                panic!("Unsupported value type.");
+            }
             Value::None => {
                 self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
             }

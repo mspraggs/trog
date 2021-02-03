@@ -22,8 +22,9 @@ use crate::class_store::CoreClassStore;
 use crate::hash::PassThroughHasher;
 use crate::memory::{self, Gc};
 use crate::object::{
-    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjInstance, ObjNative,
-    ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjTuple, ObjTupleIter, ObjVec, ObjVecIter,
+    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjInstance, ObjModule,
+    ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjTuple, ObjTupleIter, ObjVec,
+    ObjVecIter,
 };
 use crate::utils;
 
@@ -47,6 +48,7 @@ pub enum Value {
     ObjRange(Gc<ObjRange>),
     ObjRangeIter(Gc<RefCell<ObjRangeIter>>),
     ObjHashMap(Gc<RefCell<ObjHashMap>>),
+    ObjModule(Gc<ObjModule>),
     None,
     Sentinel,
 }
@@ -80,6 +82,7 @@ impl Value {
             Value::ObjRange(range) => range.class,
             Value::ObjRangeIter(iter) => iter.borrow().class,
             Value::ObjHashMap(hash_map) => hash_map.borrow().class,
+            Value::ObjModule(_) => class_store.get_nil_class(),
             Value::None => class_store.get_nil_class(),
             Value::Sentinel => class_store.get_sentinel_class(),
         }
@@ -214,6 +217,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn try_as_obj_module(&self) -> Option<Gc<ObjModule>> {
+        match self {
+            Value::ObjModule(inner) => Some(*inner),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
@@ -241,6 +250,7 @@ impl memory::GcManaged for Value {
             Value::ObjRange(inner) => inner.mark(),
             Value::ObjRangeIter(inner) => inner.mark(),
             Value::ObjHashMap(inner) => inner.mark(),
+            Value::ObjModule(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -263,6 +273,7 @@ impl memory::GcManaged for Value {
             Value::ObjRange(inner) => inner.blacken(),
             Value::ObjRangeIter(inner) => inner.blacken(),
             Value::ObjHashMap(inner) => inner.blacken(),
+            Value::ObjModule(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -316,6 +327,7 @@ impl fmt::Display for Value {
             Value::ObjRange(underlying) => write!(f, "{}", **underlying),
             Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjHashMap(underlying) => write!(f, "{}", *underlying.borrow()),
+            Value::ObjModule(_) => write!(f, "module"),
             Value::None => write!(f, "nil"),
             Value::Sentinel => write!(f, "<sentinel>"),
         }
