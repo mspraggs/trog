@@ -41,8 +41,8 @@ use crate::value::Value;
 
 const RANGE_CACHE_SIZE: usize = 8;
 
-pub fn interpret(vm: &mut Vm, source: String) -> Result<Value, Error> {
-    let compile_result = compiler::compile(vm, source);
+pub fn interpret(vm: &mut Vm, source: String, module_path: Option<&str>) -> Result<Value, Error> {
+    let compile_result = compiler::compile(vm, source, module_path);
     match compile_result {
         Ok(function) => vm.execute(function, &[]),
         Err(error) => Err(error),
@@ -150,7 +150,7 @@ impl Vm {
 
     pub fn with_built_ins() -> Self {
         let mut vm = Self::new();
-        vm.init_built_in_globals();
+        vm.init_built_in_globals("main");
         vm
     }
 
@@ -166,32 +166,19 @@ impl Vm {
     }
 
     pub fn get_global(&mut self, module_name: &str, var_name: &str) -> Option<Value> {
-        let module_name = self.new_gc_obj_string(module_name);
-        let module_index = self.modules.get(&module_name)?.index;
+        let module_index = self.get_module(module_name).index;
         let var_name = self.new_gc_obj_string(var_name);
         self.globals[module_index].get(&var_name).copied()
     }
 
     pub fn set_global(&mut self, module_name: &str, var_name: &str, value: Value) {
-        let module_name = self.new_gc_obj_string(module_name);
-        let module_index = if let Some(module) = self.modules.get(&module_name) {
-            module.index
-        } else {
-            // TODO: Return error result
-            return;
-        };
+        let module_index = self.get_module(module_name).index;
         let var_name = self.new_gc_obj_string(var_name);
         self.globals[module_index].insert(var_name, value);
     }
 
     pub fn define_native(&mut self, module_name: &str, var_name: &str, function: NativeFn) {
-        let module_name = self.new_gc_obj_string(module_name);
-        let module_index = if let Some(modules) = self.modules.get(&module_name) {
-            modules.index
-        } else {
-            // TODO: Return error result
-            return;
-        };
+        let module_index = self.get_module(module_name).index;
         let var_name = self.new_gc_obj_string(var_name);
         let native = object::new_root_obj_native(self, var_name, function);
         self.globals[module_index].insert(var_name, Value::ObjNative(native.as_gc()));
@@ -263,7 +250,21 @@ impl Vm {
         self.chunks = self.core_chunks.clone();
         self.globals = vec![object::new_obj_string_value_map()];
         self.modules.retain(|&k, _| k.as_str() == "main");
-        self.init_built_in_globals();
+        self.init_built_in_globals("main");
+    }
+
+    pub(crate) fn get_module(&mut self, path: &str) -> Gc<ObjModule> {
+        let path = self.new_gc_obj_string(path);
+        if let Some(module) = self.modules.get(&path) {
+            return module.as_gc();
+        }
+        let module = object::new_root_obj_module(
+            self, self.class_store.get_obj_module_class(), self.modules.len(), path,
+        );
+        self.globals.push(object::new_obj_string_value_map());
+        let gc_module = module.as_gc();
+        self.modules.insert(path, module);
+        gc_module
     }
 
     pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> usize {
@@ -845,28 +846,26 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::Import as u8 => {
-                    let _path = read_string!();
+                    let path = read_string!();
 
                     let source = String::from("print(\"Hello, World!\");");
 
-                    let function = match compiler::compile(self, source) {
+                    let function = match compiler::compile(self, source, Some(&path)) {
                         Ok(f) => f,
                         Err(_) => {
                             return Err(error!(ErrorKind::RuntimeError, "Error compiling module."));
                         }
                     };
 
-                    let module = self
-                        .modules
-                        .get(&function.module_path)
-                        .expect("Expected ObjModule")
-                        .as_gc();
+                    let module = function.module;
                     self.push(Value::ObjModule(module));
 
                     let closure = object::new_gc_obj_closure(self, function.as_gc());
                     self.push(Value::ObjClosure(closure));
 
                     self.call_value(*self.peek(0), 0)?;
+                    let active_module_path = self.active_module.path;
+                    self.init_built_in_globals(&active_module_path);
                 }
 
                 _ => {
@@ -1037,10 +1036,10 @@ impl Vm {
             return Err(error!(ErrorKind::IndexError, "Stack overflow."));
         }
 
-        let (chunk_index, module_path) = {
+        let (chunk_index, module) = {
             let borrowed_closure = closure.borrow();
             let function = borrowed_closure.function;
-            (function.chunk_index, function.module_path)
+            (function.chunk_index, function.module)
         };
         self.active_chunk = self.get_chunk(chunk_index);
         self.frames.push(CallFrame {
@@ -1049,11 +1048,7 @@ impl Vm {
             slot_base: self.stack.len() - arg_count - 1,
         });
         self.ip = &self.active_chunk.code[0];
-        self.active_module = self
-            .modules
-            .get(&module_path)
-            .expect("Expected ObjModule.")
-            .as_gc();
+        self.active_module = module;
         Ok(())
     }
 
@@ -1258,51 +1253,51 @@ impl Vm {
         self.class_store = class_store;
     }
 
-    fn init_built_in_globals(&mut self) {
-        self.define_native("main", "clock", core::clock);
-        self.define_native("main", "type", core::type_);
-        self.define_native("main", "print", core::print);
-        self.define_native("main", "sentinel", core::sentinel);
+    fn init_built_in_globals(&mut self, module_path: &str) {
+        self.define_native(module_path, "clock", core::clock);
+        self.define_native(module_path, "type", core::type_);
+        self.define_native(module_path, "print", core::print);
+        self.define_native(module_path, "sentinel", core::sentinel);
         let base_metaclass = self.class_store.get_base_metaclass();
-        self.set_global("main", "Type", Value::ObjClass(base_metaclass));
+        self.set_global(module_path, "Type", Value::ObjClass(base_metaclass));
         let object_class = self.class_store.get_object_class();
-        self.set_global("main", "Object", Value::ObjClass(object_class));
+        self.set_global(module_path, "Object", Value::ObjClass(object_class));
         let nil_class = self.class_store.get_nil_class();
-        self.set_global("main", "Nil", Value::ObjClass(nil_class));
+        self.set_global(module_path, "Nil", Value::ObjClass(nil_class));
         let boolean_class = self.class_store.get_boolean_class();
-        self.set_global("main", "Bool", Value::ObjClass(boolean_class));
+        self.set_global(module_path, "Bool", Value::ObjClass(boolean_class));
         let number_class = self.class_store.get_number_class();
-        self.set_global("main", "Num", Value::ObjClass(number_class));
+        self.set_global(module_path, "Num", Value::ObjClass(number_class));
         let sentinel_class = self.class_store.get_sentinel_class();
-        self.set_global("main", "Sentinel", Value::ObjClass(sentinel_class));
+        self.set_global(module_path, "Sentinel", Value::ObjClass(sentinel_class));
         let obj_closure_class = self.class_store.get_obj_closure_class();
-        self.set_global("main", "Func", Value::ObjClass(obj_closure_class));
+        self.set_global(module_path, "Func", Value::ObjClass(obj_closure_class));
         let obj_native_class = self.class_store.get_obj_native_class();
-        self.set_global("main", "BuiltIn", Value::ObjClass(obj_native_class));
+        self.set_global(module_path, "BuiltIn", Value::ObjClass(obj_native_class));
         let obj_closure_method_class = self.class_store.get_obj_closure_method_class();
-        self.set_global("main", "Method", Value::ObjClass(obj_closure_method_class));
+        self.set_global(module_path, "Method", Value::ObjClass(obj_closure_method_class));
         let obj_native_method_class = self.class_store.get_obj_native_method_class();
         self.set_global(
-            "main",
+            module_path,
             "BuiltInMethod",
             Value::ObjClass(obj_native_method_class),
         );
         let obj_string_class = self.string_class.as_gc();
-        self.set_global("main", "String", Value::ObjClass(obj_string_class));
+        self.set_global(module_path, "String", Value::ObjClass(obj_string_class));
         let obj_iter_class = self.class_store.get_obj_iter_class();
-        self.set_global("main", "Iter", Value::ObjClass(obj_iter_class));
+        self.set_global(module_path, "Iter", Value::ObjClass(obj_iter_class));
         let obj_map_iter_class = self.class_store.get_obj_map_iter_class();
-        self.set_global("main", "MapIter", Value::ObjClass(obj_map_iter_class));
+        self.set_global(module_path, "MapIter", Value::ObjClass(obj_map_iter_class));
         let obj_filter_iter_class = self.class_store.get_obj_filter_iter_class();
-        self.set_global("main", "FilterIter", Value::ObjClass(obj_filter_iter_class));
+        self.set_global(module_path, "FilterIter", Value::ObjClass(obj_filter_iter_class));
         let obj_tuple_class = self.class_store.get_obj_tuple_class();
-        self.set_global("main", "Tuple", Value::ObjClass(obj_tuple_class));
+        self.set_global(module_path, "Tuple", Value::ObjClass(obj_tuple_class));
         let obj_vec_class = self.class_store.get_obj_vec_class();
-        self.set_global("main", "Vec", Value::ObjClass(obj_vec_class));
+        self.set_global(module_path, "Vec", Value::ObjClass(obj_vec_class));
         let obj_range_class = self.class_store.get_obj_range_class();
-        self.set_global("main", "Range", Value::ObjClass(obj_range_class));
+        self.set_global(module_path, "Range", Value::ObjClass(obj_range_class));
         let obj_hash_map_class = self.class_store.get_obj_hash_map_class();
-        self.set_global("main", "HashMap", Value::ObjClass(obj_hash_map_class));
+        self.set_global(module_path, "HashMap", Value::ObjClass(obj_hash_map_class));
     }
 
     fn frame(&self) -> &CallFrame {

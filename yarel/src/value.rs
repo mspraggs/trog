@@ -327,7 +327,7 @@ impl fmt::Display for Value {
             Value::ObjRange(underlying) => write!(f, "{}", **underlying),
             Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjHashMap(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjModule(_) => write!(f, "module"),
+            Value::ObjModule(underlying) => write!(f, "<{}>", **underlying),
             Value::None => write!(f, "nil"),
             Value::Sentinel => write!(f, "<sentinel>"),
         }
@@ -358,6 +358,7 @@ impl cmp::PartialEq for Value {
             (Value::ObjHashMap(first), Value::ObjHashMap(second)) => {
                 *first.borrow() == *second.borrow()
             }
+            (Value::ObjModule(first), Value::ObjModule(second)) => *first == *second,
             (Value::Sentinel, Value::Sentinel) => true,
             (Value::None, Value::None) => true,
             _ => false,

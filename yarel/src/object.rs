@@ -203,7 +203,7 @@ pub struct ObjFunction {
     pub upvalue_count: usize,
     pub chunk_index: usize,
     pub name: memory::Gc<ObjString>,
-    pub(crate) module_path: Gc<ObjString>,
+    pub(crate) module: Gc<ObjModule>,
 }
 
 pub fn new_gc_obj_function(
@@ -212,14 +212,14 @@ pub fn new_gc_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
-    module_path: Gc<ObjString>,
+    module: Gc<ObjModule>,
 ) -> Gc<ObjFunction> {
     vm.allocate(ObjFunction::new(
         name,
         arity,
         upvalue_count,
         chunk_index,
-        module_path,
+        module,
     ))
 }
 
@@ -229,9 +229,9 @@ pub fn new_root_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
-    module_path: Gc<ObjString>,
+    module: Gc<ObjModule>,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module_path).as_root()
+    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module).as_root()
 }
 
 impl ObjFunction {
@@ -240,14 +240,14 @@ impl ObjFunction {
         arity: u32,
         upvalue_count: usize,
         chunk_index: usize,
-        module_path: Gc<ObjString>,
+        module: Gc<ObjModule>,
     ) -> Self {
         ObjFunction {
             name,
             arity,
             upvalue_count,
             chunk_index,
-            module_path,
+            module,
         }
     }
 }
@@ -1006,13 +1006,32 @@ impl fmt::Display for ObjTupleIter {
 }
 
 pub struct ObjModule {
+    pub(crate) class: Gc<ObjClass>,
     pub(crate) index: usize,
     pub(crate) path: Gc<ObjString>,
 }
 
+pub(crate) fn new_gc_obj_module(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    index: usize,
+    path: Gc<ObjString>,
+) -> Gc<ObjModule> {
+    vm.allocate(ObjModule::new(class, index, path))
+}
+
+pub(crate) fn new_root_obj_module(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    index: usize,
+    path: Gc<ObjString>,
+) -> Root<ObjModule> {
+    new_gc_obj_module(vm, class, index, path).as_root()
+}
+
 impl ObjModule {
-    pub(crate) fn new(index: usize, path: Gc<ObjString>) -> Self {
-        ObjModule { index, path }
+    pub(crate) fn new(class: Gc<ObjClass>, index: usize, path: Gc<ObjString>) -> Self {
+        ObjModule { class, index, path }
     }
 }
 
@@ -1020,4 +1039,10 @@ impl memory::GcManaged for ObjModule {
     fn mark(&self) {}
 
     fn blacken(&self) {}
+}
+
+impl fmt::Display for ObjModule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "module \"{}\"", *self.path)
+    }
 }

@@ -166,7 +166,7 @@ pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
         }
     };
 
-    let result = compiler::compile(vm, source);
+    let result = compiler::compile(vm, source, None);
     let error_output = match result {
         Ok(f) => match vm.execute(f, &[]) {
             Ok(_) => Vec::new(),

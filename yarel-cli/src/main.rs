@@ -33,7 +33,7 @@ fn repl(vm: &mut Vm) {
                     println!();
                     process::exit(0);
                 }
-                match vm::interpret(vm, buffer) {
+                match vm::interpret(vm, buffer, None) {
                     Ok(_) => {}
                     Err(error) => eprint!("{}", error),
                 }
@@ -49,7 +49,7 @@ fn repl(vm: &mut Vm) {
 fn run_file(vm: &mut Vm, path: &str) {
     let source = fs::read_to_string(path);
     let result = match source {
-        Ok(contents) => vm::interpret(vm, contents),
+        Ok(contents) => vm::interpret(vm, contents, None),
         _ => panic!("Unable to read from file."),
     };
 

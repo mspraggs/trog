@@ -155,7 +155,7 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm, module_path: Gc<ObjString>) -> Root<ObjFunction> {
+    fn make_function(&mut self, vm: &mut Vm, module: Gc<ObjModule>) -> Root<ObjFunction> {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
@@ -166,7 +166,7 @@ impl Compiler {
             self.func_arity,
             num_upvalues,
             chunk_index,
-            module_path,
+            module,
         )
     }
 
@@ -219,10 +219,14 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(
+    vm: &mut Vm,
+    source: String,
+    module_path: Option<&str>,
+) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
-
-    let mut parser = Parser::new(vm, &mut scanner);
+    let module = vm.get_module(module_path.unwrap_or("main"));
+    let mut parser = Parser::new(vm, &mut scanner, module);
     parser.parse()
 }
 
@@ -236,13 +240,12 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
-    compiled_module: Option<ObjModule>,
+    compiled_module: Gc<ObjModule>,
     vm: &'a mut Vm,
 }
 
 impl<'a> Parser<'a> {
-    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
-        let module = ObjModule::new(vm.get_num_modules(), vm.new_gc_obj_string("main"));
+    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner, module: Gc<ObjModule>) -> Parser<'a> {
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -253,7 +256,7 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
-            compiled_module: Some(module),
+            compiled_module: module,
             vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -280,10 +283,7 @@ impl<'a> Parser<'a> {
             ));
         }
 
-        let root_func = self.finalise_compiler().0;
-        self.vm
-            .add_module(self.compiled_module.take().expect("Expected ObjModule."));
-        Ok(root_func)
+        Ok(self.finalise_compiler().0)
     }
 
     fn advance(&mut self) {
@@ -358,10 +358,7 @@ impl<'a> Parser<'a> {
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
         let function = compiler.make_function(
             self.vm,
-            self.compiled_module
-                .as_ref()
-                .expect("Expected ObjModule")
-                .path,
+            self.compiled_module,
         );
         self.compiled_functions.push(function.clone());
 
