@@ -48,7 +48,7 @@ pub enum Value {
     ObjRange(Gc<ObjRange>),
     ObjRangeIter(Gc<RefCell<ObjRangeIter>>),
     ObjHashMap(Gc<RefCell<ObjHashMap>>),
-    ObjModule(Gc<ObjModule>),
+    ObjModule(Gc<RefCell<ObjModule>>),
     None,
     Sentinel,
 }
@@ -217,7 +217,7 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_obj_module(&self) -> Option<Gc<ObjModule>> {
+    pub fn try_as_obj_module(&self) -> Option<Gc<RefCell<ObjModule>>> {
         match self {
             Value::ObjModule(inner) => Some(*inner),
             _ => None,
@@ -327,7 +327,7 @@ impl fmt::Display for Value {
             Value::ObjRange(underlying) => write!(f, "{}", **underlying),
             Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjHashMap(underlying) => write!(f, "{}", *underlying.borrow()),
-            Value::ObjModule(underlying) => write!(f, "<{}>", **underlying),
+            Value::ObjModule(underlying) => write!(f, "<{}>", *underlying.borrow()),
             Value::None => write!(f, "nil"),
             Value::Sentinel => write!(f, "<sentinel>"),
         }
