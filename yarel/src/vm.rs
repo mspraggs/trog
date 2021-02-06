@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::path::Path;
 use std::ptr;
 use std::slice;
@@ -116,9 +117,30 @@ fn default_read_module_source(path: &str) -> Result<String, Error> {
     let source = match fs::read_to_string(filename) {
         Ok(s) => s,
         Err(e) => {
+            let reason = match e.kind() {
+                io::ErrorKind::NotFound => "file not found",
+                io::ErrorKind::PermissionDenied => "permission denied",
+                io::ErrorKind::ConnectionRefused => "connection refused",
+                io::ErrorKind::ConnectionReset => "connection reset",
+                io::ErrorKind::ConnectionAborted => "connection aborted",
+                io::ErrorKind::NotConnected => "not connected",
+                io::ErrorKind::AddrInUse => "address in use",
+                io::ErrorKind::AddrNotAvailable => "address not available",
+                io::ErrorKind::BrokenPipe => "broken pipe",
+                io::ErrorKind::AlreadyExists => "already exists",
+                io::ErrorKind::WouldBlock => "would block",
+                io::ErrorKind::InvalidInput => "invalid input",
+                io::ErrorKind::InvalidData => "invalid data",
+                io::ErrorKind::TimedOut => "timed out",
+                io::ErrorKind::WriteZero => "write zero",
+                io::ErrorKind::Interrupted => "interrupted",
+                io::ErrorKind::Other => "other",
+                io::ErrorKind::UnexpectedEof => "unexpected end-of-file",
+                _ => "other",
+            };
             return Err(error!(
-                ErrorKind::RuntimeError,
-                "Unable to read file '{}': {}.", filename, e
+                crate::error::ErrorKind::RuntimeError,
+                "Unable to read file '{}' ({}).", filename, reason
             ));
         }
     };
