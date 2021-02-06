@@ -838,7 +838,9 @@ impl Vm {
                         return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
+                    let prev_module = self.frame().closure.borrow().function.module;
                     self.active_chunk = self.get_chunk(prev_chunk_index);
+                    self.active_module = prev_module;
                     self.ip = prev_ip;
 
                     self.stack.truncate(prev_stack_size);
