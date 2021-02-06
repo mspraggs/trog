@@ -1133,7 +1133,7 @@ impl Vm {
             let mut new_msg = String::new();
             let chunk = self.get_chunk(frame.closure.borrow().function.chunk_index);
             let instruction = chunk.code_offset(ips[i]) - 1;
-            write!(new_msg, "[line {}] in ", chunk.lines[instruction])
+            write!(new_msg, "[{}, line {}] in ", *function.module.borrow(), chunk.lines[instruction])
                 .expect("Unable to write error to buffer.");
             if function.name.is_empty() {
                 write!(new_msg, "script").expect("Unable to write error to buffer.");
