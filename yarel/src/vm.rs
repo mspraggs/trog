@@ -277,21 +277,6 @@ impl Vm {
         self.chunks[index].as_gc()
     }
 
-    pub(crate) fn add_module(&mut self, module: ObjModule) {
-        debug_assert!(module.index >= self.modules.len());
-        let index = module.index;
-        let path = module.path;
-        let root = self.allocate_root(module);
-        let stored_module = self.modules.entry(path).or_insert(root);
-        if stored_module.index == index {
-            self.globals.push(object::new_obj_string_value_map());
-        }
-    }
-
-    pub(crate) fn get_num_modules(&self) -> usize {
-        self.modules.len()
-    }
-
     pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
         let mut roots: Vec<&dyn GcManaged> = vec![
             &self.stack,
