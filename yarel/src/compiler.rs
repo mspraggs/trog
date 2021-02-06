@@ -23,7 +23,7 @@ use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Root};
-use crate::object::{self, ObjFunction, ObjModule, ObjString};
+use crate::object::{self, ObjFunction, ObjModule};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -532,6 +532,8 @@ impl<'a> Parser<'a> {
                 return;
             }
         };
+
+        self.consume(TokenKind::SemiColon, "Expected ';' after module import.");
 
         self.emit_byte(OpCode::Pop as u8);
 

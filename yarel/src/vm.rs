@@ -15,8 +15,10 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs;
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
+use std::path::Path;
 use std::ptr;
 use std::slice;
 use std::time;
@@ -40,6 +42,8 @@ use crate::utils;
 use crate::value::Value;
 
 const RANGE_CACHE_SIZE: usize = 8;
+
+type LoadModuleFn = fn(&str) -> Result<String, Error>;
 
 pub fn interpret(vm: &mut Vm, source: String, module_path: Option<&str>) -> Result<Value, Error> {
     let compile_result = compiler::compile(vm, source, module_path);
@@ -97,6 +101,25 @@ impl GcManaged for ClassDef {
     }
 }
 
+fn default_read_module_source(path: &str) -> Result<String, Error> {
+    let path = Path::new(path).with_extension("yl");
+    let filename = match path.as_path().to_str() {
+        Some(p) => p,
+        None => {
+            return Err(error!(ErrorKind::RuntimeError, "Error converting module path to string."));
+        }
+    };
+
+    let source = match fs::read_to_string(filename) {
+        Ok(s) => s,
+        Err(e) => {
+            return Err(error!(ErrorKind::RuntimeError, "Unable to read file '{}': {}.", filename, e));
+        }
+    };
+
+    Ok(source)
+}
+
 pub struct Vm {
     ip: *const u8,
     active_module: Gc<ObjModule>,
@@ -115,6 +138,7 @@ pub struct Vm {
     string_store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
     working_class_def: Option<ClassDef>,
+    module_loader: LoadModuleFn,
     pub(crate) heap: Heap,
 }
 
@@ -142,6 +166,7 @@ impl Vm {
             string_store: HashMap::with_hasher(BuildPassThroughHasher::default()),
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
+            module_loader: default_read_module_source,
             working_class_def: None,
         };
         vm.init_heap_allocated_data();
@@ -486,12 +511,28 @@ impl Vm {
                             continue;
                         }
                     }
+                    if let Some(module) = self.peek(0).try_as_obj_module() {
+                        if let Some(&property) = self.globals[module.index].get(&name) {
+                            self.pop();
+                            self.push(property);
+                            continue;
+                        }
+                    }
 
                     let class = self.peek(0).get_class(&self.class_store);
                     self.bind_method(class, name)?;
                 }
 
                 byte if byte == OpCode::SetProperty as u8 => {
+                    if let Some(module) = self.peek(1).try_as_obj_module() {
+                        let name = read_string!();
+                        let value = *self.peek(0);
+                        self.globals[module.index].insert(name, value);
+                        self.pop();
+                        self.pop();
+                        self.push(value);
+                        continue;
+                    }
                     let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
                         ptr
                     } else {
@@ -833,7 +874,7 @@ impl Vm {
                 byte if byte == OpCode::Import as u8 => {
                     let path = read_string!();
 
-                    let source = String::from("print(\"Hello, World!\");");
+                    let source = (self.module_loader)(&path)?;
 
                     let function = match compiler::compile(self, source, Some(&path)) {
                         Ok(f) => f,
@@ -991,8 +1032,12 @@ impl Vm {
                 name,
                 arg_count,
             ),
-            Value::ObjModule(_) => {
-                panic!("Unsupported value type.");
+            Value::ObjModule(module) => {
+                if let Some(&value) = self.globals[module.index].get(&name) {
+                    *self.peek_mut(arg_count) = value;
+                    return self.call_value(value, arg_count);
+                }
+                self.invoke_from_class(module.class, name, arg_count)
             }
             Value::None => {
                 self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
