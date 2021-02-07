@@ -82,7 +82,7 @@ impl Value {
             Value::ObjRange(range) => range.class,
             Value::ObjRangeIter(iter) => iter.borrow().class,
             Value::ObjHashMap(hash_map) => hash_map.borrow().class,
-            Value::ObjModule(_) => class_store.get_nil_class(),
+            Value::ObjModule(module) => module.borrow().class,
             Value::None => class_store.get_nil_class(),
             Value::Sentinel => class_store.get_sentinel_class(),
         }
