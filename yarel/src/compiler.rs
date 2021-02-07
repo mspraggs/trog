@@ -22,8 +22,8 @@ use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, Root};
-use crate::object::{self, ObjFunction, ObjModule};
+use crate::memory::Root;
+use crate::object::{self, ObjFunction};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -501,7 +501,7 @@ impl<'a> Parser<'a> {
         let path = &self.previous.clone();
         let path_constant = self.identifier_constant(&path);
         self.declare_variable();
-        self.emit_constant_op(OpCode::Import, path_constant);
+        self.emit_constant_op(OpCode::StartImport, path_constant);
 
         let name = if self.match_token(TokenKind::As) {
             self.consume(TokenKind::Identifier, "Expected module name.");
@@ -518,7 +518,7 @@ impl<'a> Parser<'a> {
 
         self.consume(TokenKind::SemiColon, "Expected ';' after module import.");
 
-        self.emit_byte(OpCode::Pop as u8);
+        self.emit_byte(OpCode::FinishImport as u8);
 
         let name_constant = self.identifier_constant(&name);
         self.define_variable(name_constant);

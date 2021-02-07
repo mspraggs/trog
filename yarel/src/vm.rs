@@ -919,8 +919,21 @@ impl Vm {
                     self.define_method(name, true)?;
                 }
 
-                byte if byte == OpCode::Import as u8 => {
+                byte if byte == OpCode::StartImport as u8 => {
                     let path = read_string!();
+
+                    if let Some(module) = self.modules.get(&path).map(|m| m.as_gc()) {
+                        if module.borrow().imported {
+                            self.push(Value::ObjModule(module));
+                            continue;
+                        } else {
+                            return Err(error!(
+                                ErrorKind::RuntimeError,
+                                "Circular dependency encountered when importing module '{}'.",
+                                path.as_str()
+                            ));
+                        }
+                    }
 
                     let source = (self.module_loader)(&path)?;
 
@@ -940,6 +953,12 @@ impl Vm {
                     self.call_value(*self.peek(0), 0)?;
                     let active_module_path = self.active_module.borrow().path;
                     self.init_built_in_globals(&active_module_path);
+                }
+
+                byte if byte == OpCode::FinishImport as u8 => {
+                    self.pop();
+                    let module = self.peek(0).try_as_obj_module().expect("Expected ObjModule.");
+                    module.borrow_mut().imported = true;
                 }
 
                 _ => {

@@ -118,7 +118,8 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Inherit => simple_instruction("INHERIT", offset),
         OpCode::Method => constant_instruction("METHOD", chunk, offset),
         OpCode::StaticMethod => constant_instruction("STATIC_METHOD", chunk, offset),
-        OpCode::Import => constant_instruction("IMPORT", chunk, offset),
+        OpCode::StartImport => constant_instruction("START_IMPORT", chunk, offset),
+        OpCode::FinishImport => byte_instruction("FINISH_IMPORT", chunk, offset),
     }
 }
 

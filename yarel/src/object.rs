@@ -1009,6 +1009,7 @@ impl fmt::Display for ObjTupleIter {
 }
 
 pub struct ObjModule {
+    pub(crate) imported: bool,
     pub(crate) class: Gc<ObjClass>,
     pub(crate) path: Gc<ObjString>,
     pub attributes: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
@@ -1033,6 +1034,7 @@ pub(crate) fn new_root_obj_module(
 impl ObjModule {
     pub(crate) fn new(class: Gc<ObjClass>, path: Gc<ObjString>) -> Self {
         ObjModule {
+            imported: false,
             class,
             path,
             attributes: new_obj_string_value_map(),

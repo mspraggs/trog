@@ -66,7 +66,8 @@ pub enum OpCode {
     Inherit,
     Method,
     StaticMethod,
-    Import,
+    StartImport,
+    FinishImport,
 }
 
 impl OpCode {
@@ -120,7 +121,8 @@ impl OpCode {
             OpCode::Inherit => &[],
             OpCode::Method => &[2],
             OpCode::StaticMethod => &[2],
-            OpCode::Import => &[2],
+            OpCode::StartImport => &[2],
+            OpCode::FinishImport => &[],
         }
     }
 }
@@ -176,7 +178,8 @@ impl From<u8> for OpCode {
             value if value == OpCode::Inherit as u8 => OpCode::Inherit,
             value if value == OpCode::Method as u8 => OpCode::Method,
             value if value == OpCode::StaticMethod as u8 => OpCode::StaticMethod,
-            value if value == OpCode::Import as u8 => OpCode::Import,
+            value if value == OpCode::StartImport as u8 => OpCode::StartImport,
+            value if value == OpCode::FinishImport as u8 => OpCode::FinishImport,
             _ => panic!("Unknown opcode {}", value),
         }
     }
