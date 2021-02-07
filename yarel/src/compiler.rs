@@ -513,9 +513,10 @@ impl<'a> Parser<'a> {
     fn import_statement(&mut self) {
         self.consume(TokenKind::Str, "Expected a module path.");
         let path = &self.previous.clone();
+        if path.source == "main" {
+            self.error("Cannot import top-level module.");
+        }
         let path_constant = self.identifier_constant(&path);
-        self.declare_variable();
-        self.emit_constant_op(OpCode::StartImport, path_constant);
 
         let name = if self.match_token(TokenKind::As) {
             self.consume(TokenKind::Identifier, "Expected module name.");
@@ -523,12 +524,17 @@ impl<'a> Parser<'a> {
         } else {
             let result = (|| Some(Path::new(&path.source).file_name()?.to_str()?))();
             if let Some(filename) = result {
-                Token::from_string(filename)
+                Token::from_string_and_line(filename, self.current.line)
             } else {
                 self.error("Expected a module path.");
                 return;
             }
         };
+        // Because the module path syntactically comes before the variable that refers to the
+        // module, we have to inject the token that refers to the module here.
+        self.previous = name.clone();
+        self.declare_variable();
+        self.emit_constant_op(OpCode::StartImport, path_constant);
 
         self.consume(TokenKind::SemiColon, "Expected ';' after module import.");
 

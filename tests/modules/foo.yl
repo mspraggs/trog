@@ -1,0 +1,8 @@
+// foo
+// 0
+fn print_name() {
+    print("Name is ${name}");
+}
+
+var name = "foo";
+print(name);

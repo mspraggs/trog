@@ -1,0 +1,7 @@
+// Circular dependency encountered when importing module 'tests/modules/circular_foo'.
+// [module "tests/modules/circular_bar", line 6] in script
+// [module "tests/modules/circular_foo", line 6] in script
+// [module "main", line 6] in script
+// 70
+import "tests/modules/circular_foo";
+print("bar");

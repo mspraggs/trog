@@ -119,7 +119,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Method => constant_instruction("METHOD", chunk, offset),
         OpCode::StaticMethod => constant_instruction("STATIC_METHOD", chunk, offset),
         OpCode::StartImport => constant_instruction("START_IMPORT", chunk, offset),
-        OpCode::FinishImport => byte_instruction("FINISH_IMPORT", chunk, offset),
+        OpCode::FinishImport => simple_instruction("FINISH_IMPORT", offset),
     }
 }
 

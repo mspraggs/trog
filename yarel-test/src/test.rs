@@ -115,7 +115,7 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn local_print(_heap: &mut Vm, args: &[Value]) -> Result<Value, Error> {
+pub(crate) fn local_print(_heap: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     if args.len() != 2 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
@@ -149,7 +149,6 @@ fn match_output(expected: &[String], actual: &[String]) -> bool {
 
 pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
     vm.reset();
-    vm.define_native("main", "print", local_print);
 
     let source = match fs::read_to_string(path) {
         Ok(contents) => contents,

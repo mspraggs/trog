@@ -1,0 +1,6 @@
+// foo
+// Undefined property 'bar'.
+// [module "main", line 6] in script
+// 70
+import "tests/modules/foo";
+foo.bar;

@@ -166,6 +166,7 @@ pub struct Vm {
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
     working_class_def: Option<ClassDef>,
     module_loader: LoadModuleFn,
+    printer: NativeFn,
     pub(crate) heap: Heap,
 }
 
@@ -193,6 +194,7 @@ impl Vm {
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
             module_loader: default_read_module_source,
+            printer: core::print,
             working_class_def: None,
         };
         vm.init_heap_allocated_data();
@@ -203,6 +205,11 @@ impl Vm {
         let mut vm = Self::new();
         vm.init_built_in_globals("main");
         vm
+    }
+
+    pub fn set_printer(&mut self, printer: NativeFn) {
+        self.printer = printer;
+        self.define_native("main", "print", self.printer);
     }
 
     pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
@@ -306,13 +313,8 @@ impl Vm {
     pub fn reset(&mut self) {
         self.reset_stack();
         self.chunks = self.core_chunks.clone();
-        let main_string = self.new_gc_obj_string("main");
-        self.modules.retain(|&k, _| k == main_string);
-        self.active_module = self
-            .modules
-            .get(&main_string)
-            .expect("Expected ObjModule.")
-            .as_gc();
+        self.modules.retain(|&k, _| k.as_str() == "main");
+        self.active_module = self.get_module("main");
         self.active_module.borrow_mut().attributes = object::new_obj_string_value_map();
         self.init_built_in_globals("main");
     }
@@ -917,6 +919,7 @@ impl Vm {
                     if let Some(module) = self.modules.get(&path).map(|m| m.as_gc()) {
                         if module.borrow().imported {
                             self.push(Value::ObjModule(module));
+                            self.push(Value::None);
                             continue;
                         } else {
                             return Err(error!(
@@ -931,8 +934,13 @@ impl Vm {
 
                     let function = match compiler::compile(self, source, Some(&path)) {
                         Ok(f) => f,
-                        Err(_) => {
-                            return Err(error!(ErrorKind::RuntimeError, "Error compiling module."));
+                        Err(e) => {
+                            let mut error =
+                                error!(ErrorKind::RuntimeError, "Error compiling module:");
+                            for msg in e.get_messages() {
+                                error.add_message(&format!("    {}", msg));
+                            }
+                            return Err(error);
                         }
                     };
 
@@ -1357,7 +1365,7 @@ impl Vm {
     fn init_built_in_globals(&mut self, module_path: &str) {
         self.define_native(module_path, "clock", core::clock);
         self.define_native(module_path, "type", core::type_);
-        self.define_native(module_path, "print", core::print);
+        self.define_native(module_path, "print", self.printer);
         self.define_native(module_path, "sentinel", core::sentinel);
         let base_metaclass = self.class_store.get_base_metaclass();
         self.set_global(module_path, "Type", Value::ObjClass(base_metaclass));

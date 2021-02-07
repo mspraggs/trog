@@ -99,6 +99,14 @@ impl Token {
             source: String::from(source),
         }
     }
+
+    pub fn from_string_and_line(source: &str, line: usize) -> Self {
+        Token {
+            kind: Default::default(),
+            line,
+            source: String::from(source),
+        }
+    }
 }
 
 fn is_alpha(s: &str) -> bool {
