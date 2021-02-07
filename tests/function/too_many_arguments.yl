@@ -1,4 +1,4 @@
-// [line 262] Error at 'a': Cannot have more than 255 arguments.
+// [module "main", line 262] Error at 'a': Cannot have more than 255 arguments.
 // 65
 fn foo() {}
 {

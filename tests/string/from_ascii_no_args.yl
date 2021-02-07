@@ -1,4 +1,4 @@
 // Expected 1 parameter but found 0.
-// [line 4] in script
+// [module "main", line 4] in script
 // 0
 String.from_ascii();

@@ -1,5 +1,5 @@
 // Undefined property '__setitem__'.
-// [line 5] in script
+// [module "main", line 5] in script
 // 70
 var t = (1, 2);
 t[0] = 4;

@@ -22,8 +22,8 @@ use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::Root;
-use crate::object::{self, ObjFunction};
+use crate::memory::{Gc, Root};
+use crate::object::{self, ObjFunction, ObjString};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -155,12 +155,19 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm) -> Root<ObjFunction> {
+    fn make_function(&mut self, vm: &mut Vm, module_path: Gc<ObjString>) -> Root<ObjFunction> {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = vm.add_chunk(chunk);
-        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk_index)
+        object::new_root_obj_function(
+            vm,
+            name,
+            self.func_arity,
+            num_upvalues,
+            chunk_index,
+            module_path,
+        )
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -212,9 +219,13 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(
+    vm: &mut Vm,
+    source: String,
+    module_path: Option<&str>,
+) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
-    let mut parser = Parser::new(vm, &mut scanner);
+    let mut parser = Parser::new(vm, &mut scanner, module_path);
     parser.parse()
 }
 
@@ -228,11 +239,13 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
+    module_path: Gc<ObjString>,
     vm: &'a mut Vm,
 }
 
 impl<'a> Parser<'a> {
-    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
+    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner, module_path: Option<&str>) -> Parser<'a> {
+        let module_path = vm.new_gc_obj_string(module_path.unwrap_or("main"));
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -243,6 +256,7 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
+            module_path,
             vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -342,7 +356,7 @@ impl<'a> Parser<'a> {
         self.emit_return();
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.vm);
+        let function = compiler.make_function(self.vm, self.module_path);
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
@@ -957,7 +971,13 @@ impl<'a> Parser<'a> {
 
         let mut error_string = String::new();
 
-        write!(error_string, "[line {}] Error", token.line).unwrap();
+        write!(
+            error_string,
+            "[module \"{}\", line {}] Error",
+            self.module_path.as_str(),
+            token.line
+        )
+        .unwrap();
 
         match token.kind {
             TokenKind::Eof => write!(error_string, " at end").unwrap(),

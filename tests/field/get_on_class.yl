@@ -1,5 +1,5 @@
 // Undefined property 'bar'.
-// [line 5] in script
+// [module "main", line 5] in script
 // 70
 class Foo {}
 Foo.bar;

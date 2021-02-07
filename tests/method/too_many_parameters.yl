@@ -1,4 +1,4 @@
-// [line 260] Error at 'a': Cannot have more than 255 parameters.
+// [module "main", line 260] Error at 'a': Cannot have more than 255 parameters.
 // 65
 class Foo {
   fn method(

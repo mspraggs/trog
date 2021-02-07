@@ -1,4 +1,4 @@
 // Binary operands must be two numbers or two strings.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 "s" + nil;

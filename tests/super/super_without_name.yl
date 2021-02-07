@@ -1,4 +1,4 @@
-// [line 6] Error at ';': Expected superclass method name.
+// [module "main", line 6] Error at ';': Expected superclass method name.
 // 65
 class A {}
 class B < A {

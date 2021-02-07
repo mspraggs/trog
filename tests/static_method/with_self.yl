@@ -1,4 +1,4 @@
-// [line 4] Error at 'self': Expected parameter name.
+// [module "main", line 4] Error at 'self': Expected parameter name.
 // 65
 class Foo {
   static fn method(self) {}

@@ -1,6 +1,6 @@
 // Undefined variable 'is_odd'.
-// [line 8] in is_even()
-// [line 13] in script
+// [module "main", line 8] in is_even()
+// [module "main", line 13] in script
 // 70
 {
   fn is_even(n) {

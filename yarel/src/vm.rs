@@ -47,9 +47,9 @@ const RANGE_CACHE_SIZE: usize = 8;
 type LoadModuleFn = fn(&str) -> Result<String, Error>;
 
 pub fn interpret(vm: &mut Vm, source: String, module_path: Option<&str>) -> Result<Value, Error> {
-    let compile_result = compiler::compile(vm, source);
+    let compile_result = compiler::compile(vm, source, module_path);
     match compile_result {
-        Ok(function) => vm.execute(function, &[], module_path),
+        Ok(function) => vm.execute(function, &[]),
         Err(error) => Err(error),
     }
 }
@@ -205,13 +205,8 @@ impl Vm {
         vm
     }
 
-    pub fn execute(
-        &mut self,
-        function: Root<ObjFunction>,
-        args: &[Value],
-        module_path: Option<&str>,
-    ) -> Result<Value, Error> {
-        let module = self.get_module(module_path.unwrap_or("main"));
+    pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
+        let module = self.get_module(&function.module_path);
         let closure = object::new_gc_obj_closure(self, function.as_gc(), module);
         self.push(Value::ObjClosure(closure));
         self.stack.extend_from_slice(args);
@@ -223,9 +218,7 @@ impl Vm {
     }
 
     pub fn get_global(&mut self, module_name: &str, var_name: &str) -> Option<Value> {
-        // let module_index = self.get_module(module_name).index;
         let var_name = self.new_gc_obj_string(var_name);
-        // self.globals[module_index].get(&var_name).copied()
         self.get_module(module_name)
             .borrow()
             .attributes
@@ -311,7 +304,6 @@ impl Vm {
     }
 
     pub fn reset(&mut self) {
-        // TODO: Establish what it means to reset in a VM with modules.
         self.reset_stack();
         self.chunks = self.core_chunks.clone();
         let main_string = self.new_gc_obj_string("main");
@@ -937,7 +929,7 @@ impl Vm {
 
                     let source = (self.module_loader)(&path)?;
 
-                    let function = match compiler::compile(self, source) {
+                    let function = match compiler::compile(self, source, Some(&path)) {
                         Ok(f) => f,
                         Err(_) => {
                             return Err(error!(ErrorKind::RuntimeError, "Error compiling module."));
@@ -957,7 +949,10 @@ impl Vm {
 
                 byte if byte == OpCode::FinishImport as u8 => {
                     self.pop();
-                    let module = self.peek(0).try_as_obj_module().expect("Expected ObjModule.");
+                    let module = self
+                        .peek(0)
+                        .try_as_obj_module()
+                        .expect("Expected ObjModule.");
                     module.borrow_mut().imported = true;
                 }
 

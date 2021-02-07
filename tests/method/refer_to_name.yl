@@ -1,6 +1,6 @@
 // Undefined variable 'method'.
-// [line 7] in method()
-// [line 10] in script
+// [module "main", line 7] in method()
+// [module "main", line 10] in script
 // 70
 class Foo {
   fn method(self) {

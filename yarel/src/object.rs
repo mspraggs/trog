@@ -202,7 +202,8 @@ pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
     pub chunk_index: usize,
-    pub name: memory::Gc<ObjString>,
+    pub name: Gc<ObjString>,
+    pub(crate) module_path: Gc<ObjString>,
 }
 
 pub fn new_gc_obj_function(
@@ -211,8 +212,15 @@ pub fn new_gc_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
+    module_path: Gc<ObjString>,
 ) -> Gc<ObjFunction> {
-    vm.allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
+    vm.allocate(ObjFunction::new(
+        name,
+        arity,
+        upvalue_count,
+        chunk_index,
+        module_path,
+    ))
 }
 
 pub fn new_root_obj_function(
@@ -221,8 +229,9 @@ pub fn new_root_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
+    module_path: Gc<ObjString>,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index).as_root()
+    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module_path).as_root()
 }
 
 impl ObjFunction {
@@ -231,12 +240,14 @@ impl ObjFunction {
         arity: u32,
         upvalue_count: usize,
         chunk_index: usize,
+        module_path: Gc<ObjString>,
     ) -> Self {
         ObjFunction {
             name,
             arity,
             upvalue_count,
             chunk_index,
+            module_path,
         }
     }
 }
