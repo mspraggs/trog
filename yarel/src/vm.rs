@@ -1100,7 +1100,7 @@ impl Vm {
                 arg_count,
             ),
             Value::ObjModule(module) => {
-                let global = self.active_module.borrow().attributes.get(&name).copied();
+                let global = module.borrow().attributes.get(&name).copied();
                 if let Some(value) = global {
                     *self.peek_mut(arg_count) = value;
                     return self.call_value(value, arg_count);
