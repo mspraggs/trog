@@ -155,12 +155,12 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm, module: Gc<RefCell<ObjModule>>) -> Root<ObjFunction> {
+    fn make_function(&mut self, vm: &mut Vm) -> Root<ObjFunction> {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = vm.add_chunk(chunk);
-        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk_index, module)
+        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk_index)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -212,14 +212,9 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(
-    vm: &mut Vm,
-    source: String,
-    module_path: Option<&str>,
-) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
-    let module = vm.get_module(module_path.unwrap_or("main"));
-    let mut parser = Parser::new(vm, &mut scanner, module);
+    let mut parser = Parser::new(vm, &mut scanner);
     parser.parse()
 }
 
@@ -233,12 +228,11 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
-    module: Gc<RefCell<ObjModule>>,
     vm: &'a mut Vm,
 }
 
 impl<'a> Parser<'a> {
-    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner, module: Gc<RefCell<ObjModule>>) -> Parser<'a> {
+    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -249,7 +243,6 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
-            module,
             vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -349,7 +342,7 @@ impl<'a> Parser<'a> {
         self.emit_return();
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.vm, self.module);
+        let function = compiler.make_function(self.vm);
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {

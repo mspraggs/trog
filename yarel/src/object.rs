@@ -203,7 +203,6 @@ pub struct ObjFunction {
     pub upvalue_count: usize,
     pub chunk_index: usize,
     pub name: memory::Gc<ObjString>,
-    pub(crate) module: Gc<RefCell<ObjModule>>,
 }
 
 pub fn new_gc_obj_function(
@@ -212,15 +211,8 @@ pub fn new_gc_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
-    module: Gc<RefCell<ObjModule>>,
 ) -> Gc<ObjFunction> {
-    vm.allocate(ObjFunction::new(
-        name,
-        arity,
-        upvalue_count,
-        chunk_index,
-        module,
-    ))
+    vm.allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
 }
 
 pub fn new_root_obj_function(
@@ -229,9 +221,8 @@ pub fn new_root_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
-    module: Gc<RefCell<ObjModule>>,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module).as_root()
+    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index).as_root()
 }
 
 impl ObjFunction {
@@ -240,14 +231,12 @@ impl ObjFunction {
         arity: u32,
         upvalue_count: usize,
         chunk_index: usize,
-        module: Gc<RefCell<ObjModule>>,
     ) -> Self {
         ObjFunction {
             name,
             arity,
             upvalue_count,
             chunk_index,
-            module,
         }
     }
 }
@@ -311,27 +300,41 @@ impl fmt::Display for ObjNative {
 pub struct ObjClosure {
     pub function: memory::Gc<ObjFunction>,
     pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+    pub(crate) module: Gc<RefCell<ObjModule>>,
 }
 
-pub fn new_gc_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
+pub fn new_gc_obj_closure(
+    vm: &mut Vm,
+    function: Gc<ObjFunction>,
+    module: Gc<RefCell<ObjModule>>,
+) -> Gc<RefCell<ObjClosure>> {
     let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
         .map(|_| vm.allocate_root(RefCell::new(ObjUpvalue::new(0))))
         .collect();
     let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
 
-    vm.allocate(RefCell::new(ObjClosure::new(function, upvalues)))
+    vm.allocate(RefCell::new(ObjClosure::new(function, upvalues, module)))
 }
 
-pub fn new_root_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Root<RefCell<ObjClosure>> {
-    new_gc_obj_closure(vm, function).as_root()
+pub fn new_root_obj_closure(
+    vm: &mut Vm,
+    function: Gc<ObjFunction>,
+    module: Gc<RefCell<ObjModule>>,
+) -> Root<RefCell<ObjClosure>> {
+    new_gc_obj_closure(vm, function, module).as_root()
 }
 
 impl ObjClosure {
     fn new(
         function: memory::Gc<ObjFunction>,
         upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+        module: Gc<RefCell<ObjModule>>,
     ) -> Self {
-        ObjClosure { function, upvalues }
+        ObjClosure {
+            function,
+            upvalues,
+            module,
+        }
     }
 }
 

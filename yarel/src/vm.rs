@@ -47,9 +47,9 @@ const RANGE_CACHE_SIZE: usize = 8;
 type LoadModuleFn = fn(&str) -> Result<String, Error>;
 
 pub fn interpret(vm: &mut Vm, source: String, module_path: Option<&str>) -> Result<Value, Error> {
-    let compile_result = compiler::compile(vm, source, module_path);
+    let compile_result = compiler::compile(vm, source);
     match compile_result {
-        Ok(function) => vm.execute(function, &[]),
+        Ok(function) => vm.execute(function, &[], module_path),
         Err(error) => Err(error),
     }
 }
@@ -205,8 +205,14 @@ impl Vm {
         vm
     }
 
-    pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
-        let closure = object::new_gc_obj_closure(self, function.as_gc());
+    pub fn execute(
+        &mut self,
+        function: Root<ObjFunction>,
+        args: &[Value],
+        module_path: Option<&str>,
+    ) -> Result<Value, Error> {
+        let module = self.get_module(module_path.unwrap_or("main"));
+        let closure = object::new_gc_obj_closure(self, function.as_gc(), module);
         self.push(Value::ObjClosure(closure));
         self.stack.extend_from_slice(args);
         self.call_value(Value::ObjClosure(closure), args.len())?;
@@ -805,7 +811,7 @@ impl Vm {
 
                     let upvalue_count = function.upvalue_count;
 
-                    let closure = object::new_gc_obj_closure(self, function);
+                    let closure = object::new_gc_obj_closure(self, function, self.active_module);
                     self.push(Value::ObjClosure(closure));
 
                     for i in 0..upvalue_count {
@@ -838,7 +844,7 @@ impl Vm {
                         return Ok(self.pop());
                     }
                     let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
-                    let prev_module = self.frame().closure.borrow().function.module;
+                    let prev_module = self.frame().closure.borrow().module;
                     self.active_chunk = self.get_chunk(prev_chunk_index);
                     self.active_module = prev_module;
                     self.ip = prev_ip;
@@ -918,17 +924,17 @@ impl Vm {
 
                     let source = (self.module_loader)(&path)?;
 
-                    let function = match compiler::compile(self, source, Some(&path)) {
+                    let function = match compiler::compile(self, source) {
                         Ok(f) => f,
                         Err(_) => {
                             return Err(error!(ErrorKind::RuntimeError, "Error compiling module."));
                         }
                     };
 
-                    let module = function.module;
+                    let module = self.get_module(&path);
                     self.push(Value::ObjModule(module));
 
-                    let closure = object::new_gc_obj_closure(self, function.as_gc());
+                    let closure = object::new_gc_obj_closure(self, function.as_gc(), module);
                     self.push(Value::ObjClosure(closure));
 
                     self.call_value(*self.peek(0), 0)?;
@@ -1112,7 +1118,7 @@ impl Vm {
         let (chunk_index, module) = {
             let borrowed_closure = closure.borrow();
             let function = borrowed_closure.function;
-            (function.chunk_index, function.module)
+            (function.chunk_index, borrowed_closure.module)
         };
         self.active_chunk = self.get_chunk(chunk_index);
         self.frames.push(CallFrame {
@@ -1152,13 +1158,21 @@ impl Vm {
         ips.push(self.ip);
 
         for (i, frame) in self.frames.iter().enumerate().rev() {
-            let function = frame.closure.borrow().function;
+            let (function, module) = {
+                let borrowed_closure = frame.closure.borrow();
+                (borrowed_closure.function, borrowed_closure.module)
+            };
 
             let mut new_msg = String::new();
             let chunk = self.get_chunk(frame.closure.borrow().function.chunk_index);
             let instruction = chunk.code_offset(ips[i]) - 1;
-            write!(new_msg, "[{}, line {}] in ", *function.module.borrow(), chunk.lines[instruction])
-                .expect("Unable to write error to buffer.");
+            write!(
+                new_msg,
+                "[{}, line {}] in ",
+                *module.borrow(),
+                chunk.lines[instruction]
+            )
+            .expect("Unable to write error to buffer.");
             if function.name.is_empty() {
                 write!(new_msg, "script").expect("Unable to write error to buffer.");
             } else {
