@@ -19,8 +19,10 @@
 use std::any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::marker::PhantomPinned;
 use std::mem;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::ptr::NonNull;
 
 use crate::common;
@@ -43,6 +45,7 @@ pub(crate) type GcBoxPtr<T> = NonNull<GcBox<T>>;
 pub(crate) struct GcBox<T: GcManaged + ?Sized> {
     colour: Cell<Colour>,
     num_roots: Cell<usize>,
+    _pin: PhantomPinned,
     pub(crate) data: T,
 }
 
@@ -71,12 +74,12 @@ impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
         self.data.blacken();
     }
 
-    fn inc_num_roots(&mut self) {
-        *self.num_roots.get_mut() += 1;
+    fn inc_num_roots(&self) {
+        self.num_roots.replace(self.num_roots.get() + 1);
     }
 
-    fn dec_num_roots(&mut self) {
-        *self.num_roots.get_mut() -= 1;
+    fn dec_num_roots(&self) {
+        self.num_roots.replace(self.num_roots.get() - 1);
     }
 }
 
@@ -97,12 +100,12 @@ impl<T: GcManaged> Root<T> {
 }
 
 impl<T: 'static + GcManaged + ?Sized> Root<T> {
-    fn inc_num_roots(&mut self) {
-        self.gc_box_mut().inc_num_roots();
+    fn inc_num_roots(&self) {
+        self.gc_box().inc_num_roots();
     }
 
-    fn dec_num_roots(&mut self) {
-        self.gc_box_mut().dec_num_roots();
+    fn dec_num_roots(&self) {
+        self.gc_box().dec_num_roots();
     }
 }
 
@@ -113,15 +116,6 @@ impl<T: GcManaged + ?Sized> Root<T> {
                 .as_ref()
                 .expect("Expected initialised Root.")
                 .as_ref()
-        }
-    }
-
-    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
-        unsafe {
-            self.ptr
-                .as_mut()
-                .expect("Expected initialised Root.")
-                .as_mut()
         }
     }
 }
@@ -138,7 +132,7 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for Root<T> {
 
 impl<T: 'static + GcManaged + ?Sized> Clone for Root<T> {
     fn clone(&self) -> Root<T> {
-        let mut ret = Root { ptr: self.ptr };
+        let ret = Root { ptr: self.ptr };
         ret.inc_num_roots();
         ret
     }
@@ -163,7 +157,7 @@ impl<T: 'static + GcManaged + ?Sized> Drop for Root<T> {
 
 impl<T: GcManaged> From<Gc<T>> for Root<T> {
     fn from(gc: Gc<T>) -> Self {
-        let mut ret = Root { ptr: Some(gc.ptr) };
+        let ret = Root { ptr: Some(gc.ptr) };
         ret.inc_num_roots();
         ret
     }
@@ -171,7 +165,7 @@ impl<T: GcManaged> From<Gc<T>> for Root<T> {
 
 impl<T: GcManaged> From<GcBoxPtr<T>> for Root<T> {
     fn from(ptr: GcBoxPtr<T>) -> Self {
-        let mut ret = Root { ptr: Some(ptr) };
+        let ret = Root { ptr: Some(ptr) };
         ret.inc_num_roots();
         ret
     }
@@ -241,7 +235,7 @@ impl<T: GcManaged> PartialEq for Gc<T> {
 pub struct Heap {
     collection_threshold: usize,
     bytes_allocated: usize,
-    objects: Vec<Box<GcBox<dyn GcManaged>>>,
+    objects: Vec<Pin<Box<GcBox<dyn GcManaged>>>>,
 }
 
 impl Heap {
@@ -280,15 +274,16 @@ impl Heap {
         } else {
             self.collect_if_required(static_roots);
         }
-        let mut obj = Box::new(GcBox {
+        let mut boxed = Box::pin(GcBox {
             colour: Cell::new(Colour::White),
             num_roots: Cell::new(0),
+            _pin: PhantomPinned,
             data,
         });
 
-        let gc_box_ptr = unsafe { GcBoxPtr::new_unchecked(obj.as_mut()) };
+        let gc_box_ptr = unsafe { GcBoxPtr::new_unchecked(boxed.as_mut().get_unchecked_mut()) };
 
-        self.objects.push(obj);
+        self.objects.push(boxed);
         let size = mem::size_of::<T>();
 
         self.bytes_allocated += size;
@@ -297,7 +292,7 @@ impl Heap {
             let new_ptr = self.objects.last().unwrap();
             println!(
                 "{:?} allocate {} for {:?}",
-                new_ptr.as_ref() as *const _,
+                new_ptr.as_ref().get_ref() as *const _,
                 size,
                 any::type_name::<T>(),
             )
@@ -369,7 +364,7 @@ impl Heap {
             .filter(|obj| obj.colour.get() == Colour::White)
             .map(|obj| {
                 if cfg!(feature = "debug_trace_gc") {
-                    println!("{:?} free", obj.as_ref() as *const _);
+                    println!("{:?} free", obj.as_ref().get_ref() as *const _);
                 }
                 mem::size_of_val(&obj.data)
             })
