@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 use std::ptr;
-use std::slice;
 use std::time;
 
 use crate::chunk::{Chunk, OpCode};
@@ -243,6 +242,10 @@ impl Vm {
         self.chunks = self.core_chunks.clone();
         self.globals = object::new_obj_string_value_map();
         self.init_built_in_globals();
+    }
+
+    pub fn peek(&self, depth: usize) -> &Value {
+        self.stack.peek(depth)
     }
 
     pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> usize {
@@ -984,14 +987,7 @@ impl Vm {
         let function = native.function;
         let frame_end = self.stack.len();
         let frame_begin = frame_end - arg_count - 1;
-        // # Safety
-        // Native functions accept a mutable Vm instance _and_ a slice of Value objects representing
-        // arguments to the native function. In general this is unsafe, but because the stack cannot
-        // be mutated via the Vm object, it is safe to hand the native function a mutable Vm _and_
-        // an immutable slice of stack data.
-        let args =
-            unsafe { slice::from_raw_parts(&self.stack[frame_begin], frame_end - frame_begin) };
-        let result = function(self, args)?;
+        let result = function(self, arg_count)?;
         self.stack.truncate(frame_begin + 1);
         *self.peek_mut(0) = result;
         Ok(())
@@ -1226,10 +1222,6 @@ impl Vm {
 
     fn frame(&self) -> &CallFrame {
         self.frames.last().expect("Call stack empty.")
-    }
-
-    fn peek(&self, depth: usize) -> &Value {
-        self.stack.peek(depth)
     }
 
     fn peek_mut(&mut self, depth: usize) -> &mut Value {

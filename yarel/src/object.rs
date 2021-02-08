@@ -260,7 +260,7 @@ impl fmt::Display for ObjFunction {
     }
 }
 
-pub type NativeFn = fn(&mut Vm, &[Value]) -> Result<Value, Error>;
+pub type NativeFn = fn(&mut Vm, usize) -> Result<Value, Error>;
 
 pub struct ObjNative {
     pub(crate) name: Gc<ObjString>,

@@ -115,14 +115,14 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn local_print(_heap: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    if args.len() != 2 {
+fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    if num_args != 1 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
             "Expected one argument to 'print'.",
         ));
     }
-    let lines = format!("{}", args[1]);
+    let lines = format!("{}", vm.peek(0));
     for line in lines.as_str().lines() {
         OUTPUT.with(|output| output.borrow_mut().push(line.to_string()));
     }

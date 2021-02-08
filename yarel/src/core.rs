@@ -24,14 +24,14 @@ use crate::utils;
 use crate::value::Value;
 use crate::vm::Vm;
 
-fn check_num_args(args: &[Value], expected: usize) -> Result<(), Error> {
-    if args.len() != expected + 1 {
+fn check_num_args(num_args: usize, expected: usize) -> Result<(), Error> {
+    if num_args != expected {
         return Err(error!(
             ErrorKind::RuntimeError,
             "Expected {} parameter{} but found {}.",
             expected,
             if expected == 1 { "" } else { "s" },
-            args.len() - 1
+            num_args
         ));
     }
     Ok(())
@@ -57,7 +57,7 @@ fn build_methods(
 
 /// Global functions
 
-pub(crate) fn clock(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+pub(crate) fn clock(_vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
     let duration = match time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH) {
         Ok(value) => value,
         Err(_) => {
@@ -72,25 +72,20 @@ pub(crate) fn clock(_vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
     Ok(Value::Number(seconds + nanos))
 }
 
-pub(crate) fn print(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    if args.len() != 2 {
-        return Err(error!(
-            ErrorKind::RuntimeError,
-            "Expected one argument to 'print'."
-        ));
-    }
-    println!("{}", args[1]);
+pub(crate) fn print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
+    println!("{}", vm.peek(0));
     Ok(Value::None)
 }
 
-pub(crate) fn type_(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+pub(crate) fn type_(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    Ok(Value::ObjClass(vm.get_class(args[1])))
+    Ok(Value::ObjClass(vm.get_class(*vm.peek(0))))
 }
 
-pub(crate) fn no_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    let class = type_(vm, &[Value::None, args[0]])?;
+pub(crate) fn no_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
+    let class = type_(vm, 1)?;
     Err(error!(
         ErrorKind::RuntimeError,
         "Construction of type {} is unsupported.", class
@@ -104,13 +99,8 @@ pub(crate) fn build_unsupported_methods(
     build_methods(vm, method_map, None)
 }
 
-pub(crate) fn sentinel(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    if args.len() != 1 {
-        return Err(error!(
-            ErrorKind::RuntimeError,
-            "Expected no arguments to 'sentinel'."
-        ));
-    }
+pub(crate) fn sentinel(_vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
     Ok(Value::Sentinel)
 }
 
@@ -129,14 +119,15 @@ pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass
 
 /// Object implementation
 
-pub(crate) fn object_is_a(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+pub(crate) fn object_is_a(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let receiver_class = vm.get_class(args[0]);
-    let query_class = args[1].try_as_obj_class().ok_or_else(|| {
+    let receiver_class = vm.get_class(*vm.peek(1));
+    let query_class = vm.peek(0).try_as_obj_class().ok_or_else(|| {
         error!(
             ErrorKind::ValueError,
-            "Expected a class name but found '{}'.", args[1]
+            "Expected a class name but found '{}'.",
+            vm.peek(0)
         )
     })?;
 
@@ -203,13 +194,13 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
     class.as_mut().data.methods = methods;
 }
 
-fn string_from_ascii(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_from_ascii(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let vec_arg = args[1].try_as_obj_vec().ok_or_else(|| {
+    let vec_arg = vm.peek(0).try_as_obj_vec().ok_or_else(|| {
         Error::with_message(
             ErrorKind::TypeError,
-            &format!("Expected a Vec instance but found '{}'.", args[1]),
+            &format!("Expected a Vec instance but found '{}'.", vm.peek(0)),
         )
     })?;
 
@@ -246,13 +237,13 @@ fn string_from_ascii(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjString(string))
 }
 
-fn string_from_utf8(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_from_utf8(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let vec_arg = args[1].try_as_obj_vec().ok_or_else(|| {
+    let vec_arg = vm.peek(0).try_as_obj_vec().ok_or_else(|| {
         Error::with_message(
             ErrorKind::TypeError,
-            &format!("Expected a Vec instance but found '{}'.", args[1]),
+            &format!("Expected a Vec instance but found '{}'.", vm.peek(0)),
         )
     })?;
 
@@ -293,13 +284,13 @@ fn string_from_utf8(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjString(string))
 }
 
-fn string_from_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_from_code_points(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let vec_arg = args[1].try_as_obj_vec().ok_or_else(|| {
+    let vec_arg = vm.peek(0).try_as_obj_vec().ok_or_else(|| {
         Error::with_message(
             ErrorKind::TypeError,
-            &format!("Expected a Vec instance but found '{}'.", args[1]),
+            &format!("Expected a Vec instance but found '{}'.", vm.peek(0)),
         )
     })?;
 
@@ -337,23 +328,23 @@ fn string_from_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> 
     Ok(Value::ObjString(string))
 }
 
-fn string_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
     Ok(Value::ObjString(
-        vm.new_gc_obj_string(format!("{}", args[1]).as_str()),
+        vm.new_gc_obj_string(format!("{}", vm.peek(0)).as_str()),
     ))
 }
 
-fn string_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
     let string_len = string.len() as isize;
 
-    let (begin, end) = match args[1] {
+    let (begin, end) = match vm.peek(0) {
         Value::Number(_) => {
-            let begin = get_bounded_index(args[1], string_len, "String index out of bounds.")?;
+            let begin = get_bounded_index(*vm.peek(0), string_len, "String index out of bounds.")?;
             check_char_boundary(string, begin, "string index")?;
             let mut end = begin + 1;
             while end <= string.len() && !string.as_str().is_char_boundary(end) {
@@ -380,37 +371,37 @@ fn string_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjString(new_string))
 }
 
-fn string_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn string_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
     let iter = vm.new_root_obj_string_iter(
-        args[0]
+        vm.peek(0)
             .try_as_obj_string()
             .expect("Expected ObjString instance."),
     );
     Ok(Value::ObjStringIter(iter.as_gc()))
 }
 
-fn string_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn string_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
     Ok(Value::Number(string.len() as f64))
 }
 
-fn string_count_chars(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn string_count_chars(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
     Ok(Value::Number(string.chars().count() as f64))
 }
 
-fn string_char_byte_index(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_char_byte_index(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
     let char_index = get_bounded_index(
-        args[1],
+        *vm.peek(0),
         string.as_str().chars().count() as isize,
         "String index parameter out of bounds.",
     )?;
@@ -430,14 +421,15 @@ fn string_char_byte_index(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> 
     ))
 }
 
-fn string_find(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 2)?;
+fn string_find(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 2)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
-    let substring = args[1].try_as_obj_string().ok_or_else(|| {
+    let string = vm.peek(2).try_as_obj_string().expect("Expected ObjString.");
+    let substring = vm.peek(1).try_as_obj_string().ok_or_else(|| {
         error!(
             ErrorKind::RuntimeError,
-            "Expected a string but found '{}'.", args[1]
+            "Expected a string but found '{}'.",
+            vm.peek(1)
         )
     })?;
     if substring.is_empty() {
@@ -445,7 +437,7 @@ fn string_find(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     }
     let string_len = string.len() as isize;
     let start = {
-        let i = utils::validate_integer(args[2])?;
+        let i = utils::validate_integer(*vm.peek(0))?;
         if i < 0 {
             i + string_len
         } else {
@@ -469,14 +461,14 @@ fn string_find(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::None)
 }
 
-fn string_replace(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 2)?;
+fn string_replace(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 2)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
-    let old = args[1].try_as_obj_string().ok_or_else(|| {
+    let string = vm.peek(2).try_as_obj_string().expect("Expected ObjString.");
+    let old = vm.peek(1).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
             ErrorKind::RuntimeError,
-            &format!("Expected a string but found '{}'.", args[1]),
+            &format!("Expected a string but found '{}'.", vm.peek(1)),
         )
     })?;
     if old.is_empty() {
@@ -485,24 +477,24 @@ fn string_replace(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
             "Cannot replace empty string."
         ));
     }
-    let new = args[2].try_as_obj_string().ok_or_else(|| {
+    let new = vm.peek(0).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
             ErrorKind::RuntimeError,
-            &format!("Expected a string but found '{}'.", args[2]),
+            &format!("Expected a string but found '{}'.", vm.peek(0)),
         )
     })?;
     let new_string = vm.new_gc_obj_string(&string.replace(old.as_str(), new.as_str()));
     Ok(Value::ObjString(new_string))
 }
 
-fn string_split(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_split(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
-    let delim = args[1].try_as_obj_string().ok_or_else(|| {
+    let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
+    let delim = vm.peek(0).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
             ErrorKind::RuntimeError,
-            &format!("Expected a string but found '{}'.", args[1]),
+            &format!("Expected a string but found '{}'.", vm.peek(0)),
         )
     })?;
     if delim.is_empty() {
@@ -519,52 +511,53 @@ fn string_split(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjVec(splits.as_gc()))
 }
 
-fn string_starts_with(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_starts_with(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
-    let prefix = args[1].try_as_obj_string().ok_or_else(|| {
+    let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
+    let prefix = vm.peek(0).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
             ErrorKind::TypeError,
-            format!("Expected a string but found '{}'.", args[1]).as_str(),
+            format!("Expected a string but found '{}'.", vm.peek(0)).as_str(),
         )
     })?;
 
     Ok(Value::Boolean(string.as_str().starts_with(prefix.as_str())))
 }
 
-fn string_ends_with(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn string_ends_with(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
-    let prefix = args[1].try_as_obj_string().ok_or_else(|| {
+    let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
+    let prefix = vm.peek(0).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
             ErrorKind::TypeError,
-            format!("Expected a string but found '{}'.", args[1]).as_str(),
+            format!("Expected a string but found '{}'.", vm.peek(0)).as_str(),
         )
     })?;
 
     Ok(Value::Boolean(string.as_str().ends_with(prefix.as_str())))
 }
 
-fn string_as_num(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn string_as_num(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
     let num = string.parse::<f64>().or_else(|_| {
         Err(error!(
             ErrorKind::ValueError,
-            "Unable to parse number from '{}'.", args[0]
+            "Unable to parse number from '{}'.",
+            vm.peek(0)
         ))
     })?;
 
     Ok(Value::Number(num))
 }
 
-fn string_to_bytes(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn string_to_bytes(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
 
     let vec = vm.new_root_obj_vec();
     vec.borrow_mut().elements = string
@@ -576,10 +569,10 @@ fn string_to_bytes(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
-fn string_to_code_points(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn string_to_code_points(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let string = args[0].try_as_obj_string().expect("Expected ObjString.");
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
 
     let vec = vm.new_root_obj_vec();
     vec.borrow_mut().elements = string
@@ -602,9 +595,10 @@ fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<
 
 /// StringIter implementation
 
-fn string_iter_next(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    assert!(args.len() == 1);
-    let iter = args[0]
+fn string_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    let iter = vm
+        .peek(0)
         .try_as_obj_string_iter()
         .expect("Expected ObjIter instance.");
     let iterable = iter.borrow().iterable;
@@ -649,20 +643,20 @@ pub fn new_root_obj_tuple_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
-fn tuple_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+fn tuple_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
     let vec = vm.new_root_obj_tuple(Vec::new());
     Ok(Value::ObjTuple(vec.as_gc()))
 }
 
-fn tuple_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let tuple = args[0].try_as_obj_tuple().expect("Expected ObjTuple");
+    let tuple = vm.peek(1).try_as_obj_tuple().expect("Expected ObjTuple");
 
-    match args[1] {
+    match vm.peek(0) {
         Value::Number(_) => {
             let index = get_bounded_index(
-                args[1],
+                *vm.peek(0),
                 tuple.elements.len() as isize,
                 "Tuple index parameter out of bounds",
             )?;
@@ -682,18 +676,18 @@ fn tuple_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     }
 }
 
-fn tuple_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn tuple_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let tuple = args[0].try_as_obj_tuple().expect("Expected ObjTuple");
+    let tuple = vm.peek(0).try_as_obj_tuple().expect("Expected ObjTuple");
     Ok(Value::from(tuple.elements.len() as f64))
 }
 
-fn tuple_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn tuple_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
     let iter = vm.new_root_obj_tuple_iter(
-        args[0]
+        vm.peek(0)
             .try_as_obj_tuple()
             .expect("Expected ObjTuple instance."),
     );
@@ -713,9 +707,10 @@ pub fn new_root_obj_tuple_iter_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
-fn tuple_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    assert!(args.len() == 1);
-    let iter = args[0]
+fn tuple_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    let iter = vm
+        .peek(0)
         .try_as_obj_tuple_iter()
         .expect("Expected ObjTupleIter instance.");
     let mut borrowed_iter = iter.borrow_mut();
@@ -743,29 +738,29 @@ pub fn new_root_obj_vec_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
-fn vec_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+fn vec_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
     let vec = vm.new_root_obj_vec();
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
-fn vec_push(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn vec_push(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
+    let vec = vm.peek(1).try_as_obj_vec().expect("Expected ObjVec");
 
     if vec.borrow().elements.len() >= common::VEC_ELEMS_MAX {
         return Err(error!(ErrorKind::RuntimeError, "Vec max capcity reached."));
     }
 
-    vec.borrow_mut().elements.push(args[1]);
+    vec.borrow_mut().elements.push(*vm.peek(0));
 
-    Ok(args[0])
+    Ok(*vm.peek(1))
 }
 
-fn vec_pop(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn vec_pop(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
+    let vec = vm.peek(0).try_as_obj_vec().expect("Expected ObjVec");
     let mut borrowed_vec = vec.borrow_mut();
     borrowed_vec.elements.pop().ok_or_else(|| {
         Error::with_message(
@@ -775,16 +770,16 @@ fn vec_pop(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     })
 }
 
-fn vec_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
+    let vec = vm.peek(1).try_as_obj_vec().expect("Expected ObjVec");
 
-    match args[1] {
+    match vm.peek(0) {
         Value::Number(_) => {
             let borrowed_vec = vec.borrow();
             let index = get_bounded_index(
-                args[1],
+                *vm.peek(0),
                 borrowed_vec.elements.len() as isize,
                 "Vec index parameter out of bounds",
             )?;
@@ -807,33 +802,36 @@ fn vec_get_item(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     }
 }
 
-fn vec_set_item(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 2)?;
+fn vec_set_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 2)?;
 
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
+    let vec = vm.peek(2).try_as_obj_vec().expect("Expected ObjVec");
     let index = get_bounded_index(
-        args[1],
+        *vm.peek(1),
         vec.borrow().elements.len() as isize,
         "Vec index parameter out of bounds",
     )?;
     let mut borrowed_vec = vec.borrow_mut();
-    borrowed_vec.elements[index] = args[2];
+    borrowed_vec.elements[index] = *vm.peek(0);
     Ok(Value::None)
 }
 
-fn vec_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn vec_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let vec = args[0].try_as_obj_vec().expect("Expected ObjVec");
+    let vec = vm.peek(0).try_as_obj_vec().expect("Expected ObjVec");
     let borrowed_vec = vec.borrow();
     Ok(Value::from(borrowed_vec.elements.len() as f64))
 }
 
-fn vec_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn vec_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let iter =
-        vm.new_root_obj_vec_iter(args[0].try_as_obj_vec().expect("Expected ObjVec instance."));
+    let iter = vm.new_root_obj_vec_iter(
+        vm.peek(0)
+            .try_as_obj_vec()
+            .expect("Expected ObjVec instance."),
+    );
     Ok(Value::ObjVecIter(iter.as_gc()))
 }
 
@@ -861,9 +859,10 @@ pub fn new_root_obj_vec_iter_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
-fn vec_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    assert!(args.len() == 1);
-    let iter = args[0]
+fn vec_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    let iter = vm
+        .peek(0)
         .try_as_obj_vec_iter()
         .expect("Expected ObjVecIter instance.");
     let mut borrowed_iter = iter.borrow_mut();
@@ -886,22 +885,20 @@ pub fn new_root_obj_range_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
-fn range_init(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 2)?;
+fn range_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 2)?;
 
-    let mut bounds: [isize; 2] = [0; 2];
-    for i in 0..2 {
-        bounds[i] = utils::validate_integer(args[i + 1])?;
-    }
-    let range = vm.new_root_obj_range(bounds[0], bounds[1]);
+    let begin = utils::validate_integer(*vm.peek(1))?;
+    let end = utils::validate_integer(*vm.peek(0))?;
+    let range = vm.new_root_obj_range(begin, end);
     Ok(Value::ObjRange(range.as_gc()))
 }
 
-fn range_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn range_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
     let iter = vm.new_root_obj_range_iter(
-        args[0]
+        vm.peek(0)
             .try_as_obj_range()
             .expect("Expected ObjRange instance."),
     );
@@ -910,9 +907,10 @@ fn range_iter(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
 
 /// RangeIter implementation
 
-fn range_iter_next(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    assert!(args.len() == 1);
-    let iter = args[0]
+fn range_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    let iter = vm
+        .peek(0)
         .try_as_obj_range_iter()
         .expect("Expected ObjIter instance.");
     let mut borrowed_iter = iter.borrow_mut();
@@ -954,41 +952,50 @@ pub fn new_root_obj_hash_map_class(
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
 }
 
-fn hash_map_init(vm: &mut Vm, _args: &[Value]) -> Result<Value, Error> {
+fn hash_map_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
     let hash_map = vm.new_root_obj_hash_map();
     Ok(Value::ObjHashMap(hash_map.as_gc()))
 }
 
-fn hash_map_has_key(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn hash_map_has_key(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap.");
+    let hash_map = vm
+        .peek(1)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap.");
 
-    let key = validate_hash_map_key(args[1])?;
+    let key = validate_hash_map_key(*vm.peek(0))?;
     let borrowed_hash_map = hash_map.borrow();
     Ok(Value::Boolean(
         borrowed_hash_map.elements.contains_key(&key),
     ))
 }
 
-fn hash_map_get(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn hash_map_get(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(1)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
 
-    let key = validate_hash_map_key(args[1])?;
+    let key = validate_hash_map_key(*vm.peek(0))?;
 
     let borrowed_hash_map = hash_map.borrow();
     Ok(*borrowed_hash_map.elements.get(&key).unwrap_or(&Value::None))
 }
 
-fn hash_map_insert(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 2)?;
+fn hash_map_insert(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 2)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(2)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
 
-    let key = validate_hash_map_key(args[1])?;
-    let value = args[2];
+    let key = validate_hash_map_key(*vm.peek(1))?;
+    let value = *vm.peek(0);
 
     let mut borrowed_hash_map = hash_map.borrow_mut();
     Ok(borrowed_hash_map
@@ -997,12 +1004,15 @@ fn hash_map_insert(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         .unwrap_or(Value::None))
 }
 
-fn hash_map_remove(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 1)?;
+fn hash_map_remove(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(1)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
 
-    let key = validate_hash_map_key(args[1])?;
+    let key = validate_hash_map_key(*vm.peek(0))?;
 
     let mut borrowed_hash_map = hash_map.borrow_mut();
     Ok(borrowed_hash_map
@@ -1011,27 +1021,36 @@ fn hash_map_remove(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
         .unwrap_or(Value::None))
 }
 
-fn hash_map_clear(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn hash_map_clear(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(0)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
     let mut borrowed_hash_map = hash_map.borrow_mut();
     borrowed_hash_map.elements.clear();
     Ok(Value::None)
 }
 
-fn hash_map_len(_vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn hash_map_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(0)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
     let borrowed_hash_map = hash_map.borrow();
     Ok(Value::Number(borrowed_hash_map.elements.len() as f64))
 }
 
-fn hash_map_keys(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn hash_map_keys(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(0)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
     let borrowed_hash_map = hash_map.borrow();
     let keys: Vec<_> = borrowed_hash_map.elements.keys().map(|&v| v).collect();
     let obj_keys = vm.new_root_obj_vec();
@@ -1039,10 +1058,13 @@ fn hash_map_keys(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjVec(obj_keys.as_gc()))
 }
 
-fn hash_map_values(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn hash_map_values(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(0)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
     let borrowed_hash_map = hash_map.borrow();
     let values: Vec<_> = borrowed_hash_map.elements.values().map(|&v| v).collect();
     let obj_values = vm.new_root_obj_vec();
@@ -1050,10 +1072,13 @@ fn hash_map_values(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
     Ok(Value::ObjVec(obj_values.as_gc()))
 }
 
-fn hash_map_items(vm: &mut Vm, args: &[Value]) -> Result<Value, Error> {
-    check_num_args(args, 0)?;
+fn hash_map_items(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
 
-    let hash_map = args[0].try_as_obj_hash_map().expect("Expected ObjHashMap");
+    let hash_map = vm
+        .peek(0)
+        .try_as_obj_hash_map()
+        .expect("Expected ObjHashMap");
     let borrowed_hash_map = hash_map.borrow();
     let root_obj_pairs: Vec<_> = borrowed_hash_map
         .elements
