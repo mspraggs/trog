@@ -1,0 +1,9 @@
+// foo
+// foo
+// bar
+// 0
+import "tests/modules/foo";
+
+var name = "bar";
+print(foo.name);
+print(name);

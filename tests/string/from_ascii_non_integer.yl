@@ -1,4 +1,4 @@
 // Expected a positive integer less than 256 but found '128.5'.
-// [line 4] in script
+// [module "main", line 4] in script
 // 0
 String.from_ascii([128.5]);

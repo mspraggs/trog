@@ -1,5 +1,5 @@
 // Expected 2 arguments but found 1.
-// [line 7] in script
+// [module "main", line 7] in script
 // 70
 class Foo {
   fn method(self, a, b) {}

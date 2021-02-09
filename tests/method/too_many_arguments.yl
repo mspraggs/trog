@@ -1,4 +1,4 @@
-// [line 261] Error at 'a': Cannot have more than 255 arguments.
+// [module "main", line 261] Error at 'a': Cannot have more than 255 arguments.
 // 65
 {
   var a = 1;

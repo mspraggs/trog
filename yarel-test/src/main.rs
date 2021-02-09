@@ -42,6 +42,7 @@ fn main() {
     let mut stdout = io::stdout();
 
     let mut vm = Vm::with_built_ins();
+    vm.set_printer(test::local_print);
 
     let failures: Vec<test::Failure> = paths
         .iter()

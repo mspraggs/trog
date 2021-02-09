@@ -202,7 +202,8 @@ pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
     pub chunk_index: usize,
-    pub name: memory::Gc<ObjString>,
+    pub name: Gc<ObjString>,
+    pub(crate) module_path: Gc<ObjString>,
 }
 
 pub fn new_gc_obj_function(
@@ -211,8 +212,15 @@ pub fn new_gc_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
+    module_path: Gc<ObjString>,
 ) -> Gc<ObjFunction> {
-    vm.allocate(ObjFunction::new(name, arity, upvalue_count, chunk_index))
+    vm.allocate(ObjFunction::new(
+        name,
+        arity,
+        upvalue_count,
+        chunk_index,
+        module_path,
+    ))
 }
 
 pub fn new_root_obj_function(
@@ -221,8 +229,9 @@ pub fn new_root_obj_function(
     arity: u32,
     upvalue_count: usize,
     chunk_index: usize,
+    module_path: Gc<ObjString>,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index).as_root()
+    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module_path).as_root()
 }
 
 impl ObjFunction {
@@ -231,12 +240,14 @@ impl ObjFunction {
         arity: u32,
         upvalue_count: usize,
         chunk_index: usize,
+        module_path: Gc<ObjString>,
     ) -> Self {
         ObjFunction {
+            name,
             arity,
             upvalue_count,
             chunk_index,
-            name,
+            module_path,
         }
     }
 }
@@ -300,27 +311,41 @@ impl fmt::Display for ObjNative {
 pub struct ObjClosure {
     pub function: memory::Gc<ObjFunction>,
     pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+    pub(crate) module: Gc<RefCell<ObjModule>>,
 }
 
-pub fn new_gc_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Gc<RefCell<ObjClosure>> {
+pub fn new_gc_obj_closure(
+    vm: &mut Vm,
+    function: Gc<ObjFunction>,
+    module: Gc<RefCell<ObjModule>>,
+) -> Gc<RefCell<ObjClosure>> {
     let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
         .map(|_| vm.allocate_root(RefCell::new(ObjUpvalue::new(0))))
         .collect();
     let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
 
-    vm.allocate(RefCell::new(ObjClosure::new(function, upvalues)))
+    vm.allocate(RefCell::new(ObjClosure::new(function, upvalues, module)))
 }
 
-pub fn new_root_obj_closure(vm: &mut Vm, function: Gc<ObjFunction>) -> Root<RefCell<ObjClosure>> {
-    new_gc_obj_closure(vm, function).as_root()
+pub fn new_root_obj_closure(
+    vm: &mut Vm,
+    function: Gc<ObjFunction>,
+    module: Gc<RefCell<ObjModule>>,
+) -> Root<RefCell<ObjClosure>> {
+    new_gc_obj_closure(vm, function, module).as_root()
 }
 
 impl ObjClosure {
     fn new(
         function: memory::Gc<ObjFunction>,
         upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+        module: Gc<RefCell<ObjModule>>,
     ) -> Self {
-        ObjClosure { function, upvalues }
+        ObjClosure {
+            function,
+            upvalues,
+            module,
+        }
     }
 }
 
@@ -991,5 +1016,55 @@ impl memory::GcManaged for ObjTupleIter {
 impl fmt::Display for ObjTupleIter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ObjTupleIter instance")
+    }
+}
+
+pub struct ObjModule {
+    pub(crate) imported: bool,
+    pub(crate) class: Gc<ObjClass>,
+    pub(crate) path: Gc<ObjString>,
+    pub attributes: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
+}
+
+pub(crate) fn new_gc_obj_module(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    path: Gc<ObjString>,
+) -> Gc<RefCell<ObjModule>> {
+    vm.allocate(RefCell::new(ObjModule::new(class, path)))
+}
+
+pub(crate) fn new_root_obj_module(
+    vm: &mut Vm,
+    class: Gc<ObjClass>,
+    path: Gc<ObjString>,
+) -> Root<RefCell<ObjModule>> {
+    new_gc_obj_module(vm, class, path).as_root()
+}
+
+impl ObjModule {
+    pub(crate) fn new(class: Gc<ObjClass>, path: Gc<ObjString>) -> Self {
+        ObjModule {
+            imported: false,
+            class,
+            path,
+            attributes: new_obj_string_value_map(),
+        }
+    }
+}
+
+impl memory::GcManaged for ObjModule {
+    fn mark(&self) {
+        self.attributes.mark();
+    }
+
+    fn blacken(&self) {
+        self.attributes.blacken();
+    }
+}
+
+impl fmt::Display for ObjModule {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "module \"{}\"", *self.path)
     }
 }

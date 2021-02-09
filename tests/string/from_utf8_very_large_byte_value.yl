@@ -1,4 +1,4 @@
 // Expected a positive integer less than 256 but found '256'.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 String.from_utf8([256]);

@@ -1,5 +1,5 @@
 // Expected 2 arguments but found 4.
-// [line 8] in script
+// [module "main", line 8] in script
 // 70
 fn f(a, b) {
   print(a);

@@ -1,4 +1,4 @@
-// [line 261] Error at 'b': Cannot have more than 255 HashMap entries.
+// [module "main", line 261] Error at 'b': Cannot have more than 255 HashMap entries.
 // 65
 var a = 1;
 var b = 2;

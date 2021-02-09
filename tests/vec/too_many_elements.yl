@@ -1,4 +1,4 @@
-// [line 260] Error at 'a': Cannot have more than 255 Vec elements.
+// [module "main", line 260] Error at 'a': Cannot have more than 255 Vec elements.
 // 65
 var a = 1;
 var v = [

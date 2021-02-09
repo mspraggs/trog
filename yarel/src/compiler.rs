@@ -16,13 +16,14 @@
 use std::cell::{Cell, RefCell};
 use std::fmt::Write;
 use std::mem;
+use std::path::Path;
 
 use crate::chunk::{Chunk, OpCode};
 use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
-use crate::memory::Root;
-use crate::object::{self, ObjFunction};
+use crate::memory::{Gc, Root};
+use crate::object::{self, ObjFunction, ObjString};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -154,12 +155,19 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm) -> Root<ObjFunction> {
+    fn make_function(&mut self, vm: &mut Vm, module_path: Gc<ObjString>) -> Root<ObjFunction> {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = vm.add_chunk(chunk);
-        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk_index)
+        object::new_root_obj_function(
+            vm,
+            name,
+            self.func_arity,
+            num_upvalues,
+            chunk_index,
+            module_path,
+        )
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -211,10 +219,13 @@ struct ClassCompiler {
     has_superclass: bool,
 }
 
-pub fn compile(vm: &mut Vm, source: String) -> Result<Root<ObjFunction>, Error> {
+pub fn compile(
+    vm: &mut Vm,
+    source: String,
+    module_path: Option<&str>,
+) -> Result<Root<ObjFunction>, Error> {
     let mut scanner = Scanner::from_source(source);
-
-    let mut parser = Parser::new(vm, &mut scanner);
+    let mut parser = Parser::new(vm, &mut scanner, module_path);
     parser.parse()
 }
 
@@ -228,11 +239,13 @@ struct Parser<'a> {
     class_compilers: Vec<ClassCompiler>,
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
+    module_path: Gc<ObjString>,
     vm: &'a mut Vm,
 }
 
 impl<'a> Parser<'a> {
-    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner) -> Parser<'a> {
+    fn new(vm: &'a mut Vm, scanner: &'a mut Scanner, module_path: Option<&str>) -> Parser<'a> {
+        let module_path = vm.new_gc_obj_string(module_path.unwrap_or("main"));
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -243,6 +256,7 @@ impl<'a> Parser<'a> {
             class_compilers: Vec::new(),
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
+            module_path,
             vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -342,7 +356,7 @@ impl<'a> Parser<'a> {
         self.emit_return();
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.vm);
+        let function = compiler.make_function(self.vm, self.module_path);
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
@@ -494,6 +508,40 @@ impl<'a> Parser<'a> {
         self.expression();
         self.consume(TokenKind::SemiColon, "Expected ';' after expression.");
         self.emit_byte(OpCode::Pop as u8);
+    }
+
+    fn import_statement(&mut self) {
+        self.consume(TokenKind::Str, "Expected a module path.");
+        let path = &self.previous.clone();
+        if path.source == "main" {
+            self.error("Cannot import top-level module.");
+        }
+        let path_constant = self.identifier_constant(&path);
+
+        let name = if self.match_token(TokenKind::As) {
+            self.consume(TokenKind::Identifier, "Expected module name.");
+            self.previous.clone()
+        } else {
+            let result = (|| Some(Path::new(&path.source).file_name()?.to_str()?))();
+            if let Some(filename) = result {
+                Token::from_string_and_line(filename, self.current.line)
+            } else {
+                self.error("Expected a module path.");
+                return;
+            }
+        };
+        // Because the module path syntactically comes before the variable that refers to the
+        // module, we have to inject the token that refers to the module here.
+        self.previous = name.clone();
+        self.declare_variable();
+        self.emit_constant_op(OpCode::StartImport, path_constant);
+
+        self.consume(TokenKind::SemiColon, "Expected ';' after module import.");
+
+        self.emit_byte(OpCode::FinishImport as u8);
+
+        let name_constant = self.identifier_constant(&name);
+        self.define_variable(name_constant);
     }
 
     fn for_statement(&mut self) {
@@ -674,7 +722,9 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) {
-        if self.match_token(TokenKind::For) {
+        if self.match_token(TokenKind::Import) {
+            self.import_statement();
+        } else if self.match_token(TokenKind::For) {
             self.for_statement();
         } else if self.match_token(TokenKind::If) {
             self.if_statement();
@@ -927,7 +977,13 @@ impl<'a> Parser<'a> {
 
         let mut error_string = String::new();
 
-        write!(error_string, "[line {}] Error", token.line).unwrap();
+        write!(
+            error_string,
+            "[module \"{}\", line {}] Error",
+            self.module_path.as_str(),
+            token.line
+        )
+        .unwrap();
 
         match token.kind {
             TokenKind::Eof => write!(error_string, " at end").unwrap(),
@@ -1368,7 +1424,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 52] = [
+const RULES: [ParseRule; 54] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -1604,6 +1660,18 @@ const RULES: [ParseRule; 52] = [
         precedence: Precedence::None,
     },
     // If
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Import
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // As
     ParseRule {
         prefix: None,
         infix: None,

@@ -1,7 +1,7 @@
 // Derived.foo()
 // Expected 2 arguments but found 4.
-// [line 14] in foo()
-// [line 17] in script
+// [module "main", line 14] in foo()
+// [module "main", line 17] in script
 // 70
 class Base {
   fn foo(self, a, b) {

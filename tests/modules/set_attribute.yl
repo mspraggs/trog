@@ -1,0 +1,6 @@
+// foo
+// Name is bar
+// 0
+import "tests/modules/foo";
+foo.name = "bar";
+foo.print_name();

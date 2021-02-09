@@ -1,6 +1,6 @@
 // Undefined property 'does_not_exist'.
-// [line 8] in foo()
-// [line 11] in script
+// [module "main", line 8] in foo()
+// [module "main", line 11] in script
 // 70
 class Base {}
 class Derived < Base {

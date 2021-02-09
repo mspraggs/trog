@@ -1,4 +1,4 @@
 // Provided string slice start is not on a character boundary.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 "🙁😐🙂"[6..8];

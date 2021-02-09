@@ -1,4 +1,4 @@
-// [line 4] Error at 'fn': Expected '{' after loop expression.
-// [line 5] Error at end: Expected '}' after block.
+// [module "main", line 4] Error at 'fn': Expected '{' after loop expression.
+// [module "main", line 5] Error at end: Expected '}' after block.
 // 65
 for _ in 1..2 fn foo() {}

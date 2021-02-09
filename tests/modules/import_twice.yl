@@ -1,0 +1,11 @@
+// foo
+// true
+// 0
+import "tests/modules/foo";
+
+fn some_function() {
+    import "tests/modules/foo";
+    return foo;
+}
+
+print(some_function() == foo);

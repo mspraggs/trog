@@ -1,4 +1,4 @@
 // Expected a Vec instance but found 'not a vec'.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 String.from_utf8("not a vec");

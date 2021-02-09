@@ -1103,3 +1103,15 @@ fn validate_hash_map_key(key: Value) -> Result<Value, Error> {
     }
     Ok(key)
 }
+
+// Module implementation
+
+pub fn new_root_obj_module_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
+    let class_name = vm.new_gc_obj_string("Module");
+    let (methods, _native_roots) = build_methods(vm, &[("__init__", no_init as NativeFn)], None);
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}

@@ -58,6 +58,8 @@ pub enum TokenKind {
     For,
     Fn,
     If,
+    Import,
+    As,
     In,
     Nil,
     Or,
@@ -94,6 +96,14 @@ impl Token {
         Token {
             kind: Default::default(),
             line: Default::default(),
+            source: String::from(source),
+        }
+    }
+
+    pub fn from_string_and_line(source: &str, line: usize) -> Self {
+        Token {
+            kind: Default::default(),
+            line,
             source: String::from(source),
         }
     }
@@ -355,7 +365,17 @@ impl Scanner {
     fn identifier_type(&self) -> TokenKind {
         let start = &self.source[self.start..self.start + 1];
         match start {
-            "a" => self.check_keyword(1, "nd", TokenKind::And),
+            "a" => {
+                if self.current - self.start > 1 {
+                    let next = &self.source[self.start + 1..self.start + 2];
+                    return match next {
+                        "s" => self.check_keyword(2, "", TokenKind::As),
+                        "n" => self.check_keyword(2, "d", TokenKind::And),
+                        _ => TokenKind::Identifier,
+                    };
+                }
+                TokenKind::Identifier
+            }
             "c" => self.check_keyword(1, "lass", TokenKind::Class),
             "e" => self.check_keyword(1, "lse", TokenKind::Else),
             "f" => {
@@ -376,6 +396,7 @@ impl Scanner {
                     return match next {
                         "f" => self.check_keyword(2, "", TokenKind::If),
                         "n" => self.check_keyword(2, "", TokenKind::In),
+                        "m" => self.check_keyword(2, "port", TokenKind::Import),
                         _ => TokenKind::Identifier,
                     };
                 }

@@ -1,4 +1,4 @@
-// [line 4] Error at '123': Expected '{' before function body.
-// [line 5] Error at end: Expected '}' after block.
+// [module "main", line 4] Error at '123': Expected '{' before function body.
+// [module "main", line 5] Error at end: Expected '}' after block.
 // 65
 fn f() 123;

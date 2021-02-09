@@ -42,6 +42,7 @@ pub struct CoreClassStore {
     root_obj_range_class: Root<ObjClass>,
     root_obj_range_iter_class: Root<ObjClass>,
     root_obj_hash_map_class: Root<ObjClass>,
+    root_obj_module_class: Root<ObjClass>,
     root_obj_string_iter_class: Root<ObjClass>,
 }
 
@@ -68,6 +69,7 @@ impl CoreClassStore {
             root_obj_range_class: Root::dangling(),
             root_obj_range_iter_class: Root::dangling(),
             root_obj_hash_map_class: Root::dangling(),
+            root_obj_module_class: Root::dangling(),
             root_obj_string_iter_class: Root::dangling(),
         }
     }
@@ -106,6 +108,7 @@ impl CoreClassStore {
         let root_obj_range_class = build_empty_class();
         let root_obj_range_iter_class = build_empty_class();
         let root_obj_hash_map_class = build_empty_class();
+        let root_obj_module_class = build_empty_class();
         let root_obj_string_iter_class = build_empty_class();
         CoreClassStore {
             root_base_metaclass,
@@ -128,6 +131,7 @@ impl CoreClassStore {
             root_obj_range_class,
             root_obj_range_iter_class,
             root_obj_hash_map_class,
+            root_obj_module_class,
             root_obj_string_iter_class,
         }
     }
@@ -140,7 +144,7 @@ impl CoreClassStore {
         let class_store = Self::new(vm, root_base_metaclass.clone(), root_object_class.clone());
         vm.class_store = class_store;
         let source = String::from(CORE_SOURCE);
-        let result = vm::interpret(vm, source);
+        let result = vm::interpret(vm, source, None);
         match result {
             Ok(_) => {}
             Err(error) => eprint!("{}", error),
@@ -166,19 +170,19 @@ impl CoreClassStore {
         let root_obj_closure_method_class = build_value_type_class("Method");
         let root_obj_native_method_class = build_value_type_class("BuiltInMethod");
         let root_obj_iter_class = vm
-            .get_global("Iter")
+            .get_global("main", "Iter")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
             .as_root();
         let root_obj_map_iter_class = vm
-            .get_global("MapIter")
+            .get_global("main", "MapIter")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
             .as_root();
         let root_obj_filter_iter_class = vm
-            .get_global("FilterIter")
+            .get_global("main", "FilterIter")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
@@ -218,6 +222,11 @@ impl CoreClassStore {
             root_base_metaclass.as_gc(),
             root_object_class.as_gc(),
         );
+        let root_obj_module_class = core::new_root_obj_module_class(
+            vm,
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
+        );
         let root_obj_string_iter_class = core::new_root_obj_string_iter_class(
             vm,
             root_base_metaclass.as_gc(),
@@ -244,6 +253,7 @@ impl CoreClassStore {
             root_obj_range_class,
             root_obj_range_iter_class,
             root_obj_hash_map_class,
+            root_obj_module_class,
             root_obj_string_iter_class,
         }
     }
@@ -326,6 +336,10 @@ impl CoreClassStore {
 
     pub(crate) fn get_obj_hash_map_class(&self) -> Gc<ObjClass> {
         self.root_obj_hash_map_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_module_class(&self) -> Gc<ObjClass> {
+        self.root_obj_module_class.as_gc()
     }
 
     pub(crate) fn get_obj_string_iter_class(&self) -> Gc<ObjClass> {

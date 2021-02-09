@@ -1,5 +1,5 @@
 // Undefined variable 'err'.
-// [line 8] in script
+// [module "main", line 8] in script
 // 70
 var a = "1
 2

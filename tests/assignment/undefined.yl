@@ -1,4 +1,4 @@
 // Undefined variable 'unknown'.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 unknown = "what";

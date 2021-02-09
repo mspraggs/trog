@@ -1,6 +1,6 @@
 // Range(0, 4)
 // Binary operands must both be numbers.
-// [line 6] in script
+// [module "main", line 6] in script
 // 0
 print(0..(2 + 2));
 print(0..2 / 2);

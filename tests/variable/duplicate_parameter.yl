@@ -1,4 +1,4 @@
-// [line 4] Error at 'arg': Variable with this name already declared in this scope.
+// [module "main", line 4] Error at 'arg': Variable with this name already declared in this scope.
 // 65
 fn foo(arg,
         arg) {

@@ -115,7 +115,7 @@ fn parse_test(source: String) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+pub(crate) fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     if num_args != 1 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
@@ -149,7 +149,6 @@ fn match_output(expected: &[String], actual: &[String]) -> bool {
 
 pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
     vm.reset();
-    vm.define_native("print", local_print);
 
     let source = match fs::read_to_string(path) {
         Ok(contents) => contents,
@@ -166,7 +165,7 @@ pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
         }
     };
 
-    let result = compiler::compile(vm, source);
+    let result = compiler::compile(vm, source, None);
     let error_output = match result {
         Ok(f) => match vm.execute(f, &[]) {
             Ok(_) => Vec::new(),

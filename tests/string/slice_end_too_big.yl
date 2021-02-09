@@ -1,4 +1,4 @@
 // String slice end out of range.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 "🙁😐🙂"[0..16];

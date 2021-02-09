@@ -1,4 +1,4 @@
 // Cannot replace empty string.
-// [line 4] in script
+// [module "main", line 4] in script
 // 70
 "".replace("", nil);

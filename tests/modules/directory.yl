@@ -1,0 +1,4 @@
+// Unable to read file 'tests/modules/dir.yl' (other).
+// [module "main", line 4] in script
+// 70
+import "tests/modules/dir";

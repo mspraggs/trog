@@ -1,4 +1,4 @@
-// [line 4] Error at 'a': Expected 'self' as first parameter in method.
+// [module "main", line 4] Error at 'a': Expected 'self' as first parameter in method.
 // 65
 class Foo {
   fn method(a) {}
