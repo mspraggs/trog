@@ -13,7 +13,7 @@
  * limitations under the License.
  */
 
-use std::{io, process};
+use std::{env, io, process};
 
 mod test;
 mod utils;
@@ -21,7 +21,14 @@ mod utils;
 use yarel::vm::Vm;
 
 fn main() {
-    let paths = match utils::get_paths("tests", Some(".yl")) {
+    let args: Vec<String> = env::args().collect();
+    let root = if args.len() == 2 {
+        &args[1]
+    } else {
+        "tests"
+    };
+
+    let paths = match utils::get_paths(root, Some(".yl")) {
         Ok(p) => p,
         Err(_) => {
             eprintln!("Error reading test paths");
