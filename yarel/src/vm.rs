@@ -1430,23 +1430,3 @@ impl Vm {
         self.stack.pop().expect("Stack empty.")
     }
 }
-
-impl GcManaged for Vm {
-    fn mark(&self) {
-        self.stack.mark();
-        self.frames.mark();
-        self.open_upvalues.mark();
-        if let Some(def) = self.working_class_def.as_ref() {
-            def.mark()
-        }
-    }
-
-    fn blacken(&self) {
-        self.stack.blacken();
-        self.frames.blacken();
-        self.open_upvalues.blacken();
-        if let Some(def) = self.working_class_def.as_ref() {
-            def.blacken()
-        }
-    }
-}
