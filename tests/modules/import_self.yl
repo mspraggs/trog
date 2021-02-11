@@ -1,5 +1,0 @@
-// Circular dependency encountered when importing module 'tests/modules/import_self'.
-// [module "tests/modules/import_self", line 5] in script
-// [module "main", line 5] in script
-// 70
-import "tests/modules/import_self";

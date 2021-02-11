@@ -2,7 +2,7 @@
 // foo
 // bar
 // 0
-import "tests/modules/foo";
+import "modules/foo";
 
 var name = "bar";
 print(foo.name);

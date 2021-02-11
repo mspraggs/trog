@@ -1,0 +1,5 @@
+// Error compiling module:
+//     [module "modules/compile_error", line 4] Error at end: Expected expression.
+// [module "main", line 5] in script
+// 70
+import "modules/compile_error";

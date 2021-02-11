@@ -212,6 +212,10 @@ impl Vm {
         self.define_native("main", "print", self.printer);
     }
 
+    pub fn set_module_loader(&mut self, loader: fn(&str) -> Result<String, Error>) {
+        self.module_loader = loader;
+    }
+
     pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
         let module = self.get_module(&function.module_path);
         let closure = object::new_gc_obj_closure(self, function.as_gc(), module);

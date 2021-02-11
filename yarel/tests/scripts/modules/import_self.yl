@@ -1,0 +1,5 @@
+// Circular dependency encountered when importing module 'modules/import_self'.
+// [module "modules/import_self", line 5] in script
+// [module "main", line 5] in script
+// 70
+import "modules/import_self";

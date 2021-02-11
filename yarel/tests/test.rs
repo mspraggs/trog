@@ -15,31 +15,39 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs;
+use std::fmt;
 use std::mem;
 
-use yarel::compiler;
 use yarel::error::{Error, ErrorKind};
 use yarel::value::Value;
-use yarel::vm::Vm;
+use yarel::vm::{self, Vm};
 
 type Matcher = fn(&str) -> Option<usize>;
 
 const WILDCARDS: [(&str, Matcher); 1] = [("[MEMADDR]", match_memaddr)];
 
-#[derive(Debug)]
-pub struct Success {
-    pub path: String,
-    pub skipped: bool,
-}
-
-pub struct Failure {
-    pub path: String,
-    pub expected: Vec<String>,
-    pub actual: Vec<String>,
-}
-
 thread_local!(static OUTPUT: RefCell<Vec<String>> = RefCell::new(Vec::new()));
+
+#[allow(dead_code)]
+struct Outcome {
+    pass: bool,
+    expected: Vec<String>,
+    actual: Vec<String>,
+}
+
+impl fmt::Display for Outcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Expected:\n")?;
+        for line in &self.expected {
+            write!(f, "    {}\n", line)?;
+        }
+        write!(f, "Actual:\n")?;
+        for line in &self.actual {
+            write!(f, "    {}\n", line)?;
+        }
+        Ok(())
+    }
+}
 
 fn match_memaddr(s: &str) -> Option<usize> {
     if !s.is_char_boundary(2) {
@@ -98,13 +106,10 @@ fn match_line(expected: &str, actual: &str) -> bool {
     true
 }
 
-fn parse_test(source: String) -> Option<Vec<String>> {
-    if source.as_str().starts_with("// skip\n") {
-        return None;
-    }
+fn parse_test(source: &str) -> Vec<String> {
     let mut lines = Vec::new();
     let mut cont = true;
-    source.as_str().lines().for_each(|l| {
+    source.lines().for_each(|l| {
         if cont && l.starts_with("// ") {
             lines.push(l[3..].to_owned());
         } else {
@@ -112,10 +117,10 @@ fn parse_test(source: String) -> Option<Vec<String>> {
         }
     });
     lines.pop();
-    Some(lines)
+    lines
 }
 
-pub(crate) fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     if num_args != 1 {
         return Err(Error::with_message(
             ErrorKind::RuntimeError,
@@ -147,46 +152,55 @@ fn match_output(expected: &[String], actual: &[String]) -> bool {
     true
 }
 
-pub(crate) fn run_test(path: &str, vm: &mut Vm) -> Result<Success, Failure> {
-    vm.reset();
+#[allow(dead_code)]
+fn run_test(source: &str) -> Outcome {
+    let mut vm = Vm::with_built_ins();
+    vm.set_printer(local_print);
+    vm.set_module_loader(module_loader);
 
-    let source = match fs::read_to_string(path) {
-        Ok(contents) => contents,
-        _ => panic!("Unable to open test file."),
-    };
+    let result = vm::interpret(&mut vm, source.to_string(), None);
+    let error_output = result
+        .map_err(|e| e.get_messages().clone())
+        .err()
+        .unwrap_or_default();
 
-    let expected_output = match parse_test(source.clone()) {
-        Some(output) => output,
-        None => {
-            return Ok(Success {
-                path: path.to_owned(),
-                skipped: true,
-            });
+    let mut output = OUTPUT.with(|output| mem::take(&mut *output.borrow_mut()));
+    output.extend_from_slice(&error_output);
+    let expected = parse_test(source);
+
+    Outcome {
+        pass: match_output(&expected, &output),
+        expected,
+        actual: output,
+    }
+}
+
+#[allow(unused_macros)]
+macro_rules! test_case {
+    ($name:ident, $source:expr) => {
+        #[allow(non_snake_case)]
+        #[test]
+        fn $name() {
+            let outcome = run_test($source);
+            assert!(outcome.pass, format!("\n{}", outcome),);
         }
     };
-
-    let result = compiler::compile(vm, source, None);
-    let error_output = match result {
-        Ok(f) => match vm.execute(f, &[]) {
-            Ok(_) => Vec::new(),
-            Err(e) => e.get_messages().clone(),
-        },
-        Err(e) => e.get_messages().clone(),
-    };
-
-    let mut output = OUTPUT.with(|output| mem::replace(&mut *output.borrow_mut(), vec![]));
-    output.extend_from_slice(&error_output);
-
-    if !match_output(&expected_output, &output) {
-        return Err(Failure {
-            path: path.to_owned(),
-            expected: expected_output,
-            actual: output,
-        });
-    }
-
-    Ok(Success {
-        path: path.to_owned(),
-        skipped: false,
-    })
 }
+
+#[allow(unused_macros)]
+macro_rules! gen_module_loader {
+    ($($key:expr => $result:expr),*) => {
+        fn module_loader(path: &str) -> Result<String, Error> {
+            match path {
+                $($key => Ok($result.to_string()),)*
+                _ => Err(Error::with_message(
+                    ErrorKind::RuntimeError,
+                    &format!("Unable to read file '{}.yl' (file not found).", path),
+                )),
+            }
+        }
+    }
+}
+
+include!(concat!(env!("OUT_DIR"), "/module_loader.rs"));
+include!(concat!(env!("OUT_DIR"), "/compiled_tests.rs"));
