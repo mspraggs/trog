@@ -34,30 +34,50 @@ impl<T: Clone + Copy + Default> Stack<T> {
     }
 
     pub(crate) fn peek(&self, depth: usize) -> &T {
-        if cfg!(debug_assertions) && depth >= self.size {
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
             panic!("Stack index out of range.");
         }
-        &self.stack[self.size - depth - 1]
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            &self.stack[self.size - depth - 1]
+        } else {
+            unsafe { self.stack.get_unchecked(self.size - depth - 1) }
+        }
     }
 
     pub(crate) fn peek_mut(&mut self, depth: usize) -> &mut T {
-        &mut self.stack[self.size - depth - 1]
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
+            panic!("Stack index out of range.");
+        }
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            &mut self.stack[self.size - depth - 1]
+        } else {
+            unsafe { self.stack.get_unchecked_mut(self.size - depth - 1) }
+        }
     }
 
     pub(crate) fn push(&mut self, data: T) {
-        if cfg!(debug_assertions) && self.size == STACK_MAX {
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == STACK_MAX {
             panic!("Stack overflow.");
         }
-        self.stack[self.size] = data;
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            self.stack[self.size] = data;
+        } else {
+            unsafe {
+                *self.stack.get_unchecked_mut(self.size) = data;
+            }
+        }
         self.size += 1;
     }
 
     pub(crate) fn pop(&mut self) -> Option<T> {
-        if cfg!(debug_assertions) && self.size == 0 {
-            None
-        } else {
-            self.size -= 1;
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == 0 {
+            return None;
+        }
+        self.size -= 1;
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
             Some(self.stack[self.size])
+        } else {
+            unsafe { Some(*self.stack.get_unchecked(self.size)) }
         }
     }
 

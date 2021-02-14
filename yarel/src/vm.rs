@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
 use std::hash::{Hash, Hasher};
+use std::hint;
 use std::io;
 use std::path::Path;
 use std::ptr;
@@ -973,7 +974,13 @@ impl Vm {
                 }
 
                 _ => {
-                    panic!("Unknown opcode {}", byte);
+                    if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+                        panic!("Unknown opcode {}", byte);
+                    } else {
+                        unsafe {
+                            hint::unreachable_unchecked();
+                        }
+                    }
                 }
             }
         }
