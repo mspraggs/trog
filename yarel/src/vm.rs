@@ -38,7 +38,6 @@ use crate::object::{
     ObjRangeIter, ObjString, ObjStringIter, ObjStringValueMap, ObjTuple, ObjTupleIter, ObjUpvalue,
     ObjVec, ObjVecIter,
 };
-use crate::stack::Stack;
 use crate::utils;
 use crate::value::Value;
 
@@ -148,12 +147,15 @@ fn default_read_module_source(path: &str) -> Result<String, Error> {
     Ok(source)
 }
 
+const STACK_MAX: usize = common::LOCALS_MAX * common::FRAMES_MAX;
+
 pub struct Vm {
     ip: *const u8,
     active_module: Gc<RefCell<ObjModule>>,
     active_chunk: Gc<Chunk>,
     frames: Vec<CallFrame>,
-    stack: Stack<Value>,
+    stack: [Value; STACK_MAX],
+    stack_top: usize,
     open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     init_string: Gc<ObjString>,
     next_string: Gc<ObjString>,
@@ -182,7 +184,8 @@ impl Vm {
             active_module: unsafe { Gc::dangling() },
             active_chunk: unsafe { Gc::dangling() },
             frames: Vec::with_capacity(common::FRAMES_MAX),
-            stack: Stack::new(),
+            stack: [Value::None; STACK_MAX],
+            stack_top: 0,
             open_upvalues: Vec::new(),
             init_string: unsafe { Gc::dangling() },
             next_string: unsafe { Gc::dangling() },
@@ -221,7 +224,10 @@ impl Vm {
         let module = self.get_module(&function.module_path);
         let closure = object::new_gc_obj_closure(self, function.as_gc(), module);
         self.push(Value::ObjClosure(closure));
-        self.stack.extend_from_slice(args);
+        for &arg in args {
+            self.push(arg);
+        }
+        // self.stack.extend_from_slice(args);
         self.call_value(Value::ObjClosure(closure), args.len())?;
         match self.run() {
             Ok(value) => Ok(value),
@@ -337,7 +343,15 @@ impl Vm {
     }
 
     pub fn peek(&self, depth: usize) -> &Value {
-        self.stack.peek(depth)
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.stack_top {
+            panic!("Stack index out of range.");
+        }
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            &self.stack[self.stack_top - depth - 1]
+        } else {
+            unsafe { self.stack.get_unchecked(self.stack_top - depth - 1) }
+        }
+        // self.stack.peek(depth)
     }
 
     pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> usize {
@@ -351,8 +365,9 @@ impl Vm {
     }
 
     pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+        let stack_slice = &self.stack[0..self.stack_top];
         let mut roots: Vec<&dyn GcManaged> = vec![
-            &self.stack,
+            &stack_slice,
             &self.modules,
             &self.frames,
             &self.open_upvalues,
@@ -368,8 +383,9 @@ impl Vm {
     }
 
     pub(crate) fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
+        let stack_slice = &self.stack[0..self.stack_top];
         let mut roots: Vec<&dyn GcManaged> = vec![
-            &self.stack,
+            &stack_slice,
             &self.modules,
             &self.frames,
             &self.open_upvalues,
@@ -441,7 +457,11 @@ impl Vm {
         loop {
             if cfg!(feature = "debug_trace") {
                 print!("          ");
-                println!("{}", self.stack);
+                for i in 0..self.stack_top {
+                    print!("[ {} ]", self.stack[i]);
+                }
+                println!("");
+                // println!("{}", self.stack);
                 let offset = self.active_chunk.code_offset(self.ip);
                 debug::disassemble_instruction(&self.active_chunk, offset);
             }
@@ -638,7 +658,7 @@ impl Vm {
                             let value = Value::ObjString(
                                 self.new_gc_obj_string(format!("{}{}", *a, *b).as_str()),
                             );
-                            self.stack.push(value)
+                            self.push(value)
                         }
 
                         (Value::Number(a), Value::Number(b)) => {
@@ -693,7 +713,7 @@ impl Vm {
                         self,
                         self.class_store.get_obj_hash_map_class(),
                     );
-                    let begin = self.stack.len() - num_elements * 2;
+                    let begin = self.stack_top - num_elements * 2;
                     for i in 0..num_elements {
                         let key = self.stack[begin + 2 * i];
                         if !key.has_hash() {
@@ -705,7 +725,7 @@ impl Vm {
                         let value = self.stack[begin + 2 * i + 1];
                         map.borrow_mut().elements.insert(key, value);
                     }
-                    self.stack.truncate(begin);
+                    self.stack_top = begin;
                     self.push(Value::ObjHashMap(map.as_gc()));
                 }
 
@@ -725,33 +745,33 @@ impl Vm {
                     for pos in (0..num_operands).rev() {
                         new_string.push_str(self.peek(pos).try_as_obj_string().unwrap().as_str())
                     }
-                    let new_stack_size = self.stack.len() - num_operands;
-                    self.stack.truncate(new_stack_size);
+                    let new_stack_size = self.stack_top - num_operands;
+                    self.stack_top = new_stack_size;
                     let value = Value::ObjString(self.new_gc_obj_string(new_string.as_str()));
                     self.push(value);
                 }
 
                 byte if byte == OpCode::BuildTuple as u8 => {
                     let num_operands = read_byte!() as usize;
-                    let begin = self.stack.len() - num_operands;
-                    let end = self.stack.len();
+                    let begin = self.stack_top - num_operands;
+                    let end = self.stack_top;
                     let elements = self.stack[begin..end].iter().copied().collect();
                     let tuple = object::new_root_obj_tuple(
                         self,
                         self.class_store.get_obj_tuple_class(),
                         elements,
                     );
-                    self.stack.truncate(begin);
+                    self.stack_top = begin;//.truncate(begin);
                     self.push(Value::ObjTuple(tuple.as_gc()));
                 }
 
                 byte if byte == OpCode::BuildVec as u8 => {
                     let num_operands = read_byte!() as usize;
                     let vec = object::new_root_obj_vec(self, self.class_store.get_obj_vec_class());
-                    let begin = self.stack.len() - num_operands;
-                    let end = self.stack.len();
+                    let begin = self.stack_top - num_operands;
+                    let end = self.stack_top;
                     vec.borrow_mut().elements = self.stack[begin..end].iter().copied().collect();
-                    self.stack.truncate(begin);
+                    self.stack_top = begin;//.truncate(begin);
                     self.push(Value::ObjVec(vec.as_gc()));
                 }
 
@@ -830,13 +850,13 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::CloseUpvalue as u8 => {
-                    self.close_upvalues(self.stack.len() - 1, *self.peek(0));
+                    self.close_upvalues(self.stack_top - 1, *self.peek(0));
                     self.pop();
                 }
 
                 byte if byte == OpCode::Return as u8 => {
                     let result = self.pop();
-                    for i in self.frame().slot_base..self.stack.len() {
+                    for i in self.frame().slot_base..self.stack_top {
                         self.close_upvalues(i, self.stack[i])
                     }
 
@@ -852,7 +872,7 @@ impl Vm {
                     self.active_module = prev_module;
                     self.ip = prev_ip;
 
-                    self.stack.truncate(prev_stack_size);
+                    self.stack_top = prev_stack_size;
                     self.push(result);
                 }
 
@@ -1161,7 +1181,7 @@ impl Vm {
         self.frames.push(CallFrame {
             closure,
             prev_ip: self.ip,
-            slot_base: self.stack.len() - arg_count - 1,
+            slot_base: self.stack_top - arg_count - 1,
         });
         self.ip = &self.active_chunk.code[0];
         self.active_module = module;
@@ -1170,16 +1190,16 @@ impl Vm {
 
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
         let function = native.function;
-        let frame_end = self.stack.len();
+        let frame_end = self.stack_top;
         let frame_begin = frame_end - arg_count - 1;
         let result = function(self, arg_count)?;
-        self.stack.truncate(frame_begin + 1);
+        self.stack_top = frame_begin + 1;
         *self.peek_mut(0) = result;
         Ok(())
     }
 
     fn reset_stack(&mut self) {
-        self.stack.clear();
+        self.stack_top = 0;
         self.frames.clear();
     }
 
@@ -1430,14 +1450,53 @@ impl Vm {
     }
 
     fn peek_mut(&mut self, depth: usize) -> &mut Value {
-        self.stack.peek_mut(depth)
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.stack_top {
+            panic!("Stack index out of range.");
+        }
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            &mut self.stack[self.stack_top - depth - 1]
+        } else {
+            unsafe { self.stack.get_unchecked_mut(self.stack_top - depth - 1) }
+        }
     }
 
     fn push(&mut self, value: Value) {
-        self.stack.push(value);
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.stack_top == STACK_MAX {
+            panic!("Stack overflow.");
+        }
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            self.stack[self.stack_top] = value;
+        } else {
+            unsafe {
+                *self.stack.get_unchecked_mut(self.stack_top) = value;
+            }
+        }
+        self.stack_top += 1;
     }
 
     fn pop(&mut self) -> Value {
-        self.stack.pop().expect("Stack empty.")
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.stack_top == 0 {
+            panic!("Stack underflow.");
+        }
+        self.stack_top -= 1;
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+            self.stack[self.stack_top]
+        } else {
+            unsafe { *self.stack.get_unchecked(self.stack_top) }
+        }
+    }
+}
+
+impl<T: GcManaged> GcManaged for &[T] {
+    fn mark(&self) {
+        for i in 0..self.len() {
+            self[i].mark();
+        }
+    }
+
+    fn blacken(&self) {
+        for i in 0..self.len() {
+            self[i].blacken();
+        }
     }
 }
