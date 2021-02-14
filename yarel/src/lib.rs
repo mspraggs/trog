@@ -25,7 +25,6 @@ mod hash;
 pub mod memory;
 pub mod object;
 mod scanner;
-mod stack;
 mod utils;
 pub mod value;
 pub mod vm;
