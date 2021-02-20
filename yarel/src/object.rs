@@ -20,9 +20,11 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
+use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
-use crate::memory::{self, Gc, Root};
+use crate::memory::{self, Gc, GcManaged, Root};
+use crate::stack::Stack;
 use crate::value::Value;
 use crate::vm::Vm;
 
@@ -1066,5 +1068,53 @@ impl memory::GcManaged for ObjModule {
 impl fmt::Display for ObjModule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "module \"{}\"", *self.path)
+    }
+}
+
+pub(crate) struct CallFrame {
+    pub(crate) closure: Gc<RefCell<ObjClosure>>,
+    pub(crate) prev_ip: *const u8,
+    pub(crate) slot_base: usize,
+}
+
+impl GcManaged for CallFrame {
+    fn mark(&self) {
+        self.closure.mark();
+    }
+
+    fn blacken(&self) {
+        self.closure.blacken();
+    }
+}
+
+pub struct ObjFiber {
+    pub(crate) class: Gc<ObjClass>,
+    pub(crate) stack: Stack<Value>,
+    pub(crate) frames: Vec<CallFrame>,
+    pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
+}
+
+impl ObjFiber {
+    pub(crate) fn new(class: Gc<ObjClass>) -> Self {
+        ObjFiber {
+            class,
+            stack: Stack::new(),
+            frames: Vec::with_capacity(common::FRAMES_MAX),
+            open_upvalues: Vec::new(),
+        }
+    }
+}
+
+impl GcManaged for ObjFiber {
+    fn mark(&self) {
+        self.stack.mark();
+        self.frames.mark();
+        self.open_upvalues.mark();
+    }
+
+    fn blacken(&self) {
+        self.stack.blacken();
+        self.frames.blacken();
+        self.open_upvalues.blacken();
     }
 }
