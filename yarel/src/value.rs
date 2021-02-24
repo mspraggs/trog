@@ -22,9 +22,9 @@ use crate::class_store::CoreClassStore;
 use crate::hash::PassThroughHasher;
 use crate::memory::{self, Gc};
 use crate::object::{
-    ObjBoundMethod, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjInstance, ObjModule,
-    ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjTuple, ObjTupleIter, ObjVec,
-    ObjVecIter,
+    ObjBoundMethod, ObjClass, ObjClosure, ObjFiber, ObjFunction, ObjHashMap, ObjInstance,
+    ObjModule, ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjTuple, ObjTupleIter,
+    ObjVec, ObjVecIter,
 };
 use crate::utils;
 
@@ -49,6 +49,7 @@ pub enum Value {
     ObjRangeIter(Gc<RefCell<ObjRangeIter>>),
     ObjHashMap(Gc<RefCell<ObjHashMap>>),
     ObjModule(Gc<RefCell<ObjModule>>),
+    ObjFiber(Gc<RefCell<ObjFiber>>),
     None,
     Sentinel,
 }
@@ -83,6 +84,7 @@ impl Value {
             Value::ObjRangeIter(iter) => iter.borrow().class,
             Value::ObjHashMap(hash_map) => hash_map.borrow().class,
             Value::ObjModule(module) => module.borrow().class,
+            Value::ObjFiber(fiber) => fiber.borrow().class,
             Value::None => class_store.get_nil_class(),
             Value::Sentinel => class_store.get_sentinel_class(),
         }
@@ -223,6 +225,12 @@ impl Value {
             _ => None,
         }
     }
+    pub fn try_as_obj_fiber(&self) -> Option<Gc<RefCell<ObjFiber>>> {
+        match self {
+            Value::ObjFiber(inner) => Some(*inner),
+            _ => None,
+        }
+    }
 }
 
 impl Default for Value {
@@ -251,6 +259,7 @@ impl memory::GcManaged for Value {
             Value::ObjRangeIter(inner) => inner.mark(),
             Value::ObjHashMap(inner) => inner.mark(),
             Value::ObjModule(inner) => inner.mark(),
+            Value::ObjFiber(inner) => inner.mark(),
             _ => {}
         }
     }
@@ -274,6 +283,7 @@ impl memory::GcManaged for Value {
             Value::ObjRangeIter(inner) => inner.blacken(),
             Value::ObjHashMap(inner) => inner.blacken(),
             Value::ObjModule(inner) => inner.blacken(),
+            Value::ObjFiber(inner) => inner.blacken(),
             _ => {}
         }
     }
@@ -328,6 +338,9 @@ impl fmt::Display for Value {
             Value::ObjRangeIter(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjHashMap(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjModule(underlying) => write!(f, "<{}>", *underlying.borrow()),
+            Value::ObjFiber(underlying) => {
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+            }
             Value::None => write!(f, "nil"),
             Value::Sentinel => write!(f, "<sentinel>"),
         }
@@ -359,6 +372,7 @@ impl cmp::PartialEq for Value {
                 *first.borrow() == *second.borrow()
             }
             (Value::ObjModule(first), Value::ObjModule(second)) => *first == *second,
+            (Value::ObjFiber(first), Value::ObjFiber(second)) => *first == *second,
             (Value::Sentinel, Value::Sentinel) => true,
             (Value::None, Value::None) => true,
             _ => false,

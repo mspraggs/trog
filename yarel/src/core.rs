@@ -1104,7 +1104,7 @@ fn validate_hash_map_key(key: Value) -> Result<Value, Error> {
     Ok(key)
 }
 
-// Module implementation
+/// Module implementation
 
 pub fn new_root_obj_module_class(
     vm: &mut Vm,
@@ -1114,4 +1114,59 @@ pub fn new_root_obj_module_class(
     let class_name = vm.new_gc_obj_string("Module");
     let (methods, _native_roots) = build_methods(vm, &[("__init__", no_init as NativeFn)], None);
     object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}
+
+/// Fiber implementation
+
+pub fn new_root_obj_fiber_metaclass(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
+    let class_name = vm.new_gc_obj_string("FiberClass");
+    let (methods, _native_roots) = build_methods(vm, &[("yield", fiber_yield as NativeFn)], None);
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}
+
+pub fn new_root_obj_fiber_class(
+    vm: &mut Vm,
+    metaclass: Gc<ObjClass>,
+    superclass: Gc<ObjClass>,
+) -> Root<ObjClass> {
+    let class_name = vm.new_gc_obj_string("Fiber");
+    let (methods, _native_roots) = build_methods(
+        vm,
+        &[
+            ("__init__", fiber_init as NativeFn),
+            ("call", fiber_call as NativeFn),
+        ],
+        None,
+    );
+    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+}
+
+fn fiber_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 1)?;
+    let closure = vm.peek(0).try_as_obj_closure().ok_or_else(|| {
+        error!(
+            ErrorKind::RuntimeError,
+            "Expected a function but found '{}'.",
+            vm.peek(0)
+        )
+    })?;
+    let fiber = vm.new_root_obj_fiber(closure);
+    Ok(Value::ObjFiber(fiber.as_gc()))
+}
+
+fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    let fiber = vm.peek(0).try_as_obj_fiber().expect("Expected ObjFiber.");
+    vm.load_fiber(fiber)?;
+    Ok(Value::None)
+}
+
+fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    vm.unload_fiber()?;
+    Ok(Value::None)
 }

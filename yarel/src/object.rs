@@ -19,7 +19,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::ptr;
 
+use crate::chunk::Chunk;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
@@ -144,20 +146,34 @@ impl fmt::Display for ObjStringIter {
 
 pub enum ObjUpvalue {
     Closed(Value),
-    Open(usize),
+    Open(*mut Value),
 }
 
-pub fn new_gc_obj_upvalue(vm: &mut Vm, index: usize) -> Gc<RefCell<ObjUpvalue>> {
-    vm.allocate(RefCell::new(ObjUpvalue::new(index)))
+pub fn new_gc_obj_upvalue(vm: &mut Vm, value: &mut Value) -> Gc<RefCell<ObjUpvalue>> {
+    vm.allocate(RefCell::new(ObjUpvalue::new(value)))
 }
 
-pub fn new_root_obj_upvalue(vm: &mut Vm, index: usize) -> Root<RefCell<ObjUpvalue>> {
+pub fn new_root_obj_upvalue(vm: &mut Vm, index: &mut Value) -> Root<RefCell<ObjUpvalue>> {
     new_gc_obj_upvalue(vm, index).as_root()
 }
 
 impl ObjUpvalue {
-    fn new(index: usize) -> Self {
-        ObjUpvalue::Open(index)
+    pub(crate) fn new(address: *mut Value) -> Self {
+        ObjUpvalue::Open(address)
+    }
+
+    pub(crate) fn get(&self) -> Value {
+        match self {
+            Self::Open(a) => unsafe { **a },
+            Self::Closed(v) => *v,
+        }
+    }
+
+    pub(crate) fn set(&mut self, value: Value) {
+        match self {
+            Self::Open(a) => unsafe { **a = value },
+            Self::Closed(ref mut v) => *v = value,
+        }
     }
 
     pub fn is_open(&self) -> bool {
@@ -167,11 +183,14 @@ impl ObjUpvalue {
         }
     }
 
-    pub fn is_open_with_index(&self, index: usize) -> bool {
-        self.is_open_with_pred(|i| i == index)
+    pub fn is_open_with_value(&self, value: &Value) -> bool {
+        match self {
+            Self::Open(address) => *address as *const _ == value,
+            Self::Closed(_) => false,
+        }
     }
 
-    pub fn is_open_with_pred(&self, predicate: impl Fn(usize) -> bool) -> bool {
+    pub fn is_open_with_pred(&self, predicate: impl Fn(*const Value) -> bool) -> bool {
         match self {
             Self::Open(index) => predicate(*index),
             Self::Closed(_) => false,
@@ -203,7 +222,7 @@ impl memory::GcManaged for ObjUpvalue {
 pub struct ObjFunction {
     pub arity: u32,
     pub upvalue_count: usize,
-    pub chunk_index: usize,
+    pub chunk: Gc<Chunk>,
     pub name: Gc<ObjString>,
     pub(crate) module_path: Gc<ObjString>,
 }
@@ -213,14 +232,14 @@ pub fn new_gc_obj_function(
     name: Gc<ObjString>,
     arity: u32,
     upvalue_count: usize,
-    chunk_index: usize,
+    chunk: Gc<Chunk>,
     module_path: Gc<ObjString>,
 ) -> Gc<ObjFunction> {
     vm.allocate(ObjFunction::new(
         name,
         arity,
         upvalue_count,
-        chunk_index,
+        chunk,
         module_path,
     ))
 }
@@ -230,10 +249,10 @@ pub fn new_root_obj_function(
     name: Gc<ObjString>,
     arity: u32,
     upvalue_count: usize,
-    chunk_index: usize,
+    chunk: Gc<Chunk>,
     module_path: Gc<ObjString>,
 ) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk_index, module_path).as_root()
+    new_gc_obj_function(vm, name, arity, upvalue_count, chunk, module_path).as_root()
 }
 
 impl ObjFunction {
@@ -241,14 +260,14 @@ impl ObjFunction {
         name: memory::Gc<ObjString>,
         arity: u32,
         upvalue_count: usize,
-        chunk_index: usize,
+        chunk: Gc<Chunk>,
         module_path: Gc<ObjString>,
     ) -> Self {
         ObjFunction {
             name,
             arity,
             upvalue_count,
-            chunk_index,
+            chunk,
             module_path,
         }
     }
@@ -257,10 +276,12 @@ impl ObjFunction {
 impl memory::GcManaged for ObjFunction {
     fn mark(&self) {
         self.name.mark();
+        self.chunk.mark();
     }
 
     fn blacken(&self) {
         self.name.blacken();
+        self.chunk.blacken();
     }
 }
 
@@ -322,7 +343,7 @@ pub fn new_gc_obj_closure(
     module: Gc<RefCell<ObjModule>>,
 ) -> Gc<RefCell<ObjClosure>> {
     let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
-        .map(|_| vm.allocate_root(RefCell::new(ObjUpvalue::new(0))))
+        .map(|_| vm.allocate_root(RefCell::new(ObjUpvalue::new(ptr::null_mut()))))
         .collect();
     let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
 
@@ -1073,7 +1094,7 @@ impl fmt::Display for ObjModule {
 
 pub(crate) struct CallFrame {
     pub(crate) closure: Gc<RefCell<ObjClosure>>,
-    pub(crate) prev_ip: *const u8,
+    pub(crate) ip: *const u8,
     pub(crate) slot_base: usize,
 }
 
@@ -1089,19 +1110,55 @@ impl GcManaged for CallFrame {
 
 pub struct ObjFiber {
     pub(crate) class: Gc<ObjClass>,
+    pub(crate) caller: Option<Gc<RefCell<ObjFiber>>>,
     pub(crate) stack: Stack<Value>,
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
 }
 
 impl ObjFiber {
-    pub(crate) fn new(class: Gc<ObjClass>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, closure: Gc<RefCell<ObjClosure>>) -> Self {
+        let mut frames = Vec::with_capacity(common::FRAMES_MAX);
+        let ip = closure.borrow().function.chunk.code.as_ptr();
+        frames.push(CallFrame {
+            closure,
+            ip,
+            slot_base: 0,
+        });
         ObjFiber {
             class,
+            caller: None,
             stack: Stack::new(),
-            frames: Vec::with_capacity(common::FRAMES_MAX),
+            frames,
             open_upvalues: Vec::new(),
         }
+    }
+
+    pub(crate) fn push_call_frame(&mut self, closure: Gc<RefCell<ObjClosure>>) {
+        let (ip, arity) = {
+            let borrowed_closure = closure.borrow();
+            (
+                borrowed_closure.function.chunk.code.as_ptr(),
+                borrowed_closure.function.arity,
+            )
+        };
+        self.frames.push(CallFrame {
+            closure,
+            ip,
+            slot_base: self.stack.len() - arity as usize,
+        })
+    }
+
+    pub(crate) fn close_upvalues(&mut self, index: usize) {
+        let value = self.stack[index];
+        let value_ref = &self.stack[index];
+        for upvalue in self.open_upvalues.iter() {
+            if upvalue.borrow().is_open_with_value(value_ref) {
+                upvalue.borrow_mut().close(value);
+            }
+        }
+
+        self.open_upvalues.retain(|u| u.borrow().is_open());
     }
 }
 
@@ -1110,11 +1167,23 @@ impl GcManaged for ObjFiber {
         self.stack.mark();
         self.frames.mark();
         self.open_upvalues.mark();
+        if let Some(&caller) = self.caller.as_ref() {
+            caller.mark();
+        }
     }
 
     fn blacken(&self) {
         self.stack.blacken();
         self.frames.blacken();
         self.open_upvalues.blacken();
+        if let Some(&caller) = self.caller.as_ref() {
+            caller.blacken();
+        }
+    }
+}
+
+impl fmt::Display for ObjFiber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "fiber")
     }
 }
