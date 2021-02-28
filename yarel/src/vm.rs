@@ -880,8 +880,9 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::CloseUpvalue as u8 => {
+                    let stack_size = self.stack_size();
                     self.active_fiber_mut()
-                        .close_upvalues(self.stack_size() - 1);
+                        .close_upvalues(stack_size - 1);
                     self.pop();
                 }
 
@@ -1485,7 +1486,7 @@ impl Vm {
         unsafe { &*self.active_fiber }
     }
 
-    fn active_fiber_mut(&self) -> &mut ObjFiber {
+    fn active_fiber_mut(&mut self) -> &mut ObjFiber {
         unsafe { &mut *self.active_fiber }
     }
 
@@ -1515,7 +1516,7 @@ impl Vm {
         &self.active_fiber().stack[index]
     }
 
-    fn stack_elem_mut(&self, index: usize) -> &mut Value {
+    fn stack_elem_mut(&mut self, index: usize) -> &mut Value {
         &mut self.active_fiber_mut().stack[index]
     }
 
