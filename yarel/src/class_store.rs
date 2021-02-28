@@ -44,6 +44,7 @@ pub struct CoreClassStore {
     root_obj_hash_map_class: Root<ObjClass>,
     root_obj_module_class: Root<ObjClass>,
     root_obj_string_iter_class: Root<ObjClass>,
+    root_obj_fiber_class: Root<ObjClass>,
 }
 
 impl CoreClassStore {
@@ -71,6 +72,7 @@ impl CoreClassStore {
             root_obj_hash_map_class: Root::dangling(),
             root_obj_module_class: Root::dangling(),
             root_obj_string_iter_class: Root::dangling(),
+            root_obj_fiber_class: Root::dangling(),
         }
     }
 
@@ -110,6 +112,7 @@ impl CoreClassStore {
         let root_obj_hash_map_class = build_empty_class();
         let root_obj_module_class = build_empty_class();
         let root_obj_string_iter_class = build_empty_class();
+        let root_obj_fiber_class = build_empty_class();
         CoreClassStore {
             root_base_metaclass,
             root_object_class,
@@ -133,6 +136,7 @@ impl CoreClassStore {
             root_obj_hash_map_class,
             root_obj_module_class,
             root_obj_string_iter_class,
+            root_obj_fiber_class,
         }
     }
 
@@ -232,6 +236,16 @@ impl CoreClassStore {
             root_base_metaclass.as_gc(),
             root_obj_iter_class.as_gc(),
         );
+        let root_obj_fiber_metaclass = core::new_root_obj_fiber_metaclass(
+            vm,
+            root_base_metaclass.as_gc(),
+            root_object_class.as_gc(),
+        );
+        let root_obj_fiber_class = core::new_root_obj_fiber_class(
+            vm,
+            root_obj_fiber_metaclass.as_gc(),
+            root_object_class.as_gc(),
+        );
         CoreClassStore {
             root_base_metaclass,
             root_object_class,
@@ -255,6 +269,7 @@ impl CoreClassStore {
             root_obj_hash_map_class,
             root_obj_module_class,
             root_obj_string_iter_class,
+            root_obj_fiber_class,
         }
     }
 
@@ -344,6 +359,10 @@ impl CoreClassStore {
 
     pub(crate) fn get_obj_string_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_string_iter_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_fiber_class(&self) -> Gc<ObjClass> {
+        self.root_obj_fiber_class.as_gc()
     }
 }
 

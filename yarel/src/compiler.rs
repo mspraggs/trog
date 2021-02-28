@@ -160,14 +160,8 @@ impl Compiler {
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk_index = vm.add_chunk(chunk);
-        object::new_root_obj_function(
-            vm,
-            name,
-            self.func_arity,
-            num_upvalues,
-            chunk_index,
-            module_path,
-        )
+        let chunk = vm.get_chunk(chunk_index);
+        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk, module_path)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -360,7 +354,7 @@ impl<'a> Parser<'a> {
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
-            let chunk = self.vm.get_chunk(function.chunk_index);
+            let chunk = function.chunk;
             let func_name = format!("{}", *function);
             debug::disassemble_chunk(&chunk, &func_name);
         }

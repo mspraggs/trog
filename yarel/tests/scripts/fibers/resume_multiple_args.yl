@@ -1,0 +1,8 @@
+// Expected at most 1 parameter but found 2.
+// [module "main", line 8] in script
+// 70
+var fiber = Fiber(|| {
+    Fiber.yield();
+});
+fiber.call();
+fiber.call(1, 2);

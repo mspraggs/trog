@@ -1,0 +1,4 @@
+// Expected a function but found '0'.
+// [module "main", line 4] in script
+// 70
+Fiber(0);

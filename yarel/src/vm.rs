@@ -34,11 +34,10 @@ use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, GcBoxPtr, GcManaged, Heap, Root};
 use crate::object::{
-    self, NativeFn, ObjClass, ObjClosure, ObjFunction, ObjHashMap, ObjModule, ObjNative, ObjRange,
-    ObjRangeIter, ObjString, ObjStringIter, ObjStringValueMap, ObjTuple, ObjTupleIter, ObjUpvalue,
-    ObjVec, ObjVecIter,
+    self, CallFrame, NativeFn, ObjClass, ObjClosure, ObjFiber, ObjFunction, ObjHashMap, ObjModule,
+    ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjStringValueMap, ObjTuple,
+    ObjTupleIter, ObjUpvalue, ObjVec, ObjVecIter,
 };
-use crate::stack::Stack;
 use crate::utils;
 use crate::value::Value;
 
@@ -51,22 +50,6 @@ pub fn interpret(vm: &mut Vm, source: String, module_path: Option<&str>) -> Resu
     match compile_result {
         Ok(function) => vm.execute(function, &[]),
         Err(error) => Err(error),
-    }
-}
-
-pub struct CallFrame {
-    closure: Gc<RefCell<ObjClosure>>,
-    prev_ip: *const u8,
-    slot_base: usize,
-}
-
-impl GcManaged for CallFrame {
-    fn mark(&self) {
-        self.closure.mark();
-    }
-
-    fn blacken(&self) {
-        self.closure.blacken();
     }
 }
 
@@ -152,9 +135,8 @@ pub struct Vm {
     ip: *const u8,
     active_module: Gc<RefCell<ObjModule>>,
     active_chunk: Gc<Chunk>,
-    frames: Vec<CallFrame>,
-    stack: Stack<Value>,
-    open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
+    active_fiber: *mut ObjFiber,
+    fiber: Option<Gc<RefCell<ObjFiber>>>,
     init_string: Gc<ObjString>,
     next_string: Gc<ObjString>,
     pub(crate) class_store: CoreClassStore,
@@ -181,9 +163,8 @@ impl Vm {
             ip: ptr::null(),
             active_module: unsafe { Gc::dangling() },
             active_chunk: unsafe { Gc::dangling() },
-            frames: Vec::with_capacity(common::FRAMES_MAX),
-            stack: Stack::new(),
-            open_upvalues: Vec::new(),
+            active_fiber: ptr::null_mut(),
+            fiber: None,
             init_string: unsafe { Gc::dangling() },
             next_string: unsafe { Gc::dangling() },
             class_store: unsafe { CoreClassStore::new_empty() },
@@ -218,11 +199,24 @@ impl Vm {
     }
 
     pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
+        self.ip = ptr::null();
+        self.active_fiber = ptr::null_mut();
+        self.fiber = None;
         let module = self.get_module(&function.module_path);
-        let closure = object::new_gc_obj_closure(self, function.as_gc(), module);
-        self.push(Value::ObjClosure(closure));
-        self.stack.extend_from_slice(args);
-        self.call_value(Value::ObjClosure(closure), args.len())?;
+        let closure = object::new_root_obj_closure(self, function.as_gc(), module);
+        let fiber = self.new_root_obj_fiber(closure.as_gc());
+        if closure.borrow().function.arity != args.len() as u32 + 1 {
+            return Err(error!(
+                ErrorKind::TypeError,
+                "Expected {} arguments but found {}.",
+                closure.borrow().function.arity - 1,
+                args.len()
+            ));
+        }
+        self.load_fiber(fiber.as_gc(), None)?;
+        for &arg in args {
+            self.push(arg);
+        }
         match self.run() {
             Ok(value) => Ok(value),
             Err(mut error) => Err(self.runtime_error(&mut error)),
@@ -315,6 +309,14 @@ impl Vm {
         object::new_root_obj_vec_iter(self, class, vec)
     }
 
+    pub fn new_root_obj_fiber(
+        &mut self,
+        closure: Gc<RefCell<ObjClosure>>,
+    ) -> Root<RefCell<ObjFiber>> {
+        let class = self.class_store.get_obj_fiber_class();
+        self.allocate_root(RefCell::new(ObjFiber::new(class, closure)))
+    }
+
     pub fn reset(&mut self) {
         self.reset_stack();
         self.chunks = self.core_chunks.clone();
@@ -337,7 +339,7 @@ impl Vm {
     }
 
     pub fn peek(&self, depth: usize) -> &Value {
-        self.stack.peek(depth)
+        self.active_fiber().stack.peek(depth)
     }
 
     pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> usize {
@@ -351,14 +353,12 @@ impl Vm {
     }
 
     pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
-        let mut roots: Vec<&dyn GcManaged> = vec![
-            &self.stack,
-            &self.modules,
-            &self.frames,
-            &self.open_upvalues,
-        ];
+        let mut roots: Vec<&dyn GcManaged> = Vec::new();
         if let Some(def) = self.working_class_def.as_ref() {
             roots.push(def);
+        }
+        if let Some(fiber) = self.fiber.as_ref() {
+            roots.push(fiber);
         }
         self.heap.allocate_bare(&roots, data)
     }
@@ -368,16 +368,69 @@ impl Vm {
     }
 
     pub(crate) fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
-        let mut roots: Vec<&dyn GcManaged> = vec![
-            &self.stack,
-            &self.modules,
-            &self.frames,
-            &self.open_upvalues,
-        ];
+        let mut roots: Vec<&dyn GcManaged> = Vec::new();
         if let Some(def) = self.working_class_def.as_ref() {
             roots.push(def);
         }
+        if let Some(fiber) = self.fiber.as_ref() {
+            roots.push(fiber);
+        }
         self.heap.allocate_root(&roots, data)
+    }
+
+    pub(crate) fn load_fiber(
+        &mut self,
+        fiber: Gc<RefCell<ObjFiber>>,
+        arg: Option<Value>,
+    ) -> Result<(), Error> {
+        if fiber.borrow().has_finished() {
+            return Err(error!(
+                ErrorKind::RuntimeError,
+                "Cannot call a finished fiber."
+            ));
+        }
+        if self.fiber.is_some() {
+            self.frame_mut().ip = self.ip;
+        }
+
+        let caller = self.set_active_fiber(fiber);
+        self.active_fiber_mut().caller = caller;
+
+        if self.active_fiber().is_new() {
+            self.push(Value::ObjClosure(self.active_fiber().frames[0].closure));
+            if let Some(arg) = arg {
+                self.push(Value::None);
+                self.push(arg);
+            }
+        } else if let Some(arg) = arg {
+            self.push(Value::None);
+            *self.peek_mut(0) = arg;
+        }
+
+        self.load_frame();
+        Ok(())
+    }
+
+    pub(crate) fn unload_fiber(&mut self, arg: Option<Value>) -> Result<(), Error> {
+        if !self.frames().is_empty() {
+            self.frame_mut().ip = self.ip;
+        }
+        let caller = self.active_fiber().caller;
+        if let Some(caller) = caller {
+            self.set_active_fiber(caller);
+        } else {
+            self.fiber = None;
+            self.active_fiber = ptr::null_mut();
+            return Ok(());
+        }
+        if let Some(arg) = arg {
+            *self.peek_mut(0) = arg;
+        } else {
+            self.pop();
+            *self.peek_mut(0) = Value::None;
+        }
+        self.load_frame();
+        Ok(())
     }
 
     fn run(&mut self) -> Result<Value, Error> {
@@ -440,8 +493,7 @@ impl Vm {
 
         loop {
             if cfg!(feature = "debug_trace") {
-                print!("          ");
-                println!("{}", self.stack);
+                println!("          {}", self.active_fiber().stack);
                 let offset = self.active_chunk.code_offset(self.ip);
                 debug::disassemble_instruction(&self.active_chunk, offset);
             }
@@ -477,14 +529,14 @@ impl Vm {
                 byte if byte == OpCode::GetLocal as u8 => {
                     let slot = read_byte!() as usize;
                     let slot_base = self.frame().slot_base;
-                    let value = self.stack[slot_base + slot];
+                    let value = *self.stack_elem(slot_base + slot);
                     self.push(value);
                 }
 
                 byte if byte == OpCode::SetLocal as u8 => {
                     let slot = read_byte!() as usize;
                     let slot_base = self.frame().slot_base;
-                    self.stack[slot_base + slot] = *self.peek(0);
+                    *self.stack_elem_mut(slot_base + slot) = *self.peek(0);
                 }
 
                 byte if byte == OpCode::GetGlobal as u8 => {
@@ -527,11 +579,9 @@ impl Vm {
 
                 byte if byte == OpCode::GetUpvalue as u8 => {
                     let upvalue_index = read_byte!() as usize;
-                    let upvalue =
-                        match *self.frame().closure.borrow().upvalues[upvalue_index].borrow() {
-                            ObjUpvalue::Open(slot) => self.stack[slot],
-                            ObjUpvalue::Closed(value) => value,
-                        };
+                    let upvalue = self.frame().closure.borrow().upvalues[upvalue_index]
+                        .borrow()
+                        .get();
                     self.push(upvalue);
                 }
 
@@ -539,14 +589,9 @@ impl Vm {
                     let upvalue_index = read_byte!() as usize;
                     let stack_value = *self.peek(0);
                     let closure = self.frame().closure;
-                    match *closure.borrow_mut().upvalues[upvalue_index].borrow_mut() {
-                        ObjUpvalue::Open(slot) => {
-                            self.stack[slot] = stack_value;
-                        }
-                        ObjUpvalue::Closed(ref mut value) => {
-                            *value = stack_value;
-                        }
-                    };
+                    closure.borrow_mut().upvalues[upvalue_index]
+                        .borrow_mut()
+                        .set(stack_value);
                 }
 
                 byte if byte == OpCode::GetProperty as u8 => {
@@ -638,7 +683,7 @@ impl Vm {
                             let value = Value::ObjString(
                                 self.new_gc_obj_string(format!("{}{}", *a, *b).as_str()),
                             );
-                            self.stack.push(value)
+                            self.push(value)
                         }
 
                         (Value::Number(a), Value::Number(b)) => {
@@ -693,19 +738,19 @@ impl Vm {
                         self,
                         self.class_store.get_obj_hash_map_class(),
                     );
-                    let begin = self.stack.len() - num_elements * 2;
+                    let begin = self.stack_size() - num_elements * 2;
                     for i in 0..num_elements {
-                        let key = self.stack[begin + 2 * i];
+                        let key = *self.stack_elem(begin + 2 * i);
                         if !key.has_hash() {
                             return Err(error!(
                                 ErrorKind::ValueError,
                                 "Cannot use unhashable value '{}' as HashMap key.", key
                             ));
                         }
-                        let value = self.stack[begin + 2 * i + 1];
+                        let value = *self.stack_elem(begin + 2 * i + 1);
                         map.borrow_mut().elements.insert(key, value);
                     }
-                    self.stack.truncate(begin);
+                    self.discard(num_elements * 2);
                     self.push(Value::ObjHashMap(map.as_gc()));
                 }
 
@@ -725,33 +770,38 @@ impl Vm {
                     for pos in (0..num_operands).rev() {
                         new_string.push_str(self.peek(pos).try_as_obj_string().unwrap().as_str())
                     }
-                    let new_stack_size = self.stack.len() - num_operands;
-                    self.stack.truncate(new_stack_size);
+                    self.discard(num_operands);
                     let value = Value::ObjString(self.new_gc_obj_string(new_string.as_str()));
                     self.push(value);
                 }
 
                 byte if byte == OpCode::BuildTuple as u8 => {
                     let num_operands = read_byte!() as usize;
-                    let begin = self.stack.len() - num_operands;
-                    let end = self.stack.len();
-                    let elements = self.stack[begin..end].iter().copied().collect();
+                    let begin = self.stack_size() - num_operands;
+                    let end = self.stack_size();
+                    let elements = self.active_fiber().stack[begin..end]
+                        .iter()
+                        .copied()
+                        .collect();
                     let tuple = object::new_root_obj_tuple(
                         self,
                         self.class_store.get_obj_tuple_class(),
                         elements,
                     );
-                    self.stack.truncate(begin);
+                    self.discard(num_operands);
                     self.push(Value::ObjTuple(tuple.as_gc()));
                 }
 
                 byte if byte == OpCode::BuildVec as u8 => {
                     let num_operands = read_byte!() as usize;
                     let vec = object::new_root_obj_vec(self, self.class_store.get_obj_vec_class());
-                    let begin = self.stack.len() - num_operands;
-                    let end = self.stack.len();
-                    vec.borrow_mut().elements = self.stack[begin..end].iter().copied().collect();
-                    self.stack.truncate(begin);
+                    let begin = self.stack_size() - num_operands;
+                    let end = self.stack_size();
+                    vec.borrow_mut().elements = self.active_fiber().stack[begin..end]
+                        .iter()
+                        .copied()
+                        .collect();
+                    self.discard(num_operands);
                     self.push(Value::ObjVec(vec.as_gc()));
                 }
 
@@ -830,29 +880,30 @@ impl Vm {
                 }
 
                 byte if byte == OpCode::CloseUpvalue as u8 => {
-                    self.close_upvalues(self.stack.len() - 1, *self.peek(0));
+                    self.active_fiber_mut()
+                        .close_upvalues(self.stack_size() - 1);
                     self.pop();
                 }
 
                 byte if byte == OpCode::Return as u8 => {
                     let result = self.pop();
-                    for i in self.frame().slot_base..self.stack.len() {
-                        self.close_upvalues(i, self.stack[i])
+                    let stack_top = self.stack_size();
+                    for i in self.frame().slot_base..stack_top {
+                        self.active_fiber_mut().close_upvalues(i);
                     }
 
                     let prev_stack_size = self.frame().slot_base;
-                    let prev_ip = self.frame().prev_ip;
-                    self.frames.pop();
-                    if self.frames.is_empty() {
+                    self.frames_mut().pop();
+                    if self.frames().is_empty() {
+                        if self.active_fiber().caller.is_some() {
+                            self.unload_fiber(None)?;
+                            *self.peek_mut(0) = result;
+                            continue;
+                        }
                         return Ok(self.pop());
                     }
-                    let prev_chunk_index = self.frame().closure.borrow().function.chunk_index;
-                    let prev_module = self.frame().closure.borrow().module;
-                    self.active_chunk = self.get_chunk(prev_chunk_index);
-                    self.active_module = prev_module;
-                    self.ip = prev_ip;
-
-                    self.stack.truncate(prev_stack_size);
+                    self.load_frame();
+                    self.active_fiber_mut().stack.truncate(prev_stack_size);
                     self.push(result);
                 }
 
@@ -1125,6 +1176,10 @@ impl Vm {
                 }
                 self.invoke_from_class(module.borrow().class, name, arg_count)
             }
+            Value::ObjFiber(fiber) => {
+                let class = fiber.borrow().class;
+                self.invoke_from_class(class, name, arg_count)
+            }
             Value::None => {
                 self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
             }
@@ -1148,54 +1203,43 @@ impl Vm {
             ));
         }
 
-        if self.frames.len() == common::FRAMES_MAX {
+        if self.frames().len() == common::FRAMES_MAX {
             return Err(error!(ErrorKind::IndexError, "Stack overflow."));
         }
 
-        let (chunk_index, module) = {
-            let borrowed_closure = closure.borrow();
-            let function = borrowed_closure.function;
-            (function.chunk_index, borrowed_closure.module)
-        };
-        self.active_chunk = self.get_chunk(chunk_index);
-        self.frames.push(CallFrame {
-            closure,
-            prev_ip: self.ip,
-            slot_base: self.stack.len() - arg_count - 1,
-        });
-        self.ip = &self.active_chunk.code[0];
-        self.active_module = module;
+        self.frame_mut().ip = self.ip;
+        self.active_fiber_mut().push_call_frame(closure);
+        self.load_frame();
         Ok(())
     }
 
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
         let function = native.function;
-        let frame_end = self.stack.len();
-        let frame_begin = frame_end - arg_count - 1;
         let result = function(self, arg_count)?;
-        self.stack.truncate(frame_begin + 1);
+        self.discard(arg_count);
         *self.peek_mut(0) = result;
         Ok(())
     }
 
     fn reset_stack(&mut self) {
-        self.stack.clear();
-        self.frames.clear();
+        if let Some(fiber) = self.fiber {
+            let mut borrowed_fiber = fiber.borrow_mut();
+            borrowed_fiber.stack.clear();
+            borrowed_fiber.frames.clear();
+        }
     }
 
     fn runtime_error(&mut self, error: &mut Error) -> Error {
-        let mut ips: Vec<*const u8> = self.frames.iter().skip(1).map(|f| f.prev_ip).collect();
-        ips.push(self.ip);
-
-        for (i, frame) in self.frames.iter().enumerate().rev() {
+        self.frame_mut().ip = self.ip;
+        for frame in self.active_fiber().frames.iter().rev() {
             let (function, module) = {
                 let borrowed_closure = frame.closure.borrow();
                 (borrowed_closure.function, borrowed_closure.module)
             };
 
             let mut new_msg = String::new();
-            let chunk = self.get_chunk(frame.closure.borrow().function.chunk_index);
-            let instruction = chunk.code_offset(ips[i]) - 1;
+            let chunk = frame.closure.borrow().function.chunk;
+            let instruction = chunk.code_offset(frame.ip) - 1;
             write!(
                 new_msg,
                 "[{}, line {}] in ",
@@ -1251,29 +1295,24 @@ impl Vm {
     }
 
     fn capture_upvalue(&mut self, location: usize) -> Gc<RefCell<ObjUpvalue>> {
-        let result = self
-            .open_upvalues
-            .iter()
-            .find(|&u| u.borrow().is_open_with_index(location));
-
-        let upvalue = if let Some(upvalue) = result {
-            *upvalue
-        } else {
-            object::new_gc_obj_upvalue(self, location)
+        let value = self.stack_elem(location);
+        let result = {
+            self.active_fiber()
+                .open_upvalues
+                .iter()
+                .find(|&u| u.borrow().is_open_with_value(value))
+                .copied()
         };
 
-        self.open_upvalues.push(upvalue);
+        let upvalue = if let Some(upvalue) = result {
+            upvalue
+        } else {
+            let upvalue = ObjUpvalue::new(self.stack_elem_mut(location));
+            self.allocate(RefCell::new(upvalue))
+        };
+
+        self.active_fiber_mut().open_upvalues.push(upvalue);
         upvalue
-    }
-
-    fn close_upvalues(&mut self, last: usize, value: Value) {
-        for upvalue in self.open_upvalues.iter() {
-            if upvalue.borrow().is_open_with_index(last) {
-                upvalue.borrow_mut().close(value);
-            }
-        }
-
-        self.open_upvalues.retain(|u| u.borrow().is_open());
     }
 
     fn build_range(&mut self, begin: isize, end: isize) -> Gc<ObjRange> {
@@ -1423,21 +1462,84 @@ impl Vm {
         self.set_global(module_path, "Range", Value::ObjClass(obj_range_class));
         let obj_hash_map_class = self.class_store.get_obj_hash_map_class();
         self.set_global(module_path, "HashMap", Value::ObjClass(obj_hash_map_class));
+        let obj_fiber_class = self.class_store.get_obj_fiber_class();
+        self.set_global(module_path, "Fiber", Value::ObjClass(obj_fiber_class));
+    }
+
+    fn load_frame(&mut self) {
+        let prev_chunk = self.frame().closure.borrow().function.chunk;
+        let prev_module = self.frame().closure.borrow().module;
+        self.active_chunk = prev_chunk;
+        self.active_module = prev_module;
+        self.ip = self.frame().ip;
+    }
+
+    fn set_active_fiber(&mut self, fiber: Gc<RefCell<ObjFiber>>) -> Option<Gc<RefCell<ObjFiber>>> {
+        let fiber_ptr = &mut *fiber.borrow_mut() as *mut _;
+        let old_fiber = self.fiber.replace(fiber);
+        self.active_fiber = fiber_ptr;
+        old_fiber
+    }
+
+    fn active_fiber(&self) -> &ObjFiber {
+        unsafe { &*self.active_fiber }
+    }
+
+    fn active_fiber_mut(&self) -> &mut ObjFiber {
+        unsafe { &mut *self.active_fiber }
     }
 
     fn frame(&self) -> &CallFrame {
-        self.frames.last().expect("Call stack empty.")
+        self.active_fiber()
+            .frames
+            .last()
+            .expect("Expected CallFrame")
+    }
+
+    fn frame_mut(&mut self) -> &mut CallFrame {
+        self.active_fiber_mut()
+            .frames
+            .last_mut()
+            .expect("Expected CallFrame")
+    }
+
+    fn frames(&self) -> &Vec<CallFrame> {
+        &self.active_fiber().frames
+    }
+
+    fn frames_mut(&mut self) -> &mut Vec<CallFrame> {
+        &mut self.active_fiber_mut().frames
+    }
+
+    fn stack_elem(&self, index: usize) -> &Value {
+        &self.active_fiber().stack[index]
+    }
+
+    fn stack_elem_mut(&self, index: usize) -> &mut Value {
+        &mut self.active_fiber_mut().stack[index]
+    }
+
+    fn stack_size(&self) -> usize {
+        self.active_fiber().stack.len()
     }
 
     fn peek_mut(&mut self, depth: usize) -> &mut Value {
-        self.stack.peek_mut(depth)
+        self.active_fiber_mut().stack.peek_mut(depth)
     }
 
-    fn push(&mut self, value: Value) {
-        self.stack.push(value);
+    pub(crate) fn push(&mut self, value: Value) {
+        self.active_fiber_mut().stack.push(value)
     }
 
-    fn pop(&mut self) -> Value {
-        self.stack.pop().expect("Stack empty.")
+    pub(crate) fn pop(&mut self) -> Value {
+        self.active_fiber_mut()
+            .stack
+            .pop()
+            .expect("Expected Value.")
+    }
+
+    fn discard(&mut self, num: usize) {
+        let stack_len = self.active_fiber_mut().stack.len();
+        self.active_fiber_mut().stack.truncate(stack_len - num);
     }
 }

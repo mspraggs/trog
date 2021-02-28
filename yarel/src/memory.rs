@@ -413,3 +413,17 @@ impl<K, V: GcManaged, S> GcManaged for HashMap<K, V, S> {
         }
     }
 }
+
+impl<T: GcManaged> GcManaged for &[T] {
+    fn mark(&self) {
+        for i in 0..self.len() {
+            self[i].mark();
+        }
+    }
+
+    fn blacken(&self) {
+        for i in 0..self.len() {
+            self[i].blacken();
+        }
+    }
+}

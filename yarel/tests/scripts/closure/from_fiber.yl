@@ -1,0 +1,12 @@
+// Hello, World!
+// 0
+var name = "World";
+var fiber = Fiber(|greeting| {
+    fn closure() {
+        print("${greeting}, ${name}!");
+    }
+    return closure;
+});
+
+var func = fiber.call("Hello");
+func();

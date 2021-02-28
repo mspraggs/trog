@@ -1,0 +1,5 @@
+// Expected 0 parameters but found 2.
+// [module "main", line 5] in script
+// 70
+var fiber = Fiber(|| {});
+fiber.call(1, 2);

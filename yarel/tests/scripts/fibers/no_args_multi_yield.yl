@@ -1,0 +1,16 @@
+// Fiber yielded!
+// In a fiber: yay! (second call)
+// Fiber yielded again!
+// nil
+// 0
+{
+    var fiber = Fiber(|| {
+        var local = "yay!";
+        var yield_result = Fiber.yield("Fiber yielded!");
+        print("In a fiber: ${local} (${yield_result})");
+        Fiber.yield("Fiber yielded again!");
+    });
+    print(fiber.call());
+    print(fiber.call("second call"));
+    print(fiber.call());
+}

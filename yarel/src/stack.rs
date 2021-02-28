@@ -85,12 +85,6 @@ impl<T: Clone + Copy + Default> Stack<T> {
         self.size = size;
     }
 
-    pub(crate) fn extend_from_slice(&mut self, data: &[T]) {
-        for elem in data {
-            self.push(*elem);
-        }
-    }
-
     pub(crate) fn len(&self) -> usize {
         self.size
     }

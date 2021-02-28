@@ -1,0 +1,11 @@
+// In a fiber: yay!
+// Fiber result
+// 0
+{
+    var fiber = Fiber(|| {
+        var local = "yay!";
+        print("In a fiber: ${local}");
+        return "Fiber result";
+    });
+    print(fiber.call());
+}
