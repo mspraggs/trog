@@ -1114,12 +1114,19 @@ pub struct ObjFiber {
     pub(crate) stack: Stack<Value>,
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
+    pub(crate) call_arity: usize,
 }
 
 impl ObjFiber {
     pub(crate) fn new(class: Gc<ObjClass>, closure: Gc<RefCell<ObjClosure>>) -> Self {
         let mut frames = Vec::with_capacity(common::FRAMES_MAX);
-        let ip = closure.borrow().function.chunk.code.as_ptr();
+        let (ip, arity) = {
+            let borrowed_closure = closure.borrow();
+            (
+                borrowed_closure.function.chunk.code.as_ptr(),
+                borrowed_closure.function.arity,
+            )
+        };
         frames.push(CallFrame {
             closure,
             ip,
@@ -1131,6 +1138,7 @@ impl ObjFiber {
             stack: Stack::new(),
             frames,
             open_upvalues: Vec::new(),
+            call_arity: arity as usize,
         }
     }
 
@@ -1159,6 +1167,15 @@ impl ObjFiber {
         }
 
         self.open_upvalues.retain(|u| u.borrow().is_open());
+    }
+
+    pub(crate) fn is_new(&self) -> bool {
+        self.frames.len() == 1
+            && self.frames[0].ip == self.frames[0].closure.borrow().function.chunk.code.as_ptr()
+    }
+
+    pub(crate) fn has_finished(&self) -> bool {
+        self.frames.is_empty()
     }
 }
 

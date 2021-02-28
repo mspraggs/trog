@@ -1,0 +1,13 @@
+// Fiber yielded!
+// In a fiber: yay! (amaze)
+// nil
+// 0
+{
+    var fiber = Fiber(|a| {
+        var local = "yay!";
+        Fiber.yield("Fiber yielded!");
+        print("In a fiber: ${local} (${a})");
+    });
+    print(fiber.call("amaze"));
+    print(fiber.call());
+}

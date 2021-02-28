@@ -1,0 +1,10 @@
+// In a fiber: yay!
+// nil
+// 0
+{
+    var fiber = Fiber(|| {
+        var local = "yay!";
+        print("In a fiber: ${local}");
+    });
+    print(fiber.call());
+}

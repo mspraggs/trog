@@ -213,7 +213,7 @@ impl Vm {
                 args.len()
             ));
         }
-        self.load_fiber(fiber.as_gc())?;
+        self.load_fiber(fiber.as_gc(), None)?;
         for &arg in args {
             self.push(arg);
         }
@@ -378,17 +378,17 @@ impl Vm {
         self.heap.allocate_root(&roots, data)
     }
 
-    pub(crate) fn load_fiber(&mut self, fiber: Gc<RefCell<ObjFiber>>) -> Result<(), Error> {
-        let (closure, frames_len) = {
-            let borrowed_fiber = fiber.borrow_mut();
-            if borrowed_fiber.frames.len() == 0 {
-                return Err(error!(ErrorKind::RuntimeError, ""));
-            }
-            (
-                borrowed_fiber.frames[0].closure,
-                borrowed_fiber.frames.len(),
-            )
-        };
+    pub(crate) fn load_fiber(
+        &mut self,
+        fiber: Gc<RefCell<ObjFiber>>,
+        arg: Option<Value>,
+    ) -> Result<(), Error> {
+        if fiber.borrow().has_finished() {
+            return Err(error!(
+                ErrorKind::RuntimeError,
+                "Cannot call a finished fiber."
+            ));
+        }
         if self.fiber.is_some() {
             self.frame_mut().ip = self.ip;
         }
@@ -396,17 +396,22 @@ impl Vm {
         let caller = self.set_active_fiber(fiber);
         self.active_fiber_mut().caller = caller;
 
-        self.push(Value::ObjClosure(closure));
-
-        if frames_len == common::FRAMES_MAX {
-            return Err(error!(ErrorKind::IndexError, "Stack overflow."));
+        if self.active_fiber().is_new() {
+            self.push(Value::ObjClosure(self.active_fiber().frames[0].closure));
+            if let Some(arg) = arg {
+                self.push(Value::None);
+                self.push(arg);
+            }
+        } else if let Some(arg) = arg {
+            self.push(Value::None);
+            *self.peek_mut(0) = arg;
         }
 
         self.load_frame();
         Ok(())
     }
 
-    pub(crate) fn unload_fiber(&mut self) -> Result<(), Error> {
+    pub(crate) fn unload_fiber(&mut self, arg: Option<Value>) -> Result<(), Error> {
         if !self.frames().is_empty() {
             self.frame_mut().ip = self.ip;
         }
@@ -417,6 +422,12 @@ impl Vm {
             self.fiber = None;
             self.active_fiber = ptr::null_mut();
             return Ok(());
+        }
+        if let Some(arg) = arg {
+            *self.peek_mut(0) = arg;
+        } else {
+            self.pop();
+            *self.peek_mut(0) = Value::None;
         }
         self.load_frame();
         Ok(())
@@ -885,7 +896,8 @@ impl Vm {
                     self.frames_mut().pop();
                     if self.frames().is_empty() {
                         if self.active_fiber().caller.is_some() {
-                            self.unload_fiber()?;
+                            self.unload_fiber(None)?;
+                            *self.peek_mut(0) = result;
                             continue;
                         }
                         return Ok(self.pop());
@@ -1515,11 +1527,11 @@ impl Vm {
         self.active_fiber_mut().stack.peek_mut(depth)
     }
 
-    fn push(&mut self, value: Value) {
+    pub(crate) fn push(&mut self, value: Value) {
         self.active_fiber_mut().stack.push(value)
     }
 
-    fn pop(&mut self) -> Value {
+    pub(crate) fn pop(&mut self) -> Value {
         self.active_fiber_mut()
             .stack
             .pop()

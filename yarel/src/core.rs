@@ -1154,19 +1154,69 @@ fn fiber_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             vm.peek(0)
         )
     })?;
+    if closure.borrow().function.arity > 2 {
+        return Err(error!(
+            ErrorKind::RuntimeError,
+            "Fiber expects a closure that accepts at most 1 parameter."
+        ));
+    }
     let fiber = vm.new_root_obj_fiber(closure);
     Ok(Value::ObjFiber(fiber.as_gc()))
 }
 
 fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 0)?;
-    let fiber = vm.peek(0).try_as_obj_fiber().expect("Expected ObjFiber.");
-    vm.load_fiber(fiber)?;
-    Ok(Value::None)
+    // `Fiber.call` and `Fiber.yield` are the only two functions that take a
+    // variable number of arguments. To make handling call frames a little
+    // easier, we inject a dummy nil argument where none is provided. (The same
+    // approach is taken in `Fiber.yield`.) Also, because `Vm::call_native`
+    // truncates the stack based on the number of arguments after each call, we
+    // add a nil parameter after the closure has been pushed to account for the
+    // fact that the stacks before and after the call will be different.
+    let fiber = vm
+        .peek(num_args)
+        .try_as_obj_fiber()
+        .expect("Expected ObjFiber.");
+    let (is_new, arity) = {
+        let borrowed_fiber = fiber.borrow();
+        (borrowed_fiber.is_new(), borrowed_fiber.call_arity)
+    };
+    if is_new {
+        check_num_args(num_args, arity - 1)?;
+    } else {
+        if num_args > 1 {
+            return Err(error!(
+                ErrorKind::RuntimeError,
+                "Expected at most 1 parameter but found {}.", num_args
+            ));
+        }
+    }
+    let arg = if num_args == 1 {
+        let value = *vm.peek(0);
+        Some(value)
+    } else {
+        vm.push(Value::None);
+        None
+    };
+    vm.load_fiber(fiber, arg)?;
+
+    Ok(*vm.peek(0))
 }
 
 fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 0)?;
-    vm.unload_fiber()?;
-    Ok(Value::None)
+    if num_args > 1 {
+        return Err(error!(
+            ErrorKind::RuntimeError,
+            "Expected at most 1 parameter but found {}.", num_args
+        ));
+    }
+    let arg = if num_args == 1 {
+        Some(*vm.peek(0))
+    } else {
+        None
+    };
+    if num_args == 1 {
+        vm.pop();
+    }
+    vm.unload_fiber(arg)?;
+    Ok(*vm.peek(0))
 }
