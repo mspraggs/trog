@@ -26,6 +26,7 @@ pub mod memory;
 pub mod object;
 mod scanner;
 mod stack;
+mod unsafe_ref_cell;
 mod utils;
 pub mod value;
 pub mod vm;
