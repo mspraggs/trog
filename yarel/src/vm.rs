@@ -352,14 +352,11 @@ impl Vm {
             .expect("Expected Value.")
     }
 
-    pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> usize {
+    pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> Gc<Chunk> {
         let root = self.allocate_root(chunk);
+        let ret = root.as_gc();
         self.chunks.push(root);
-        self.chunks.len() - 1
-    }
-
-    pub(crate) fn get_chunk(&self, index: usize) -> Gc<Chunk> {
-        self.chunks[index].as_gc()
+        ret
     }
 
     pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {

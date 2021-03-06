@@ -159,8 +159,7 @@ impl Compiler {
         let name = vm.new_gc_obj_string(self.func_name.as_str());
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
-        let chunk_index = vm.add_chunk(chunk);
-        let chunk = vm.get_chunk(chunk_index);
+        let chunk = vm.add_chunk(chunk);
         object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk, module_path)
     }
 
