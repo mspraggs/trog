@@ -23,6 +23,7 @@ use crate::memory::GcManaged;
 const STACK_MAX: usize = common::LOCALS_MAX * common::FRAMES_MAX;
 
 // TODO: Use const-generics here when available
+#[derive(Debug)]
 pub(crate) struct Stack<T: Clone + Copy + Default> {
     stack: [T; STACK_MAX],
     size: usize,
@@ -33,6 +34,7 @@ impl<T: Clone + Copy + Default> Stack<T> {
         Default::default()
     }
 
+    // TODO: Tidy up safety around these interfaces
     pub(crate) fn peek(&self, depth: usize) -> &T {
         if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
             panic!("Stack index out of range.");
