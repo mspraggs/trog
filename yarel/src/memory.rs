@@ -26,6 +26,7 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 
 use crate::common;
+use crate::unsafe_ref_cell::UnsafeRefCell;
 
 #[derive(Copy, Clone, PartialEq)]
 enum Colour {
@@ -377,6 +378,16 @@ impl Heap {
 }
 
 impl<T: GcManaged> GcManaged for RefCell<T> {
+    fn mark(&self) {
+        self.borrow().mark();
+    }
+
+    fn blacken(&self) {
+        self.borrow().blacken();
+    }
+}
+
+impl<T: GcManaged> GcManaged for UnsafeRefCell<T> {
     fn mark(&self) {
         self.borrow().mark();
     }

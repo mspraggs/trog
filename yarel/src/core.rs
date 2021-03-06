@@ -81,7 +81,7 @@ pub(crate) fn print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 pub(crate) fn type_(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 1)?;
 
-    Ok(Value::ObjClass(vm.get_class(*vm.peek(0))))
+    Ok(Value::ObjClass(vm.get_class(vm.peek(0))))
 }
 
 pub(crate) fn no_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
@@ -122,7 +122,7 @@ pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass
 pub(crate) fn object_is_a(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 1)?;
 
-    let receiver_class = vm.get_class(*vm.peek(1));
+    let receiver_class = vm.get_class(vm.peek(1));
     let query_class = vm.peek(0).try_as_obj_class().ok_or_else(|| {
         error!(
             ErrorKind::ValueError,
@@ -344,7 +344,7 @@ fn string_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
     let (begin, end) = match vm.peek(0) {
         Value::Number(_) => {
-            let begin = get_bounded_index(*vm.peek(0), string_len, "String index out of bounds.")?;
+            let begin = get_bounded_index(vm.peek(0), string_len, "String index out of bounds.")?;
             check_char_boundary(string, begin, "string index")?;
             let mut end = begin + 1;
             while end <= string.len() && !string.as_str().is_char_boundary(end) {
@@ -401,7 +401,7 @@ fn string_char_byte_index(vm: &mut Vm, num_args: usize) -> Result<Value, Error> 
 
     let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
     let char_index = get_bounded_index(
-        *vm.peek(0),
+        vm.peek(0),
         string.as_str().chars().count() as isize,
         "String index parameter out of bounds.",
     )?;
@@ -437,7 +437,7 @@ fn string_find(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     }
     let string_len = string.len() as isize;
     let start = {
-        let i = utils::validate_integer(*vm.peek(0))?;
+        let i = utils::validate_integer(vm.peek(0))?;
         if i < 0 {
             i + string_len
         } else {
@@ -656,7 +656,7 @@ fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     match vm.peek(0) {
         Value::Number(_) => {
             let index = get_bounded_index(
-                *vm.peek(0),
+                vm.peek(0),
                 tuple.elements.len() as isize,
                 "Tuple index parameter out of bounds",
             )?;
@@ -752,9 +752,9 @@ fn vec_push(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         return Err(error!(ErrorKind::RuntimeError, "Vec max capcity reached."));
     }
 
-    vec.borrow_mut().elements.push(*vm.peek(0));
+    vec.borrow_mut().elements.push(vm.peek(0));
 
-    Ok(*vm.peek(1))
+    Ok(vm.peek(1))
 }
 
 fn vec_pop(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -779,7 +779,7 @@ fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         Value::Number(_) => {
             let borrowed_vec = vec.borrow();
             let index = get_bounded_index(
-                *vm.peek(0),
+                vm.peek(0),
                 borrowed_vec.elements.len() as isize,
                 "Vec index parameter out of bounds",
             )?;
@@ -807,12 +807,12 @@ fn vec_set_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
     let vec = vm.peek(2).try_as_obj_vec().expect("Expected ObjVec");
     let index = get_bounded_index(
-        *vm.peek(1),
+        vm.peek(1),
         vec.borrow().elements.len() as isize,
         "Vec index parameter out of bounds",
     )?;
     let mut borrowed_vec = vec.borrow_mut();
-    borrowed_vec.elements[index] = *vm.peek(0);
+    borrowed_vec.elements[index] = vm.peek(0);
     Ok(Value::None)
 }
 
@@ -888,8 +888,8 @@ pub fn new_root_obj_range_class(
 fn range_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 2)?;
 
-    let begin = utils::validate_integer(*vm.peek(1))?;
-    let end = utils::validate_integer(*vm.peek(0))?;
+    let begin = utils::validate_integer(vm.peek(1))?;
+    let end = utils::validate_integer(vm.peek(0))?;
     let range = vm.new_root_obj_range(begin, end);
     Ok(Value::ObjRange(range.as_gc()))
 }
@@ -965,7 +965,7 @@ fn hash_map_has_key(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .try_as_obj_hash_map()
         .expect("Expected ObjHashMap.");
 
-    let key = validate_hash_map_key(*vm.peek(0))?;
+    let key = validate_hash_map_key(vm.peek(0))?;
     let borrowed_hash_map = hash_map.borrow();
     Ok(Value::Boolean(
         borrowed_hash_map.elements.contains_key(&key),
@@ -980,7 +980,7 @@ fn hash_map_get(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .try_as_obj_hash_map()
         .expect("Expected ObjHashMap");
 
-    let key = validate_hash_map_key(*vm.peek(0))?;
+    let key = validate_hash_map_key(vm.peek(0))?;
 
     let borrowed_hash_map = hash_map.borrow();
     Ok(*borrowed_hash_map.elements.get(&key).unwrap_or(&Value::None))
@@ -994,8 +994,8 @@ fn hash_map_insert(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .try_as_obj_hash_map()
         .expect("Expected ObjHashMap");
 
-    let key = validate_hash_map_key(*vm.peek(1))?;
-    let value = *vm.peek(0);
+    let key = validate_hash_map_key(vm.peek(1))?;
+    let value = vm.peek(0);
 
     let mut borrowed_hash_map = hash_map.borrow_mut();
     Ok(borrowed_hash_map
@@ -1012,7 +1012,7 @@ fn hash_map_remove(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .try_as_obj_hash_map()
         .expect("Expected ObjHashMap");
 
-    let key = validate_hash_map_key(*vm.peek(0))?;
+    let key = validate_hash_map_key(vm.peek(0))?;
 
     let mut borrowed_hash_map = hash_map.borrow_mut();
     Ok(borrowed_hash_map
@@ -1177,7 +1177,7 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .try_as_obj_fiber()
         .expect("Expected ObjFiber.");
     let (is_new, arity) = {
-        let borrowed_fiber = fiber.borrow();
+        let borrowed_fiber = unsafe { fiber.get() };
         (borrowed_fiber.is_new(), borrowed_fiber.call_arity)
     };
     if is_new {
@@ -1191,7 +1191,7 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         }
     }
     let arg = if num_args == 1 {
-        let value = *vm.peek(0);
+        let value = vm.peek(0);
         Some(value)
     } else {
         vm.push(Value::None);
@@ -1199,7 +1199,7 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     };
     vm.load_fiber(fiber, arg)?;
 
-    Ok(*vm.peek(0))
+    Ok(vm.peek(0))
 }
 
 fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -1210,7 +1210,7 @@ fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         ));
     }
     let arg = if num_args == 1 {
-        Some(*vm.peek(0))
+        Some(vm.peek(0))
     } else {
         None
     };
@@ -1218,5 +1218,5 @@ fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         vm.pop();
     }
     vm.unload_fiber(arg)?;
-    Ok(*vm.peek(0))
+    Ok(vm.peek(0))
 }

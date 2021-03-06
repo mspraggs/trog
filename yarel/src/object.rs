@@ -27,6 +27,7 @@ use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
 use crate::memory::{self, Gc, GcManaged, Root};
 use crate::stack::Stack;
+use crate::unsafe_ref_cell::UnsafeRefCell;
 use crate::value::Value;
 use crate::vm::Vm;
 
@@ -1110,7 +1111,7 @@ impl GcManaged for CallFrame {
 
 pub struct ObjFiber {
     pub(crate) class: Gc<ObjClass>,
-    pub(crate) caller: Option<Gc<RefCell<ObjFiber>>>,
+    pub(crate) caller: Option<Gc<UnsafeRefCell<ObjFiber>>>,
     pub(crate) stack: Stack<Value>,
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
@@ -1167,6 +1168,14 @@ impl ObjFiber {
         }
 
         self.open_upvalues.retain(|u| u.borrow().is_open());
+    }
+
+    pub(crate) fn current_frame(&self) -> Option<&CallFrame> {
+        self.frames.last()
+    }
+
+    pub(crate) fn current_frame_mut(&mut self) -> Option<&mut CallFrame> {
+        self.frames.last_mut()
     }
 
     pub(crate) fn is_new(&self) -> bool {
