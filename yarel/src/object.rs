@@ -19,13 +19,12 @@ use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use std::ptr;
 
 use crate::chunk::Chunk;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
-use crate::memory::{self, Gc, GcManaged, Root};
+use crate::memory::{self, Gc, GcManaged};
 use crate::stack::Stack;
 use crate::unsafe_ref_cell::UnsafeRefCell;
 use crate::value::Value;
@@ -91,24 +90,8 @@ pub struct ObjStringIter {
     pos: usize,
 }
 
-pub fn new_gc_obj_string_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    string: Gc<ObjString>,
-) -> Gc<RefCell<ObjStringIter>> {
-    vm.allocate(RefCell::new(ObjStringIter::new(class, string)))
-}
-
-pub fn new_root_obj_string_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    string: Gc<ObjString>,
-) -> Root<RefCell<ObjStringIter>> {
-    new_gc_obj_string_iter(vm, class, string).as_root()
-}
-
 impl ObjStringIter {
-    fn new(class: Gc<ObjClass>, iterable: Gc<ObjString>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, iterable: Gc<ObjString>) -> Self {
         ObjStringIter {
             class,
             iterable,
@@ -148,14 +131,6 @@ impl fmt::Display for ObjStringIter {
 pub enum ObjUpvalue {
     Closed(Value),
     Open(*mut Value),
-}
-
-pub fn new_gc_obj_upvalue(vm: &mut Vm, value: &mut Value) -> Gc<RefCell<ObjUpvalue>> {
-    vm.allocate(RefCell::new(ObjUpvalue::new(value)))
-}
-
-pub fn new_root_obj_upvalue(vm: &mut Vm, index: &mut Value) -> Root<RefCell<ObjUpvalue>> {
-    new_gc_obj_upvalue(vm, index).as_root()
 }
 
 impl ObjUpvalue {
@@ -228,36 +203,8 @@ pub struct ObjFunction {
     pub(crate) module_path: Gc<ObjString>,
 }
 
-pub fn new_gc_obj_function(
-    vm: &mut Vm,
-    name: Gc<ObjString>,
-    arity: u32,
-    upvalue_count: usize,
-    chunk: Gc<Chunk>,
-    module_path: Gc<ObjString>,
-) -> Gc<ObjFunction> {
-    vm.allocate(ObjFunction::new(
-        name,
-        arity,
-        upvalue_count,
-        chunk,
-        module_path,
-    ))
-}
-
-pub fn new_root_obj_function(
-    vm: &mut Vm,
-    name: Gc<ObjString>,
-    arity: u32,
-    upvalue_count: usize,
-    chunk: Gc<Chunk>,
-    module_path: Gc<ObjString>,
-) -> Root<ObjFunction> {
-    new_gc_obj_function(vm, name, arity, upvalue_count, chunk, module_path).as_root()
-}
-
 impl ObjFunction {
-    fn new(
+    pub(crate) fn new(
         name: memory::Gc<ObjString>,
         arity: u32,
         upvalue_count: usize,
@@ -302,20 +249,8 @@ pub struct ObjNative {
     pub function: NativeFn,
 }
 
-pub fn new_gc_obj_native(vm: &mut Vm, name: Gc<ObjString>, function: NativeFn) -> Gc<ObjNative> {
-    vm.allocate(ObjNative::new(name, function))
-}
-
-pub fn new_root_obj_native(
-    vm: &mut Vm,
-    name: Gc<ObjString>,
-    function: NativeFn,
-) -> Root<ObjNative> {
-    new_gc_obj_native(vm, name, function).as_root()
-}
-
 impl ObjNative {
-    fn new(name: Gc<ObjString>, function: NativeFn) -> Self {
+    pub(crate) fn new(name: Gc<ObjString>, function: NativeFn) -> Self {
         ObjNative { name, function }
     }
 }
@@ -338,29 +273,8 @@ pub struct ObjClosure {
     pub(crate) module: Gc<RefCell<ObjModule>>,
 }
 
-pub fn new_gc_obj_closure(
-    vm: &mut Vm,
-    function: Gc<ObjFunction>,
-    module: Gc<RefCell<ObjModule>>,
-) -> Gc<RefCell<ObjClosure>> {
-    let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
-        .map(|_| vm.allocate_root(RefCell::new(ObjUpvalue::new(ptr::null_mut()))))
-        .collect();
-    let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
-
-    vm.allocate(RefCell::new(ObjClosure::new(function, upvalues, module)))
-}
-
-pub fn new_root_obj_closure(
-    vm: &mut Vm,
-    function: Gc<ObjFunction>,
-    module: Gc<RefCell<ObjModule>>,
-) -> Root<RefCell<ObjClosure>> {
-    new_gc_obj_closure(vm, function, module).as_root()
-}
-
 impl ObjClosure {
-    fn new(
+    pub(crate) fn new(
         function: memory::Gc<ObjFunction>,
         upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
         module: Gc<RefCell<ObjModule>>,
@@ -396,34 +310,6 @@ pub struct ObjClass {
     pub metaclass: Gc<ObjClass>,
     pub superclass: Option<Gc<ObjClass>>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
-}
-
-pub fn new_gc_obj_class(
-    vm: &mut Vm,
-    name: Gc<ObjString>,
-    metaclass: Gc<ObjClass>,
-    superclass: Option<Gc<ObjClass>>,
-    methods: ObjStringValueMap,
-) -> Gc<ObjClass> {
-    let mut merged_methods = if let Some(parent) = superclass {
-        parent.methods.clone()
-    } else {
-        new_obj_string_value_map()
-    };
-    for (&k, &v) in &methods {
-        merged_methods.insert(k, v);
-    }
-    vm.allocate(ObjClass::new(name, metaclass, superclass, merged_methods))
-}
-
-pub fn new_root_obj_class(
-    vm: &mut Vm,
-    name: Gc<ObjString>,
-    metaclass: Gc<ObjClass>,
-    superclass: Option<Gc<ObjClass>>,
-    methods: ObjStringValueMap,
-) -> Root<ObjClass> {
-    new_gc_obj_class(vm, name, metaclass, superclass, methods).as_root()
 }
 
 impl ObjClass {
@@ -465,16 +351,8 @@ pub struct ObjInstance {
     pub fields: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
-pub fn new_gc_obj_instance(vm: &mut Vm, class: Gc<ObjClass>) -> Gc<RefCell<ObjInstance>> {
-    vm.allocate(RefCell::new(ObjInstance::new(class)))
-}
-
-pub fn new_root_obj_instance(vm: &mut Vm, class: Gc<ObjClass>) -> Root<RefCell<ObjInstance>> {
-    new_gc_obj_instance(vm, class).as_root()
-}
-
 impl ObjInstance {
-    fn new(class: Gc<ObjClass>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>) -> Self {
         ObjInstance {
             class,
             fields: HashMap::with_hasher(BuildPassThroughHasher::default()),
@@ -505,24 +383,8 @@ pub struct ObjBoundMethod<T: memory::GcManaged> {
     pub method: memory::Gc<T>,
 }
 
-pub fn new_gc_obj_bound_method<T: 'static + memory::GcManaged>(
-    vm: &mut Vm,
-    receiver: Value,
-    method: Gc<T>,
-) -> Gc<RefCell<ObjBoundMethod<T>>> {
-    vm.allocate(RefCell::new(ObjBoundMethod::new(receiver, method)))
-}
-
-pub fn new_root_obj_bound_method<T: 'static + memory::GcManaged>(
-    vm: &mut Vm,
-    receiver: Value,
-    method: Gc<T>,
-) -> Root<RefCell<ObjBoundMethod<T>>> {
-    new_gc_obj_bound_method(vm, receiver, method).as_root()
-}
-
 impl<T: memory::GcManaged> ObjBoundMethod<T> {
-    fn new(receiver: Value, method: memory::Gc<T>) -> Self {
+    pub(crate) fn new(receiver: Value, method: memory::Gc<T>) -> Self {
         ObjBoundMethod { receiver, method }
     }
 }
@@ -566,16 +428,8 @@ pub struct ObjVec {
     disp_lock: Cell<bool>,
 }
 
-pub fn new_gc_obj_vec(vm: &mut Vm, class: Gc<ObjClass>) -> Gc<RefCell<ObjVec>> {
-    vm.allocate(RefCell::new(ObjVec::new(class)))
-}
-
-pub fn new_root_obj_vec(vm: &mut Vm, class: Gc<ObjClass>) -> Root<RefCell<ObjVec>> {
-    new_gc_obj_vec(vm, class).as_root()
-}
-
 impl ObjVec {
-    fn new(class: Gc<ObjClass>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>) -> Self {
         ObjVec {
             class,
             elements: Vec::new(),
@@ -627,24 +481,8 @@ pub struct ObjVecIter {
     pub current: usize,
 }
 
-pub fn new_gc_obj_vec_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    vec: Gc<RefCell<ObjVec>>,
-) -> Gc<RefCell<ObjVecIter>> {
-    vm.allocate(RefCell::new(ObjVecIter::new(class, vec)))
-}
-
-pub fn new_root_obj_vec_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    vec: Gc<RefCell<ObjVec>>,
-) -> Root<RefCell<ObjVecIter>> {
-    new_gc_obj_vec_iter(vm, class, vec).as_root()
-}
-
 impl ObjVecIter {
-    fn new(class: Gc<ObjClass>, iterable: Gc<RefCell<ObjVec>>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, iterable: Gc<RefCell<ObjVec>>) -> Self {
         ObjVecIter {
             class,
             iterable,
@@ -685,26 +523,8 @@ pub struct ObjRange {
     pub end: isize,
 }
 
-pub fn new_gc_obj_range(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    begin: isize,
-    end: isize,
-) -> Gc<ObjRange> {
-    vm.allocate(ObjRange::new(class, begin, end))
-}
-
-pub fn new_root_obj_range(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    begin: isize,
-    end: isize,
-) -> Root<ObjRange> {
-    new_gc_obj_range(vm, class, begin, end).as_root()
-}
-
 impl ObjRange {
-    fn new(class: Gc<ObjClass>, begin: isize, end: isize) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, begin: isize, end: isize) -> Self {
         ObjRange { class, begin, end }
     }
 
@@ -765,24 +585,8 @@ pub struct ObjRangeIter {
     step: isize,
 }
 
-pub fn new_gc_obj_range_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    range: Gc<ObjRange>,
-) -> Gc<RefCell<ObjRangeIter>> {
-    vm.allocate(RefCell::new(ObjRangeIter::new(class, range)))
-}
-
-pub fn new_root_obj_range_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    range: Gc<ObjRange>,
-) -> Root<RefCell<ObjRangeIter>> {
-    new_gc_obj_range_iter(vm, class, range).as_root()
-}
-
 impl ObjRangeIter {
-    fn new(class: Gc<ObjClass>, iterable: Gc<ObjRange>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, iterable: Gc<ObjRange>) -> Self {
         let current = iterable.begin;
         ObjRangeIter {
             class,
@@ -824,16 +628,8 @@ pub struct ObjHashMap {
     disp_lock: Cell<bool>,
 }
 
-pub fn new_gc_obj_hash_map(vm: &mut Vm, class: Gc<ObjClass>) -> Gc<RefCell<ObjHashMap>> {
-    vm.allocate(RefCell::new(ObjHashMap::new(class)))
-}
-
-pub fn new_root_obj_hash_map(vm: &mut Vm, class: Gc<ObjClass>) -> Root<RefCell<ObjHashMap>> {
-    new_gc_obj_hash_map(vm, class).as_root()
-}
-
 impl ObjHashMap {
-    fn new(class: Gc<ObjClass>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>) -> Self {
         ObjHashMap {
             class,
             elements: HashMap::with_hasher(BuildPassThroughHasher::default()),
@@ -891,20 +687,8 @@ pub struct ObjTuple {
     self_lock: Cell<bool>,
 }
 
-pub fn new_gc_obj_tuple(vm: &mut Vm, class: Gc<ObjClass>, elements: Vec<Value>) -> Gc<ObjTuple> {
-    vm.allocate(ObjTuple::new(class, elements))
-}
-
-pub fn new_root_obj_tuple(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    elements: Vec<Value>,
-) -> Root<ObjTuple> {
-    new_gc_obj_tuple(vm, class, elements).as_root()
-}
-
 impl ObjTuple {
-    fn new(class: Gc<ObjClass>, elements: Vec<Value>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, elements: Vec<Value>) -> Self {
         ObjTuple {
             class,
             elements,
@@ -992,24 +776,8 @@ pub struct ObjTupleIter {
     pub current: usize,
 }
 
-pub fn new_gc_obj_tuple_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    vec: Gc<ObjTuple>,
-) -> Gc<RefCell<ObjTupleIter>> {
-    vm.allocate(RefCell::new(ObjTupleIter::new(class, vec)))
-}
-
-pub fn new_root_obj_tuple_iter(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    vec: Gc<ObjTuple>,
-) -> Root<RefCell<ObjTupleIter>> {
-    new_gc_obj_tuple_iter(vm, class, vec).as_root()
-}
-
 impl ObjTupleIter {
-    fn new(class: Gc<ObjClass>, iterable: Gc<ObjTuple>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, iterable: Gc<ObjTuple>) -> Self {
         ObjTupleIter {
             class,
             iterable,
@@ -1048,22 +816,6 @@ pub struct ObjModule {
     pub(crate) class: Gc<ObjClass>,
     pub(crate) path: Gc<ObjString>,
     pub attributes: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
-}
-
-pub(crate) fn new_gc_obj_module(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    path: Gc<ObjString>,
-) -> Gc<RefCell<ObjModule>> {
-    vm.allocate(RefCell::new(ObjModule::new(class, path)))
-}
-
-pub(crate) fn new_root_obj_module(
-    vm: &mut Vm,
-    class: Gc<ObjClass>,
-    path: Gc<ObjString>,
-) -> Root<RefCell<ObjModule>> {
-    new_gc_obj_module(vm, class, path).as_root()
 }
 
 impl ObjModule {

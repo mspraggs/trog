@@ -83,15 +83,8 @@ impl CoreClassStore {
     ) -> Self {
         let empty = vm.new_gc_obj_string("");
         let methods = object::new_obj_string_value_map();
-        let mut build_empty_class = || {
-            object::new_root_obj_class(
-                vm,
-                empty,
-                root_base_metaclass.as_gc(),
-                None,
-                methods.clone(),
-            )
-        };
+        let mut build_empty_class =
+            || vm.new_root_obj_class(empty, root_base_metaclass.as_gc(), None, methods.clone());
         let root_obj_iter_class = build_empty_class();
         let root_nil_class = build_empty_class();
         let root_boolean_class = build_empty_class();
@@ -157,8 +150,7 @@ impl CoreClassStore {
         let (no_init_methods, _method_roots) = core::build_unsupported_methods(vm);
         let mut build_value_type_class = |name| {
             let name = vm.new_gc_obj_string(name);
-            object::new_root_obj_class(
-                vm,
+            vm.new_root_obj_class(
                 name,
                 root_base_metaclass.as_gc(),
                 Some(root_object_class.as_gc()),

@@ -23,7 +23,7 @@ use crate::common;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Root};
-use crate::object::{self, ObjFunction, ObjString};
+use crate::object::{ObjFunction, ObjString};
 use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
@@ -160,7 +160,7 @@ impl Compiler {
         let num_upvalues = self.upvalues.len();
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk = vm.add_chunk(chunk);
-        object::new_root_obj_function(vm, name, self.func_arity, num_upvalues, chunk, module_path)
+        vm.new_root_obj_function(name, self.func_arity, num_upvalues, chunk, module_path)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {

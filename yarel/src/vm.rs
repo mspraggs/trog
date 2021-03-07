@@ -34,9 +34,9 @@ use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
 use crate::memory::{self, Gc, GcBoxPtr, GcManaged, Heap, Root};
 use crate::object::{
-    self, NativeFn, ObjClass, ObjClosure, ObjFiber, ObjFunction, ObjHashMap, ObjModule, ObjNative,
-    ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjStringValueMap, ObjTuple, ObjTupleIter,
-    ObjUpvalue, ObjVec, ObjVecIter,
+    self, NativeFn, ObjBoundMethod, ObjClass, ObjClosure, ObjFiber, ObjFunction, ObjHashMap,
+    ObjInstance, ObjModule, ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter,
+    ObjStringValueMap, ObjTuple, ObjTupleIter, ObjUpvalue, ObjVec, ObjVecIter,
 };
 #[allow(unused_imports)]
 use crate::unsafe_ref_cell::{Ref, RefMut, UnsafeRefCell};
@@ -202,7 +202,7 @@ impl Vm {
         self.ip = ptr::null();
         self.fiber = None;
         let module = self.get_module(&function.module_path);
-        let closure = object::new_root_obj_closure(self, function.as_gc(), module);
+        let closure = self.new_root_obj_closure(function.as_gc(), module);
         let fiber = self.new_root_obj_fiber(closure.as_gc());
         if closure.borrow().function.arity != args.len() as u32 + 1 {
             return Err(error!(
@@ -241,7 +241,7 @@ impl Vm {
 
     pub fn define_native(&mut self, module_name: &str, var_name: &str, function: NativeFn) {
         let var_name = self.new_gc_obj_string(var_name);
-        let native = object::new_root_obj_native(self, var_name, function);
+        let native = self.new_root_obj_native(var_name, function);
         self.get_module(module_name)
             .borrow_mut()
             .attributes
@@ -266,17 +266,88 @@ impl Vm {
         ret
     }
 
+    pub fn new_root_obj_upvalue(&mut self, value: &mut Value) -> Root<RefCell<ObjUpvalue>> {
+        self.allocate_root(RefCell::new(ObjUpvalue::new(value)))
+    }
+
+    pub fn new_root_obj_function(
+        &mut self,
+        name: Gc<ObjString>,
+        arity: u32,
+        upvalue_count: usize,
+        chunk: Gc<Chunk>,
+        module_path: Gc<ObjString>,
+    ) -> Root<ObjFunction> {
+        self.allocate_root(ObjFunction::new(
+            name,
+            arity,
+            upvalue_count,
+            chunk,
+            module_path,
+        ))
+    }
+
+    pub fn new_root_obj_native(
+        &mut self,
+        name: Gc<ObjString>,
+        function: NativeFn,
+    ) -> Root<ObjNative> {
+        self.allocate_root(ObjNative::new(name, function))
+    }
+
+    pub fn new_root_obj_closure(
+        &mut self,
+        function: Gc<ObjFunction>,
+        module: Gc<RefCell<ObjModule>>,
+    ) -> Root<RefCell<ObjClosure>> {
+        let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
+            .map(|_| self.allocate_root(RefCell::new(ObjUpvalue::new(ptr::null_mut()))))
+            .collect();
+        let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
+        self.allocate_root(RefCell::new(ObjClosure::new(function, upvalues, module)))
+    }
+
+    pub fn new_root_obj_class(
+        &mut self,
+        name: Gc<ObjString>,
+        metaclass: Gc<ObjClass>,
+        superclass: Option<Gc<ObjClass>>,
+        methods: ObjStringValueMap,
+    ) -> Root<ObjClass> {
+        let mut merged_methods = if let Some(parent) = superclass {
+            parent.methods.clone()
+        } else {
+            object::new_obj_string_value_map()
+        };
+        for (&k, &v) in &methods {
+            merged_methods.insert(k, v);
+        }
+        self.allocate_root(ObjClass::new(name, metaclass, superclass, merged_methods))
+    }
+
+    pub fn new_root_obj_instance(&mut self, class: Gc<ObjClass>) -> Root<RefCell<ObjInstance>> {
+        self.allocate_root(RefCell::new(ObjInstance::new(class)))
+    }
+
+    pub fn new_root_obj_bound_method<T: 'static + memory::GcManaged>(
+        &mut self,
+        receiver: Value,
+        method: Gc<T>,
+    ) -> Root<RefCell<ObjBoundMethod<T>>> {
+        self.allocate_root(RefCell::new(ObjBoundMethod::new(receiver, method)))
+    }
+
     pub fn new_root_obj_string_iter(
         &mut self,
         string: Gc<ObjString>,
     ) -> Root<RefCell<ObjStringIter>> {
         let class = self.class_store.get_obj_string_iter_class();
-        object::new_root_obj_string_iter(self, class, string)
+        self.allocate_root(RefCell::new(ObjStringIter::new(class, string)))
     }
 
     pub fn new_root_obj_hash_map(&mut self) -> Root<RefCell<ObjHashMap>> {
         let class = self.class_store.get_obj_hash_map_class();
-        object::new_root_obj_hash_map(self, class)
+        self.allocate_root(RefCell::new(ObjHashMap::new(class)))
     }
 
     pub fn new_root_obj_range(&mut self, begin: isize, end: isize) -> Root<ObjRange> {
@@ -285,27 +356,35 @@ impl Vm {
 
     pub fn new_root_obj_range_iter(&mut self, range: Gc<ObjRange>) -> Root<RefCell<ObjRangeIter>> {
         let class = self.class_store.get_obj_range_iter_class();
-        object::new_root_obj_range_iter(self, class, range)
+        self.allocate_root(RefCell::new(ObjRangeIter::new(class, range)))
     }
 
     pub fn new_root_obj_tuple(&mut self, elements: Vec<Value>) -> Root<ObjTuple> {
         let class = self.class_store.get_obj_tuple_class();
-        object::new_root_obj_tuple(self, class, elements)
+        self.allocate_root(ObjTuple::new(class, elements))
     }
 
     pub fn new_root_obj_tuple_iter(&mut self, tuple: Gc<ObjTuple>) -> Root<RefCell<ObjTupleIter>> {
         let class = self.class_store.get_obj_tuple_iter_class();
-        object::new_root_obj_tuple_iter(self, class, tuple)
+        self.allocate_root(RefCell::new(ObjTupleIter::new(class, tuple)))
     }
 
     pub fn new_root_obj_vec(&mut self) -> Root<RefCell<ObjVec>> {
         let class = self.class_store.get_obj_vec_class();
-        object::new_root_obj_vec(self, class)
+        self.allocate_root(RefCell::new(ObjVec::new(class)))
     }
 
     pub fn new_root_obj_vec_iter(&mut self, vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIter>> {
         let class = self.class_store.get_obj_vec_iter_class();
-        object::new_root_obj_vec_iter(self, class, vec)
+        self.allocate_root(RefCell::new(ObjVecIter::new(class, vec)))
+    }
+
+    pub fn new_root_obj_module(
+        &mut self,
+        class: Gc<ObjClass>,
+        path: Gc<ObjString>,
+    ) -> Root<RefCell<ObjModule>> {
+        self.allocate_root(RefCell::new(ObjModule::new(class, path)))
     }
 
     pub(crate) fn new_root_obj_fiber(
@@ -330,8 +409,10 @@ impl Vm {
         if let Some(module) = self.modules.get(&path) {
             return module.as_gc();
         }
-        let module =
-            object::new_root_obj_module(self, self.class_store.get_obj_module_class(), path);
+        let module = self.allocate_root(RefCell::new(ObjModule::new(
+            self.class_store.get_obj_module_class(),
+            path,
+        )));
         let gc_module = module.as_gc();
         self.modules.insert(path, module);
         gc_module
@@ -747,10 +828,7 @@ impl Vm {
 
                 byte if byte == OpCode::BuildHashMap as u8 => {
                     let num_elements = read_byte!() as usize;
-                    let map = object::new_root_obj_hash_map(
-                        self,
-                        self.class_store.get_obj_hash_map_class(),
-                    );
+                    let map = self.new_root_obj_hash_map();
                     let begin = self.stack_size() - num_elements * 2;
                     for i in 0..num_elements {
                         let key = self.active_fiber().stack[begin + 2 * i];
@@ -796,18 +874,14 @@ impl Vm {
                         .iter()
                         .copied()
                         .collect();
-                    let tuple = object::new_root_obj_tuple(
-                        self,
-                        self.class_store.get_obj_tuple_class(),
-                        elements,
-                    );
+                    let tuple = self.new_root_obj_tuple(elements);
                     self.discard(num_operands);
                     self.push(Value::ObjTuple(tuple.as_gc()));
                 }
 
                 byte if byte == OpCode::BuildVec as u8 => {
                     let num_operands = read_byte!() as usize;
-                    let vec = object::new_root_obj_vec(self, self.class_store.get_obj_vec_class());
+                    let vec = self.new_root_obj_vec();
                     let begin = self.stack_size() - num_operands;
                     let end = self.stack_size();
                     vec.borrow_mut().elements = self.active_fiber().stack[begin..end]
@@ -877,8 +951,8 @@ impl Vm {
 
                     let upvalue_count = function.upvalue_count;
 
-                    let closure = object::new_gc_obj_closure(self, function, self.active_module);
-                    self.push(Value::ObjClosure(closure));
+                    let closure = self.new_root_obj_closure(function, self.active_module);
+                    self.push(Value::ObjClosure(closure.as_gc()));
 
                     for i in 0..upvalue_count {
                         let is_local = read_byte!() != 0;
@@ -931,14 +1005,13 @@ impl Vm {
                     let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
                     let superclass = self.class_store.get_object_class();
                     self.working_class_def = Some(ClassDef::new(name, metaclass_name, superclass));
-                    let class = object::new_gc_obj_class(
-                        self,
+                    let class = self.new_root_obj_class(
                         name,
                         self.class_store.get_base_metaclass(),
                         None,
                         object::new_obj_string_value_map(),
                     );
-                    self.push(Value::ObjClass(class));
+                    self.push(Value::ObjClass(class.as_gc()));
                 }
 
                 byte if byte == OpCode::DefineClass as u8 => {
@@ -950,21 +1023,15 @@ impl Vm {
                     let methods = class_def.methods.clone();
                     let static_methods = class_def.static_methods.clone();
                     let superclass = class_def.superclass;
-                    let metaclass = object::new_root_obj_class(
-                        self,
+                    let metaclass = self.new_root_obj_class(
                         metaclass_name,
                         base_metaclass,
                         Some(self.class_store.get_object_class()),
                         static_methods,
                     );
 
-                    let defined_class = object::new_root_obj_class(
-                        self,
-                        name,
-                        metaclass.as_gc(),
-                        Some(superclass),
-                        methods,
-                    );
+                    let defined_class =
+                        self.new_root_obj_class(name, metaclass.as_gc(), Some(superclass), methods);
                     self.working_class_def = None;
                     self.poke(0, Value::ObjClass(defined_class.as_gc()));
                 }
@@ -1026,8 +1093,8 @@ impl Vm {
                     let module = self.get_module(&path);
                     self.push(Value::ObjModule(module));
 
-                    let closure = object::new_gc_obj_closure(self, function.as_gc(), module);
-                    self.push(Value::ObjClosure(closure));
+                    let closure = self.new_root_obj_closure(function.as_gc(), module);
+                    self.push(Value::ObjClosure(closure.as_gc()));
 
                     self.call_value(self.peek(0), 0)?;
                     let active_module_path = self.active_module.borrow().path;
@@ -1069,8 +1136,8 @@ impl Vm {
             }
 
             Value::ObjClass(class) => {
-                let instance = object::new_gc_obj_instance(self, class);
-                self.poke(arg_count, Value::ObjInstance(instance));
+                let instance = self.new_root_obj_instance(class);
+                self.poke(arg_count, Value::ObjInstance(instance.as_gc()));
 
                 let init = class.methods.get(&self.init_string);
                 if let Some(Value::ObjClosure(initialiser)) = init {
@@ -1295,10 +1362,10 @@ impl Vm {
         let instance = self.peek(0);
         let bound = match class.methods.get(&name) {
             Some(Value::ObjClosure(ptr)) => {
-                Value::ObjBoundMethod(object::new_gc_obj_bound_method(self, instance, *ptr))
+                Value::ObjBoundMethod(self.new_root_obj_bound_method(instance, *ptr).as_gc())
             }
             Some(Value::ObjNative(ptr)) => {
-                Value::ObjBoundNative(object::new_gc_obj_bound_method(self, instance, *ptr))
+                Value::ObjBoundNative(self.new_root_obj_bound_method(instance, *ptr).as_gc())
             }
             None => {
                 return Err(error!(
@@ -1348,8 +1415,8 @@ impl Vm {
 
         // Cache miss! Create the range and cache it.
 
-        let range =
-            object::new_root_obj_range(self, self.class_store.get_obj_range_class(), begin, end);
+        let class = self.class_store.get_obj_range_class();
+        let range = self.allocate_root(ObjRange::new(class, begin, end));
         let range_gc = range.as_gc();
 
         // Check the cache size. If we're at the limit, evict the oldest element.

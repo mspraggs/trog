@@ -47,7 +47,7 @@ fn build_methods(
 
     for (name, native) in definitions {
         let name = vm.new_gc_obj_string(name);
-        let obj_native = object::new_root_obj_native(vm, name, *native);
+        let obj_native = vm.new_root_obj_native(name, *native);
         roots.push(obj_native.clone());
         methods.insert(name, Value::ObjNative(obj_native.as_gc()));
     }
@@ -622,7 +622,7 @@ pub fn new_root_obj_string_iter_class(
     let class_name = vm.new_gc_obj_string("StringIter");
     let (methods, _native_roots) =
         build_methods(vm, &[("next", string_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 /// Tuple implementation
@@ -640,7 +640,7 @@ pub fn new_root_obj_tuple_class(
         ("iter", tuple_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn tuple_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
@@ -666,8 +666,8 @@ fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             let tuple_len = tuple.elements.len() as isize;
             let (begin, end) = r.get_bounded_range(tuple_len, "Tuple")?;
             let new_elements = Vec::from(&tuple.elements[begin..end]);
-            let new_tuple = object::new_gc_obj_tuple(vm, tuple.class, new_elements);
-            Ok(Value::ObjTuple(new_tuple))
+            let new_tuple = vm.new_root_obj_tuple(new_elements);
+            Ok(Value::ObjTuple(new_tuple.as_gc()))
         }
         _ => Err(error!(
             ErrorKind::TypeError,
@@ -704,7 +704,7 @@ pub fn new_root_obj_tuple_iter_class(
     let class_name = vm.new_gc_obj_string("TupleIter");
     let (methods, _native_roots) =
         build_methods(vm, &[("next", tuple_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn tuple_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -735,7 +735,7 @@ pub fn new_root_obj_vec_class(
         ("iter", vec_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn vec_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
@@ -788,12 +788,12 @@ fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         Value::ObjRange(r) => {
             let vec_len = vec.borrow().elements.len() as isize;
             let (begin, end) = r.get_bounded_range(vec_len, "Vec")?;
-            let new_vec = object::new_gc_obj_vec(vm, vec.borrow().class);
+            let new_vec = vm.new_root_obj_vec();
             new_vec
                 .borrow_mut()
                 .elements
                 .extend_from_slice(&vec.borrow().elements[begin..end]);
-            Ok(Value::ObjVec(new_vec))
+            Ok(Value::ObjVec(new_vec.as_gc()))
         }
         _ => Err(error!(
             ErrorKind::TypeError,
@@ -856,7 +856,7 @@ pub fn new_root_obj_vec_iter_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("VecIter");
     let (methods, _native_roots) = build_methods(vm, &[("next", vec_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn vec_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -882,7 +882,7 @@ pub fn new_root_obj_range_class(
         ("iter", range_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn range_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -925,7 +925,7 @@ pub fn new_root_obj_range_iter_class(
     let class_name = vm.new_gc_obj_string("RangeIter");
     let (methods, _native_roots) =
         build_methods(vm, &[("next", range_iter_next as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 /// HashMap implementation
@@ -949,7 +949,7 @@ pub fn new_root_obj_hash_map_class(
         ("items", hash_map_items as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn hash_map_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
@@ -1113,7 +1113,7 @@ pub fn new_root_obj_module_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Module");
     let (methods, _native_roots) = build_methods(vm, &[("__init__", no_init as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 /// Fiber implementation
@@ -1125,7 +1125,7 @@ pub fn new_root_obj_fiber_metaclass(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("FiberClass");
     let (methods, _native_roots) = build_methods(vm, &[("yield", fiber_yield as NativeFn)], None);
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 pub fn new_root_obj_fiber_class(
@@ -1142,7 +1142,7 @@ pub fn new_root_obj_fiber_class(
         ],
         None,
     );
-    object::new_root_obj_class(vm, class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
 fn fiber_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
