@@ -50,29 +50,29 @@ pub struct CoreClassStore {
 impl CoreClassStore {
     pub(crate) unsafe fn new_empty() -> Self {
         CoreClassStore {
-            root_base_metaclass: Root::dangling(),
-            root_object_class: Root::dangling(),
-            root_nil_class: Root::dangling(),
-            root_boolean_class: Root::dangling(),
-            root_number_class: Root::dangling(),
-            root_sentinel_class: Root::dangling(),
-            root_obj_closure_class: Root::dangling(),
-            root_obj_native_class: Root::dangling(),
-            root_obj_closure_method_class: Root::dangling(),
-            root_obj_native_method_class: Root::dangling(),
-            root_obj_iter_class: Root::dangling(),
-            root_obj_map_iter_class: Root::dangling(),
-            root_obj_filter_iter_class: Root::dangling(),
-            root_obj_tuple_class: Root::dangling(),
-            root_obj_tuple_iter_class: Root::dangling(),
-            root_obj_vec_class: Root::dangling(),
-            root_obj_vec_iter_class: Root::dangling(),
-            root_obj_range_class: Root::dangling(),
-            root_obj_range_iter_class: Root::dangling(),
-            root_obj_hash_map_class: Root::dangling(),
-            root_obj_module_class: Root::dangling(),
-            root_obj_string_iter_class: Root::dangling(),
-            root_obj_fiber_class: Root::dangling(),
+            root_base_metaclass: Root::null(),
+            root_object_class: Root::null(),
+            root_nil_class: Root::null(),
+            root_boolean_class: Root::null(),
+            root_number_class: Root::null(),
+            root_sentinel_class: Root::null(),
+            root_obj_closure_class: Root::null(),
+            root_obj_native_class: Root::null(),
+            root_obj_closure_method_class: Root::null(),
+            root_obj_native_method_class: Root::null(),
+            root_obj_iter_class: Root::null(),
+            root_obj_map_iter_class: Root::null(),
+            root_obj_filter_iter_class: Root::null(),
+            root_obj_tuple_class: Root::null(),
+            root_obj_tuple_iter_class: Root::null(),
+            root_obj_vec_class: Root::null(),
+            root_obj_vec_iter_class: Root::null(),
+            root_obj_range_class: Root::null(),
+            root_obj_range_iter_class: Root::null(),
+            root_obj_hash_map_class: Root::null(),
+            root_obj_module_class: Root::null(),
+            root_obj_string_iter_class: Root::null(),
+            root_obj_fiber_class: Root::null(),
         }
     }
 
@@ -365,8 +365,8 @@ pub(crate) unsafe fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
     // is held by a local `Root` instance. This is safe because the `Root` instance doesn't access
     // any fields on the pointer it holds whilst the metaclass assignment is being performed.
     let data = ObjClass {
-        name: Gc::dangling(),
-        metaclass: Gc::dangling(),
+        name: Gc::null(),
+        metaclass: Gc::null(),
         superclass: None,
         methods: object::new_obj_string_value_map(),
     };

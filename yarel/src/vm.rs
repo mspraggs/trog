@@ -162,16 +162,16 @@ impl Vm {
         // re-assigned immediately to valid GC pointers by init_heap_allocated_data.
         let mut vm = Vm {
             ip: ptr::null(),
-            active_module: unsafe { Gc::dangling() },
-            active_chunk: unsafe { Gc::dangling() },
+            active_module: Gc::null(),
+            active_chunk: Gc::null(),
             fiber: None,
-            init_string: unsafe { Gc::dangling() },
-            next_string: unsafe { Gc::dangling() },
+            init_string: Gc::null(),
+            next_string: Gc::null(),
             class_store: unsafe { CoreClassStore::new_empty() },
             chunks: Vec::new(),
             modules: HashMap::with_hasher(BuildPassThroughHasher::default()),
             core_chunks: Vec::new(),
-            string_class: unsafe { Root::dangling() },
+            string_class: Root::null(),
             string_store: HashMap::with_hasher(BuildPassThroughHasher::default()),
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
@@ -1441,21 +1441,21 @@ impl Vm {
         let mut base_metaclass_ptr = unsafe { class_store::new_base_metaclass(self) };
         let root_base_metaclass = Root::from(base_metaclass_ptr);
         let mut object_class_ptr = self.allocate_bare(ObjClass {
-            name: unsafe { Gc::dangling() },
+            name: Gc::null(),
             metaclass: root_base_metaclass.as_gc(),
             superclass: None,
             methods: object::new_obj_string_value_map(),
         });
         let root_object_class = Root::from(object_class_ptr);
         let mut string_metaclass_ptr = self.allocate_bare(ObjClass::new(
-            unsafe { Gc::dangling() },
+            Gc::null(),
             root_base_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),
         ));
         let root_string_metaclass = Root::from(string_metaclass_ptr);
         let mut string_class_ptr = self.allocate_bare(ObjClass::new(
-            unsafe { Gc::dangling() },
+            Gc::null(),
             root_string_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),

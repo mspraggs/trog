@@ -23,7 +23,7 @@ use std::marker::PhantomPinned;
 use std::mem;
 use std::ops::Deref;
 use std::pin::Pin;
-use std::ptr::NonNull;
+use std::ptr::{self, NonNull};
 
 use crate::common;
 use crate::unsafe_ref_cell::UnsafeRefCell;
@@ -89,45 +89,48 @@ pub struct Root<T: 'static + GcManaged + ?Sized> {
 }
 
 impl<T: GcManaged> Root<T> {
-    pub unsafe fn dangling() -> Self {
+    pub fn null() -> Self {
         Root { ptr: None }
     }
 
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_none()
+    }
+
     pub fn as_gc(&self) -> Gc<T> {
-        Gc {
-            ptr: self.ptr.expect("Expected initialised Root."),
-        }
+        Gc { ptr: self.ptr }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Root<T> {
     fn inc_num_roots(&self) {
-        self.gc_box().inc_num_roots();
+        self.gc_box().expect("Expected GcBox.").inc_num_roots();
     }
 
     fn dec_num_roots(&self) {
-        self.gc_box().dec_num_roots();
+        self.gc_box().expect("Expected GcBox.").dec_num_roots();
     }
 }
 
 impl<T: GcManaged + ?Sized> Root<T> {
-    fn gc_box(&self) -> &GcBox<T> {
-        unsafe {
-            self.ptr
-                .as_ref()
-                .expect("Expected initialised Root.")
-                .as_ref()
-        }
+    fn gc_box(&self) -> Option<&GcBox<T>> {
+        unsafe { self.ptr.as_ref().map(|p| p.as_ref()) }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcManaged for Root<T> {
     fn mark(&self) {
-        self.gc_box().mark();
+        match self.gc_box() {
+            Some(p) => p.mark(),
+            None => {}
+        }
     }
 
     fn blacken(&self) {
-        self.gc_box().blacken();
+        match self.gc_box() {
+            Some(p) => p.blacken(),
+            None => {}
+        }
     }
 }
 
@@ -143,7 +146,7 @@ impl<T: 'static + GcManaged> Deref for Root<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &self.gc_box().data
+        &self.gc_box().expect("Expected GcBox.").data
     }
 }
 
@@ -158,7 +161,7 @@ impl<T: 'static + GcManaged + ?Sized> Drop for Root<T> {
 
 impl<T: GcManaged> From<Gc<T>> for Root<T> {
     fn from(gc: Gc<T>) -> Self {
-        let ret = Root { ptr: Some(gc.ptr) };
+        let ret = Root { ptr: gc.ptr };
         ret.inc_num_roots();
         ret
     }
@@ -173,7 +176,7 @@ impl<T: GcManaged> From<GcBoxPtr<T>> for Root<T> {
 }
 
 pub struct Gc<T: GcManaged + ?Sized> {
-    ptr: GcBoxPtr<T>,
+    ptr: Option<GcBoxPtr<T>>,
 }
 
 impl<T: GcManaged> Gc<T> {
@@ -181,32 +184,43 @@ impl<T: GcManaged> Gc<T> {
         Root::from(*self)
     }
 
-    pub(crate) unsafe fn dangling() -> Self {
-        Gc {
-            ptr: GcBoxPtr::dangling(),
-        }
+    pub(crate) fn null() -> Self {
+        Gc { ptr: None }
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.ptr.is_none()
     }
 }
 
 impl<T: 'static + GcManaged> Gc<T> {
     pub fn as_ptr(&self) -> *const T {
-        &self.gc_box().data
+        match self.gc_box() {
+            Some(p) => &p.data,
+            None => ptr::null(),
+        }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Gc<T> {
-    fn gc_box(&self) -> &GcBox<T> {
-        unsafe { self.ptr.as_ref() }
+    fn gc_box(&self) -> Option<&GcBox<T>> {
+        unsafe { self.ptr.as_ref().map(|p| p.as_ref()) }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcManaged for Gc<T> {
     fn mark(&self) {
-        self.gc_box().mark();
+        match self.gc_box() {
+            Some(p) => p.mark(),
+            None => {}
+        }
     }
 
     fn blacken(&self) {
-        self.gc_box().blacken();
+        match self.gc_box() {
+            Some(p) => p.blacken(),
+            None => {}
+        }
     }
 }
 
@@ -222,13 +236,16 @@ impl<T: 'static + GcManaged> Deref for Gc<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &self.gc_box().data
+        &self.gc_box().expect("Expected GcBox.").data
     }
 }
 
 impl<T: GcManaged> PartialEq for Gc<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.ptr.as_ptr() == other.ptr.as_ptr()
+        match (self.ptr, other.ptr) {
+            (Some(p0), Some(p1)) => {p0.as_ptr() == p1.as_ptr()}
+            _ => false,
+        }
     }
 }
 
@@ -254,7 +271,7 @@ impl Heap {
         data: T,
     ) -> Gc<T> {
         Gc {
-            ptr: self.allocate_bare(static_roots, data),
+            ptr: Some(self.allocate_bare(static_roots, data)),
         }
     }
     pub(crate) fn allocate_root<T: 'static + GcManaged>(
