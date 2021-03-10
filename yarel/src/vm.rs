@@ -145,8 +145,7 @@ pub struct Vm {
     modules: HashMap<Gc<ObjString>, Root<RefCell<ObjModule>>, BuildPassThroughHasher>,
     core_chunks: Vec<Root<Chunk>>,
     string_class: Root<ObjClass>,
-    /// TODO: Rewrite the string store to prevent key collisions.
-    string_store: HashMap<u64, Root<ObjString>, BuildPassThroughHasher>,
+    string_store: string_store::ObjStringStore,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
     working_class_def: Option<ClassDef>,
     module_loader: LoadModuleFn,
@@ -172,7 +171,7 @@ impl Vm {
             modules: HashMap::with_hasher(BuildPassThroughHasher::default()),
             core_chunks: Vec::new(),
             string_class: Root::null(),
-            string_store: HashMap::with_hasher(BuildPassThroughHasher::default()),
+            string_store: string_store::ObjStringStore::new(), // HashMap::with_hasher(BuildPassThroughHasher::default()),
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
             module_loader: default_read_module_source,
@@ -258,11 +257,13 @@ impl Vm {
             (*data).hash(&mut hasher);
             hasher.finish()
         };
-        if let Some(gc_string) = self.string_store.get(&hash).map(|v| v.as_gc()) {
-            return gc_string;
+        let key = (hash, data);
+        if let Some(string) = self.string_store.get(key) {
+            return string.as_gc();
         }
-        let ret = self.allocate(ObjString::new(self.string_class.as_gc(), data, hash));
-        self.string_store.insert(hash, ret.as_root());
+        let string = self.allocate_root(ObjString::new(self.string_class.as_gc(), data, hash));
+        let ret = string.as_gc();
+        self.string_store.insert(string);
         ret
     }
 
@@ -1605,5 +1606,109 @@ impl Vm {
     fn discard(&mut self, num: usize) {
         let stack_len = self.active_fiber_mut().stack.len();
         self.active_fiber_mut().stack.truncate(stack_len - num);
+    }
+}
+
+mod string_store {
+    use std::mem;
+
+    use crate::memory::Root;
+    use crate::object::ObjString;
+
+    const INIT_CAPACITY: usize = 4;
+    const MAX_LOAD: f64 = 0.75;
+
+    // We want somewhere to intern our heap-allocated strings, and the built-in HashSet
+    // unfortunately doesn't meet our requirements. We need fine-grained hash control, since we're
+    // using a custom hash algorithm along with caching of hash on the stored ObjString, meaning the
+    // &str objects we use for look-up and the ObjString objects we store have different
+    // implementations of Hash.
+    pub(super) struct ObjStringStore {
+        entries: Vec<Option<Root<ObjString>>>,
+        size: usize,
+        mask: usize,
+    }
+
+    impl ObjStringStore {
+        pub(super) fn new() -> Self {
+            Default::default()
+        }
+
+        pub(super) fn get(&self, key: (u64, &str)) -> Option<&Root<ObjString>> {
+            let entry = &self.entries[find_index(&self.entries, key, self.mask)];
+            if entry.is_some() {
+                entry.as_ref()
+            } else {
+                None
+            }
+        }
+
+        pub(super) fn insert(&mut self, value: Root<ObjString>) -> Option<Root<ObjString>> {
+            if self.size + 1 > (self.entries.len() as f64 * MAX_LOAD) as usize {
+                self.adjust_capacity(self.entries.len() * 2);
+            }
+
+            let key = (value.hash, value.as_str());
+            let index = find_index(&self.entries, key, self.mask);
+            let entry = &mut self.entries[index];
+
+            let is_new_key = entry.is_none();
+            if is_new_key {
+                self.size += 1;
+            }
+            entry.replace(value)
+        }
+
+        fn adjust_capacity(&mut self, new_capacity: usize) {
+            let mut new_entries: Vec<Option<Root<ObjString>>> = vec![None; new_capacity];
+            let mask = new_capacity - 1;
+
+            for entry in self.entries.iter_mut() {
+                if entry.is_none() {
+                    continue;
+                }
+
+                let key = {
+                    let entry = entry.as_ref().unwrap();
+                    (entry.hash, entry.as_str())
+                };
+                let index = find_index(&new_entries, key, mask);
+                let dest = &mut new_entries[index];
+                *dest = mem::take(entry);
+            }
+
+            self.entries = new_entries;
+            self.mask = mask;
+        }
+    }
+
+    fn find_index(entries: &Vec<Option<Root<ObjString>>>, key: (u64, &str), mask: usize) -> usize {
+        let (hash, string) = key;
+        let mut index = (hash as usize) & mask;
+
+        loop {
+            match entries[index].as_ref() {
+                Some(entry) => {
+                    if entry.hash == hash && entry.as_str() == string {
+                        return index;
+                    }
+                }
+                None => {
+                    return index;
+                }
+            }
+
+            index = (index + 1) & mask;
+        }
+    }
+
+    impl Default for ObjStringStore {
+        fn default() -> Self {
+            ObjStringStore {
+                entries: vec![Default::default(); INIT_CAPACITY],
+                size: 0,
+                mask: INIT_CAPACITY - 1,
+            }
+        }
     }
 }
