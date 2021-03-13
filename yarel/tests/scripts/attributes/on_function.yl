@@ -1,0 +1,4 @@
+// [module "main", line 3] Error at 'attr': Unsupported function attribute 'attr'.
+// 65
+#[attr]
+fn foo() {}

@@ -3,12 +3,14 @@
 // <class Inner>
 // 0
 class Outer {
-  static fn method() {
+  #[static]
+  fn method() {
     print(Self);
     fn f() {
       print(Self);
       class Inner {
-        static fn method() {
+        #[static]
+        fn method() {
           print(Self);
         }
       }

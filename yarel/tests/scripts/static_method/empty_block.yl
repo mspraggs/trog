@@ -2,7 +2,8 @@
 // nil
 // 0
 class Foo {
-  static fn bar() {}
+  #[static]
+  fn bar() {}
 }
 print(Foo().bar());
 print(Foo.bar());

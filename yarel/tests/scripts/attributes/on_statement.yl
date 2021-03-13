@@ -1,0 +1,27 @@
+// [module "main", line 10] Error at '#': Unexpected attribute list.
+// [module "main", line 12] Error at '#': Unexpected attribute list.
+// [module "main", line 14] Error at '#': Unexpected attribute list.
+// [module "main", line 16] Error at '#': Unexpected attribute list.
+// [module "main", line 18] Error at '#': Unexpected attribute list.
+// [module "main", line 20] Error at '#': Unexpected attribute list.
+// [module "main", line 22] Error at '#': Unexpected attribute list.
+// [module "main", line 26] Error at '#': Unexpected attribute list.
+// 65
+#[attr]
+print(1);
+#[attr]
+return;
+#[attr]
+for i in 0..0 {}
+#[attr]
+while true {}
+#[attr]
+if true {}
+#[attr]
+import "foo";
+#[attr]
+{
+    var foo;
+}
+#[attr]
+var foo;

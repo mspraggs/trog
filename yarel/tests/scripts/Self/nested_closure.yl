@@ -1,7 +1,8 @@
 // Foo
 // 0
 class Foo {
-  static fn get_closure() {
+  #[static]
+  fn get_closure() {
     fn f() {
       fn g() {
         fn h() {
@@ -13,7 +14,8 @@ class Foo {
     }
     return f;
   }
-  static fn to_string() { return "Foo"; }
+  #[static]
+  fn to_string() { return "Foo"; }
 }
 var closure = Foo.get_closure();
 print(closure()()());

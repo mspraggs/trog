@@ -1,7 +1,9 @@
 // baz
 // 0
 class Foo {
-  static fn bar() { return Self; }
-  static fn baz() { return "baz"; }
+  #[static]
+  fn bar() { return Self; }
+  #[static]
+  fn baz() { return "baz"; }
 }
 print(Foo.bar().baz());

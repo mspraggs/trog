@@ -1,0 +1,4 @@
+// [module "main", line 3] Error at 'b': Expected ']' after attribute list.
+// 65
+#[a b]
+class Foo {}

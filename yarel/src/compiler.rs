@@ -14,6 +14,7 @@
  */
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::mem;
 use std::path::Path;
@@ -233,6 +234,8 @@ struct Parser<'a> {
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
     module_path: Gc<ObjString>,
+    attributes: HashMap<String, Token>,
+    attribute_opener: Option<Token>,
     vm: &'a mut Vm,
 }
 
@@ -250,6 +253,8 @@ impl<'a> Parser<'a> {
             errors: RefCell::new(Vec::new()),
             compiled_functions: Vec::new(),
             module_path,
+            attributes: HashMap::new(),
+            attribute_opener: None,
             vm,
         };
         ret.new_compiler(FunctionKind::Script, "");
@@ -399,25 +404,30 @@ impl<'a> Parser<'a> {
     }
 
     fn method(&mut self) {
-        let first_token = self.current.clone();
-        let static_method = self.match_token(TokenKind::Static);
+        if self.match_token(TokenKind::Hash) {
+            self.attributes_declaration();
+        }
+
+        let static_attr = self.attributes.remove("static");
+        self.check_supported_attributes("method");
+
         self.consume(TokenKind::Fn, "Expected 'fn' before method name.");
         self.consume(TokenKind::Identifier, "Expected method name.");
         let previous = self.previous.clone();
         let constant = self.identifier_constant(&previous);
 
         let kind = if self.previous.source == "__init__" {
-            if static_method {
-                self.error_at(first_token, "Constructors cannot be static.");
+            if let Some(attr) = static_attr {
+                self.error_at(attr, "Constructors cannot be static.");
             }
             FunctionKind::Initialiser
-        } else if static_method {
+        } else if static_attr.is_some() {
             FunctionKind::StaticMethod
         } else {
             FunctionKind::Method
         };
         self.function(kind);
-        let opcode = if static_method {
+        let opcode = if kind == FunctionKind::StaticMethod {
             OpCode::StaticMethod
         } else {
             OpCode::Method
@@ -426,6 +436,7 @@ impl<'a> Parser<'a> {
     }
 
     fn class_declaration(&mut self) {
+        self.check_supported_attributes("class");
         self.consume(TokenKind::Identifier, "Expected class name.");
         let name = self.previous.clone();
         let name_constant = self.identifier_constant(&name);
@@ -475,13 +486,47 @@ impl<'a> Parser<'a> {
     }
 
     fn fn_declaration(&mut self) {
+        self.check_supported_attributes("function");
         let global = self.parse_variable("Expected function name.");
         self.mark_initialised();
         self.function(FunctionKind::Function);
         self.define_variable(global);
     }
 
+    fn attributes_declaration(&mut self) {
+        let opener = self.previous.clone();
+        if !self.match_token(TokenKind::LeftBracket) {
+            self.error_at_current("Expected '[' after '#'.");
+            return;
+        }
+        let mut attributes = HashMap::new();
+
+        while self.match_token(TokenKind::Identifier) {
+            if attributes
+                .insert(self.previous.source.clone(), self.previous.clone())
+                .is_some()
+            {
+                self.error(&format!("Duplicate attribute '{}'.", self.previous.source));
+                break;
+            }
+
+            if !self.match_token(TokenKind::Comma) {
+                break;
+            }
+        }
+        if attributes.is_empty() {
+            self.error_at_current("Expected at least one attribute.");
+        }
+        if self.match_token(TokenKind::RightBracket) {
+            self.attribute_opener = Some(opener);
+            self.attributes = attributes;
+            return;
+        }
+        self.error_at_current("Expected ']' after attribute list.");
+    }
+
     fn var_declaration(&mut self) {
+        self.check_no_attributes();
         let global = self.parse_variable("Expected variable name.");
 
         if self.match_token(TokenKind::Equal) {
@@ -670,6 +715,7 @@ impl<'a> Parser<'a> {
             }
 
             match self.current.kind {
+                TokenKind::Hash => return,
                 TokenKind::Class => return,
                 TokenKind::Fn => return,
                 TokenKind::Var => return,
@@ -715,6 +761,7 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) {
+        self.check_no_attributes();
         if self.match_token(TokenKind::Import) {
             self.import_statement();
         } else if self.match_token(TokenKind::For) {
@@ -739,6 +786,8 @@ impl<'a> Parser<'a> {
             self.class_declaration();
         } else if self.match_token(TokenKind::Fn) {
             self.fn_declaration();
+        } else if self.match_token(TokenKind::Hash) {
+            self.attributes_declaration();
         } else if self.match_token(TokenKind::Var) {
             self.var_declaration();
         } else {
@@ -998,6 +1047,22 @@ impl<'a> Parser<'a> {
             }
             _ => {}
         }
+    }
+
+    fn check_no_attributes(&mut self) {
+        if let Some(opener) = self.attribute_opener.take() {
+            self.error_at(opener, "Unexpected attribute list.");
+        }
+        self.attributes.clear();
+    }
+
+    fn check_supported_attributes(&mut self, kind: &str) {
+        for attr in self.attributes.values() {
+            let msg = format!("Unsupported {} attribute '{}'.", kind, attr.source);
+            self.error_at(attr.clone(), &msg);
+        }
+        self.attributes.clear();
+        self.attribute_opener = None;
     }
 
     fn resolve_local(&mut self, name: &Token) -> Option<u8> {
@@ -1580,6 +1645,12 @@ const RULES: [ParseRule; 54] = [
         infix: Some(Parser::binary),
         precedence: Precedence::Comparison,
     },
+    // Hash
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
     // Bar
     ParseRule {
         prefix: Some(Parser::lambda),
@@ -1697,12 +1768,6 @@ const RULES: [ParseRule; 54] = [
     // Self
     ParseRule {
         prefix: Some(Parser::self_),
-        infix: None,
-        precedence: Precedence::None,
-    },
-    // Static
-    ParseRule {
-        prefix: None,
         infix: None,
         precedence: Precedence::None,
     },

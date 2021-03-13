@@ -45,6 +45,7 @@ pub enum TokenKind {
     GreaterEqual,
     Less,
     LessEqual,
+    Hash,
     Bar,
     Identifier,
     Str,
@@ -65,7 +66,6 @@ pub enum TokenKind {
     Or,
     Return,
     Self_,
-    Static,
     Super,
     True,
     Var,
@@ -181,6 +181,7 @@ impl Scanner {
             ":" => self.make_token(TokenKind::Colon),
             ";" => self.make_token(TokenKind::SemiColon),
             "," => self.make_token(TokenKind::Comma),
+            "#" => self.make_token(TokenKind::Hash),
             "." => {
                 let match_char = self.match_char(".");
                 self.make_token(if match_char {
@@ -411,7 +412,6 @@ impl Scanner {
                     let next = &self.source[self.start + 1..self.start + 2];
                     return match next {
                         "e" => self.check_keyword(2, "lf", TokenKind::Self_),
-                        "t" => self.check_keyword(2, "atic", TokenKind::Static),
                         "u" => self.check_keyword(2, "per", TokenKind::Super),
                         _ => TokenKind::Identifier,
                     };

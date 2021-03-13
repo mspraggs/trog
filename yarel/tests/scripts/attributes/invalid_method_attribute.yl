@@ -1,0 +1,6 @@
+// [module "main", line 3] Error at 'foo': Unsupported method attribute 'foo'.
+// 65
+class Foo {
+    #[static, foo]
+    fn foo() {}
+}

@@ -1,9 +1,10 @@
 // Undefined variable 'method'.
-// [module "main", line 7] in method()
-// [module "main", line 10] in script
+// [module "main", line 8] in method()
+// [module "main", line 11] in script
 // 70
 class Foo {
-  static fn method() {
+  #[static]
+  fn method() {
     print(method);
   }
 }

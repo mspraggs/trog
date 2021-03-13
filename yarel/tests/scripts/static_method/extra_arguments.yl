@@ -1,8 +1,9 @@
 // Expected 2 arguments but found 4.
-// [module "main", line 10] in script
+// [module "main", line 11] in script
 // 70
 class Foo {
-  static fn method(a, b) {
+  #[static]
+  fn method(a, b) {
     print(a);
     print(b);
   }
