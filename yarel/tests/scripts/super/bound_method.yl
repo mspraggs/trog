@@ -5,6 +5,7 @@ class A {
     print("A.method(" + arg + ")");
   }
 }
+#[constructor(new)]
 class B < A {
   fn get_closure(self) {
     return super.method;
@@ -13,5 +14,5 @@ class B < A {
     print("B.method(" + arg + ")");
   }
 }
-var closure = B().get_closure();
+var closure = B.new().get_closure();
 closure("arg");

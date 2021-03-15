@@ -1,11 +1,12 @@
 // got method
 // arg
 // 0
+#[constructor(new)]
 class Foo {
   fn bar(self, arg) {
     print(arg);
   }
 }
-var bar = Foo().bar;
+var bar = Foo.new().bar;
 print("got method");
 bar("arg");

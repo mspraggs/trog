@@ -1,17 +1,18 @@
 // Derived.foo()
 // Expected 2 arguments but found 4.
-// [module "main", line 14] in foo()
-// [module "main", line 17] in script
+// [module "main", line 15] in foo()
+// [module "main", line 18] in script
 // 70
 class Base {
   fn foo(self, a, b) {
     print("Base.foo(" + a + ", " + b + ")");
   }
 }
+#[constructor(new)]
 class Derived < Base {
   fn foo(self) {
     print("Derived.foo()");
     super.foo("a", "b", "c", "d");
   }
 }
-Derived().foo();
+Derived.new().foo();

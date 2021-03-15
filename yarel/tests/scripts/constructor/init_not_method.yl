@@ -1,12 +1,13 @@
 // not initializer
 // 0
 class Foo {
-  fn __init__(self) {
-    print("Foo.__init__(" + self + ")");
-    this.field = "__init__";
+  #[constructor]
+  fn new(self) {
+    print("Foo.new(" + self + ")");
+    this.field = "new";
   }
 }
-fn __init__() {
+fn new() {
   print("not initializer");
 }
-__init__();
+new();

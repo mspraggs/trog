@@ -75,6 +75,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::Loop => jump_instruction("LOOP", -1, chunk, offset),
         OpCode::Call => byte_instruction("CALL", chunk, offset),
         OpCode::Invoke => invoke_instruction("INVOKE", chunk, offset),
+        OpCode::Construct => byte_instruction("CONSTRUCT", chunk, offset),
         OpCode::SuperInvoke => invoke_instruction("SUPER_INVOKE", chunk, offset),
         OpCode::Closure => {
             let mut offset = offset + 1;

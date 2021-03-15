@@ -1,10 +1,11 @@
 // Expected 2 arguments but found 4.
-// [module "main", line 10] in script
+// [module "main", line 11] in script
 // 70
 class Foo {
-  fn __init__(self, a, b) {
+  #[constructor]
+  fn new(self, a, b) {
     self.a = a;
     self.b = b;
   }
 }
-var foo = Foo(1, 2, 3, 4);
+var foo = Foo.new(1, 2, 3, 4);

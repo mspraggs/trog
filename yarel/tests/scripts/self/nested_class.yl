@@ -2,19 +2,21 @@
 // <Outer instance @ [MEMADDR]>
 // <Inner instance @ [MEMADDR]>
 // 0
+#[constructor(new)]
 class Outer {
 fn method(self) {
     print(self);
     fn f() {
       print(self);
+      #[constructor(new)]
       class Inner {
       fn method(self) {
           print(self);
         }
       }
-      Inner().method();
+      Inner.new().method();
     }
     f();
   }
 }
-Outer().method();
+Outer.new().method();

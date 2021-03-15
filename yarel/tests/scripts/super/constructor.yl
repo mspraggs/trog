@@ -1,15 +1,17 @@
-// Derived.__init__()
-// Base.__init__(a, b)
+// Derived.new()
+// Base.new(a, b)
 // 0
 class Base {
-  fn __init__(self, a, b) {
-    print("Base.__init__(" + a + ", " + b + ")");
+  #[constructor]
+  fn new(self, a, b) {
+    print("Base.new(" + a + ", " + b + ")");
   }
 }
 class Derived < Base {
-  fn __init__(self) {
-    print("Derived.__init__()");
-    super.__init__("a", "b");
+  #[constructor]
+  fn new(self) {
+    print("Derived.new()");
+    super.new("a", "b");
   }
 }
-Derived();
+Derived.new();

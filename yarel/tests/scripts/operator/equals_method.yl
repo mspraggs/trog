@@ -1,10 +1,11 @@
 // true
 // false
 // 0
+#[constructor(new)]
 class Foo {
   fn method(self) {}
 }
-var foo = Foo();
+var foo = Foo.new();
 var foo_method = foo.method;
 print(foo_method == foo_method);
 print(foo.method == foo.method);

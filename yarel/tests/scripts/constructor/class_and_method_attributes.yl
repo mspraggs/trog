@@ -1,0 +1,13 @@
+// In explicit new method.
+// 3
+// 0
+#[constructor(new)]
+class Foo {
+    #[constructor]
+    fn new(self, a, b) {
+        print("In explicit new method.");
+        self.bar = a + b;
+    }
+}
+var foo = Foo.new(1, 2);
+print(foo.bar);

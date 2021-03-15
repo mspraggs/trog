@@ -2,11 +2,12 @@
 // <Foo instance @ [MEMADDR]>
 // 0
 class Foo {
-  fn __init__(self) {
-    fn __init__() {
+  #[constructor]
+  fn new(self) {
+    fn new() {
       return "bar";
     }
-    print(__init__());
+    print(new());
   }
 }
-print(Foo());
+print(Foo.new());

@@ -928,6 +928,15 @@ impl Vm {
                     self.call_value(self.peek(arg_count), arg_count)?;
                 }
 
+                byte if byte == OpCode::Construct as u8 => {
+                    let arg_count = read_byte!() as usize;
+                    let value = self.peek(arg_count);
+                    if let Some(class) = value.try_as_obj_class() {
+                        let instance = self.new_root_obj_instance(class);
+                        self.poke(arg_count, Value::ObjInstance(instance.as_gc()));
+                    }
+                }
+
                 byte if byte == OpCode::Invoke as u8 => {
                     let method = read_string!();
                     let arg_count = read_byte!() as usize;
@@ -1136,32 +1145,13 @@ impl Vm {
                 self.call_native(bound.borrow().method, arg_count)
             }
 
-            Value::ObjClass(class) => {
-                let instance = self.new_root_obj_instance(class);
-                self.poke(arg_count, Value::ObjInstance(instance.as_gc()));
-
-                let init = class.methods.get(&self.init_string);
-                if let Some(Value::ObjClosure(initialiser)) = init {
-                    return self.call_closure(*initialiser, arg_count);
-                } else if let Some(Value::ObjNative(initialiser)) = init {
-                    return self.call_native(*initialiser, arg_count);
-                } else if arg_count != 0 {
-                    return Err(error!(
-                        ErrorKind::TypeError,
-                        "Expected 0 arguments but found {}.", arg_count
-                    ));
-                }
-
-                Ok(())
-            }
-
             Value::ObjClosure(function) => self.call_closure(function, arg_count),
 
             Value::ObjNative(wrapped) => self.call_native(wrapped, arg_count),
 
             _ => Err(error!(
                 ErrorKind::TypeError,
-                "Can only call functions and classes."
+                "Can only call functions and methods."
             )),
         }
     }
@@ -1353,6 +1343,8 @@ impl Vm {
         class_def.methods.insert(name, method);
         if is_static {
             class_def.static_methods.insert(name, method);
+        } else {
+            class_def.static_methods.remove(&name);
         }
         self.pop();
 
@@ -1485,7 +1477,7 @@ impl Vm {
         }
 
         let empty_chunk = self.allocate(Chunk::new());
-        let init_string = self.new_gc_obj_string("__init__");
+        let init_string = self.new_gc_obj_string("new");
         let next_string = self.new_gc_obj_string("next");
         self.active_chunk = empty_chunk;
         self.init_string = init_string;

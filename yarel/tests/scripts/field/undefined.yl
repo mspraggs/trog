@@ -1,6 +1,7 @@
 // Undefined property 'bar'.
-// [module "main", line 6] in script
+// [module "main", line 7] in script
 // 70
+#[constructor(new)]
 class Foo {}
-var foo = Foo();
+var foo = Foo.new();
 foo.bar;

@@ -7,10 +7,11 @@ class A {
   }
 }
 class B < A {}
+#[constructor(new)]
 class C < B {
   fn foo(self) {
     print("C.foo()");
     super.foo();
   }
 }
-C().foo();
+C.new().foo();

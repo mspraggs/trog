@@ -1,0 +1,10 @@
+// Not a constructor.
+// 0
+#[constructor(new)]
+class Foo {
+    #[static]
+    fn new() {
+        print("Not a constructor.");
+    }
+}
+Foo.new();

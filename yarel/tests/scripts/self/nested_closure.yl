@@ -1,5 +1,6 @@
 // Foo
 // 0
+#[constructor(new)]
 class Foo {
   fn get_closure(self) {
     fn f() {
@@ -15,5 +16,5 @@ class Foo {
   }
   fn to_string(self) { return "Foo"; }
 }
-var closure = Foo().get_closure();
+var closure = Foo.new().get_closure();
 print(closure()()());

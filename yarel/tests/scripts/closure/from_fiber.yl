@@ -1,7 +1,7 @@
 // Hello, World!
 // 0
 var name = "World";
-var fiber = Fiber(|greeting| {
+var fiber = Fiber.new(|greeting| {
     fn closure() {
         print("${greeting}, ${name}!");
     }

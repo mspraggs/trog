@@ -10,7 +10,8 @@
 // 34
 // 0
 class Foo {
-    fn __init__(self, count) {
+    #[constructor]
+    fn new(self, count) {
         self.counter = 0;
         self.max = count;
         self.first = 0;
@@ -34,6 +35,6 @@ class Foo {
     }
 }
 
-for n in Foo(10) {
+for n in Foo.new(10) {
     print(n);
 }

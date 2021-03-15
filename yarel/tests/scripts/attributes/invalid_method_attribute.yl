@@ -1,4 +1,4 @@
-// [module "main", line 3] Error at 'foo': Unsupported method attribute 'foo'.
+// [module "main", line 4] Error at 'foo': Unsupported method attribute 'foo'.
 // 65
 class Foo {
     #[static, foo]

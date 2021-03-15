@@ -1,6 +1,7 @@
 // false
 // false
 // 0
+#[constructor(new)]
 class Bar {}
 print(!Bar);
-print(!Bar());
+print(!Bar.new());

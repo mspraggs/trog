@@ -1,6 +1,7 @@
 // param
 // 0
 var f;
+#[constructor(new)]
 class Foo {
   fn method(self, param) {
     fn f_() {
@@ -9,5 +10,5 @@ class Foo {
     f = f_;
   }
 }
-Foo().method("param");
+Foo.new().method("param");
 f();

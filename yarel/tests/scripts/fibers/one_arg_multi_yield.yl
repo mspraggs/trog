@@ -5,7 +5,7 @@
 // nil
 // 0
 {
-    var fiber = Fiber(|arg| {
+    var fiber = Fiber.new(|arg| {
         print("arg: ${arg}");
         var local = "yay!";
         Fiber.yield("Fiber yielded!");

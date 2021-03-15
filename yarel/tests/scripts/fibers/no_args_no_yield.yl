@@ -2,7 +2,7 @@
 // nil
 // 0
 {
-    var fiber = Fiber(|| {
+    var fiber = Fiber.new(|| {
         var local = "yay!";
         print("In a fiber: ${local}");
     });

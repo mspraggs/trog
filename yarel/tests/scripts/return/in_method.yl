@@ -1,9 +1,10 @@
 // ok
 // 0
+#[constructor(new)]
 class Foo {
   fn method(self) {
     return "ok";
     print("bad");
   }
 }
-print(Foo().method());
+print(Foo.new().method());

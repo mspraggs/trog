@@ -1,5 +1,6 @@
 // Undefined property 'unknown'.
-// [module "main", line 5] in script
+// [module "main", line 6] in script
 // 70
+#[constructor(new)]
 class Foo {}
-Foo().unknown();
+Foo.new().unknown();

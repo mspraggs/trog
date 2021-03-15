@@ -6,11 +6,12 @@ class Foo {
   fn method_on_foo(self) { print("foo"); }
   fn override(self) { print("foo"); }
 }
+#[constructor(new)]
 class Bar < Foo {
   fn method_on_bar(self) { print("bar"); }
   fn override(self) { print("bar"); }
 }
-var bar = Bar();
+var bar = Bar.new();
 bar.method_on_foo();
 bar.method_on_bar();
 bar.override();

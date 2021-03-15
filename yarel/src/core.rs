@@ -84,21 +84,6 @@ pub(crate) fn type_(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     Ok(Value::ObjClass(vm.get_class(vm.peek(0))))
 }
 
-pub(crate) fn no_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
-    let class = type_(vm, 1)?;
-    Err(error!(
-        ErrorKind::RuntimeError,
-        "Construction of type {} is unsupported.", class
-    ))
-}
-
-pub(crate) fn build_unsupported_methods(
-    vm: &mut Vm,
-) -> (object::ObjStringValueMap, Vec<Root<ObjNative>>) {
-    let method_map = &[("__init__", no_init as NativeFn)];
-    build_methods(vm, method_map, None)
-}
-
 pub(crate) fn sentinel(_vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 0)?;
     Ok(Value::Sentinel)
@@ -158,6 +143,7 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
     metaclass: &mut GcBoxPtr<ObjClass>,
 ) {
     let static_method_map = [
+        ("from", string_from as NativeFn),
         ("from_ascii", string_from_ascii as NativeFn),
         ("from_utf8", string_from_utf8 as NativeFn),
         ("from_code_points", string_from_code_points as NativeFn),
@@ -174,7 +160,6 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
         .methods
         .clone();
     let method_map = [
-        ("__init__", string_init as NativeFn),
         ("__getitem__", string_get_item as NativeFn),
         ("iter", string_iter as NativeFn),
         ("len", string_len as NativeFn),
@@ -328,7 +313,7 @@ fn string_from_code_points(vm: &mut Vm, num_args: usize) -> Result<Value, Error>
     Ok(Value::ObjString(string))
 }
 
-fn string_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+fn string_from(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 1)?;
 
     Ok(Value::ObjString(
@@ -634,18 +619,12 @@ pub fn new_root_obj_tuple_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Tuple");
     let method_map = [
-        ("__init__", tuple_init as NativeFn),
         ("__getitem__", tuple_get_item as NativeFn),
         ("len", tuple_len as NativeFn),
         ("iter", tuple_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
-}
-
-fn tuple_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
-    let vec = vm.new_root_obj_tuple(Vec::new());
-    Ok(Value::ObjTuple(vec.as_gc()))
 }
 
 fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -726,7 +705,6 @@ pub fn new_root_obj_vec_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Vec");
     let method_map = [
-        ("__init__", vec_init as NativeFn),
         ("push", vec_push as NativeFn),
         ("pop", vec_pop as NativeFn),
         ("__getitem__", vec_get_item as NativeFn),
@@ -736,11 +714,6 @@ pub fn new_root_obj_vec_class(
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
-}
-
-fn vec_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
-    let vec = vm.new_root_obj_vec();
-    Ok(Value::ObjVec(vec.as_gc()))
 }
 
 fn vec_push(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -877,21 +850,9 @@ pub fn new_root_obj_range_class(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Range");
-    let method_map = [
-        ("__init__", range_init as NativeFn),
-        ("iter", range_iter as NativeFn),
-    ];
+    let method_map = [("iter", range_iter as NativeFn)];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
-}
-
-fn range_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 2)?;
-
-    let begin = utils::validate_integer(vm.peek(1))?;
-    let end = utils::validate_integer(vm.peek(0))?;
-    let range = vm.new_root_obj_range(begin, end);
-    Ok(Value::ObjRange(range.as_gc()))
 }
 
 fn range_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -937,7 +898,6 @@ pub fn new_root_obj_hash_map_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("HashMap");
     let method_map = [
-        ("__init__", hash_map_init as NativeFn),
         ("has_key", hash_map_has_key as NativeFn),
         ("get", hash_map_get as NativeFn),
         ("insert", hash_map_insert as NativeFn),
@@ -950,11 +910,6 @@ pub fn new_root_obj_hash_map_class(
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
-}
-
-fn hash_map_init(vm: &mut Vm, _num_args: usize) -> Result<Value, Error> {
-    let hash_map = vm.new_root_obj_hash_map();
-    Ok(Value::ObjHashMap(hash_map.as_gc()))
 }
 
 fn hash_map_has_key(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -1112,8 +1067,12 @@ pub fn new_root_obj_module_class(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Module");
-    let (methods, _native_roots) = build_methods(vm, &[("__init__", no_init as NativeFn)], None);
-    vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
+    vm.new_root_obj_class(
+        class_name,
+        metaclass,
+        Some(superclass),
+        object::new_obj_string_value_map(),
+    )
 }
 
 /// Fiber implementation
@@ -1124,7 +1083,14 @@ pub fn new_root_obj_fiber_metaclass(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("FiberClass");
-    let (methods, _native_roots) = build_methods(vm, &[("yield", fiber_yield as NativeFn)], None);
+    let (methods, _native_roots) = build_methods(
+        vm,
+        &[
+            ("new", fiber_init as NativeFn),
+            ("yield", fiber_yield as NativeFn),
+        ],
+        None,
+    );
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
@@ -1134,14 +1100,7 @@ pub fn new_root_obj_fiber_class(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Fiber");
-    let (methods, _native_roots) = build_methods(
-        vm,
-        &[
-            ("__init__", fiber_init as NativeFn),
-            ("call", fiber_call as NativeFn),
-        ],
-        None,
-    );
+    let (methods, _native_roots) = build_methods(vm, &[("call", fiber_call as NativeFn)], None);
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 

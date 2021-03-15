@@ -1,4 +1,4 @@
 // Expected an integer value but found '10.4'.
 // [module "main", line 4] in script
 // 70
-Range(0, 10.4);
+0..10.4;

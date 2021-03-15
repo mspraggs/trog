@@ -1,6 +1,7 @@
 // Value is 6
 // nil
 // 0
+#[constructor(new)]
 class Foo {
   fn method(self) {
     self.a = 2;
@@ -8,5 +9,5 @@ class Foo {
     print("Value is ${self.a}");
   }
 }
-var result = Foo().method();
+var result = Foo.new().method();
 print(result);

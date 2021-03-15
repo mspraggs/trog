@@ -1,9 +1,10 @@
 // variable
 // 0
 var foo = "variable";
+#[constructor(new)]
 class Foo {
   fn method(self) {
     print(foo);
   }
 }
-Foo().method();
+Foo.new().method();

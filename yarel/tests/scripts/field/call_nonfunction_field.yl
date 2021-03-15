@@ -1,7 +1,8 @@
-// Can only call functions and classes.
-// [module "main", line 7] in script
+// Can only call functions and methods.
+// [module "main", line 8] in script
 // 70
+#[constructor(new)]
 class Foo {}
-var foo = Foo();
+var foo = Foo.new();
 foo.bar = "not fn";
 foo.bar();

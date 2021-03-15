@@ -1,12 +1,13 @@
-// __init__
+// new
 // <Foo instance @ [MEMADDR]>
 // 0
 class Foo {
-  fn __init__(self) {
-    print("__init__");
+  #[constructor]
+  fn new(self) {
+    print("new");
     return;
     print("nope");
   }
 }
-var foo = Foo();
+var foo = Foo.new();
 print(foo);

@@ -8,13 +8,14 @@
 // value = <Foo instance @ [MEMADDR]>
 // 0
 fn foo() {}
+#[constructor(new)]
 class Foo {}
 
-print("value = " + String(nil));
-print("value = " + String(42));
-print("value = " + String(true));
-print("value = " + String(false));
-print("value = " + String(clock));
-print("value = " + String(foo));
-print("value = " + String(Foo));
-print("value = " + String(Foo()));
+print("value = " + String.from(nil));
+print("value = " + String.from(42));
+print("value = " + String.from(true));
+print("value = " + String.from(false));
+print("value = " + String.from(clock));
+print("value = " + String.from(foo));
+print("value = " + String.from(Foo));
+print("value = " + String.from(Foo.new()));

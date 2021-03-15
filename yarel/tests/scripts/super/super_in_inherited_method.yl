@@ -13,9 +13,10 @@ class B < A {
     print("B");
   }
 }
+#[constructor(new)]
 class C < B {
   fn say(self) {
     print("C");
   }
 }
-C().test();
+C.new().test();

@@ -3,7 +3,7 @@
 // nil
 // 0
 {
-    var fiber = Fiber(|a| {
+    var fiber = Fiber.new(|a| {
         var local = "yay!";
         Fiber.yield("Fiber yielded!");
         print("In a fiber: ${local} (${a})");

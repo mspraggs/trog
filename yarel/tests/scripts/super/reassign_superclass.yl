@@ -6,6 +6,7 @@ class Base {
     print("Base.method()");
   }
 }
+#[constructor(new)]
 class Derived < Base {
   fn method(self) {
     super.method();
@@ -16,7 +17,7 @@ class OtherBase {
     print("OtherBase.method()");
   }
 }
-var derived = Derived();
+var derived = Derived.new();
 derived.method();
 Base = OtherBase;
 derived.method();

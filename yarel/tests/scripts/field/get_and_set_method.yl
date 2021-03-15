@@ -1,6 +1,7 @@
 // other
 // method
 // 0
+#[constructor(new)]
 class Foo {
   fn method(self) {
     print("method");
@@ -9,7 +10,7 @@ class Foo {
     print("other");
   }
 }
-var foo = Foo();
+var foo = Foo.new();
 var method = foo.method;
 foo.method = foo.other;
 foo.method();

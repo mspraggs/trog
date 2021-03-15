@@ -1,4 +1,4 @@
-// Can only call functions and classes.
+// Can only call functions and methods.
 // [module "main", line 4] in script
 // 70
 nil();

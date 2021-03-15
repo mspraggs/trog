@@ -1,10 +1,11 @@
 // Foo
 // 0
+#[constructor(new)]
 class Foo {
   #[static]
   fn get_closure() {
     fn closure() {
-      return Self();
+      return Self.new();
     }
     return closure;
   }

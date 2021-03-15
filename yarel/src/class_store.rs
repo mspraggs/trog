@@ -147,14 +147,13 @@ impl CoreClassStore {
             Err(error) => eprint!("{}", error),
         }
 
-        let (no_init_methods, _method_roots) = core::build_unsupported_methods(vm);
         let mut build_value_type_class = |name| {
             let name = vm.new_gc_obj_string(name);
             vm.new_root_obj_class(
                 name,
                 root_base_metaclass.as_gc(),
                 Some(root_object_class.as_gc()),
-                no_init_methods.clone(),
+                object::new_obj_string_value_map(),
             )
         };
         let root_nil_class = build_value_type_class("Nil");

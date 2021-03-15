@@ -3,11 +3,12 @@
 // <class FooClass>
 // <class Type>
 // 0
+#[constructor(new)]
 class Foo {
 }
 print(type(Type) == Type);
 
-var foo = Foo();
+var foo = Foo.new();
 print(type(foo));
 print(type(type(foo)));
 print(type(type(type(foo))));

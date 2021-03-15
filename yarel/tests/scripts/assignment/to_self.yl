@@ -1,10 +1,11 @@
-// [module "main", line 5] Error at '=': Invalid assignment target.
+// [module "main", line 6] Error at '=': Invalid assignment target.
 // 65
 class Foo {
-  fn __init__(self) {
+  #[constructor]
+  fn new(self) {
     self = "value";
     print(self);
   }
 }
-var foo = Foo();
+var foo = Foo.new();
 print(foo);

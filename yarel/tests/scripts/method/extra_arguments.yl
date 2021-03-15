@@ -1,10 +1,11 @@
 // Expected 2 arguments but found 4.
-// [module "main", line 10] in script
+// [module "main", line 11] in script
 // 70
+#[constructor(new)]
 class Foo {
   fn method(self, a, b) {
     print(a);
     print(b);
   }
 }
-Foo().method(1, 2, 3, 4);
+Foo.new().method(1, 2, 3, 4);

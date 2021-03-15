@@ -2,6 +2,6 @@
 // Cannot call a finished fiber.
 // [module "main", line 7] in script
 // 70
-var fiber = Fiber(|| { print("In fiber."); });
+var fiber = Fiber.new(|| { print("In fiber."); });
 fiber.call();
 fiber.call();

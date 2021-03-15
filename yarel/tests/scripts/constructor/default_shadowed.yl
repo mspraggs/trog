@@ -1,0 +1,8 @@
+// Undefined property 'new'.
+// [module "main", line 8] in script
+// 70
+#[constructor(new)]
+class Foo {
+    fn new(self) {}
+}
+Foo.new();

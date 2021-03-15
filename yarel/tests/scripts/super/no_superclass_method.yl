@@ -1,11 +1,12 @@
 // Undefined property 'does_not_exist'.
-// [module "main", line 8] in foo()
-// [module "main", line 11] in script
+// [module "main", line 9] in foo()
+// [module "main", line 12] in script
 // 70
 class Base {}
+#[constructor(new)]
 class Derived < Base {
   fn foo(self) {
     super.does_not_exist(1);
   }
 }
-Derived().foo();
+Derived.new().foo();

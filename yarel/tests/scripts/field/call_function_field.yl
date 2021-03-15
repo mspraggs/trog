@@ -1,9 +1,10 @@
 // bar
 // 0
+#[constructor(new)]
 class Foo {}
 fn bar() {
   print("bar");
 }
-var foo = Foo();
+var foo = Foo.new();
 foo.bar = bar;
 foo.bar();

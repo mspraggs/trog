@@ -1,7 +1,7 @@
 // In a fiber: foo (some_local)
 // 0
 {
-    var fiber = Fiber(|a| {
+    var fiber = Fiber.new(|a| {
         var local = "some_local";
         print("In a fiber: ${a} (${local})");
     });

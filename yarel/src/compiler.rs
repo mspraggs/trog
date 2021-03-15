@@ -223,6 +223,11 @@ pub fn compile(
     parser.parse()
 }
 
+struct Attribute {
+    name: Token,
+    arguments: Vec<Token>,
+}
+
 struct Parser<'a> {
     current: Token,
     previous: Token,
@@ -234,7 +239,7 @@ struct Parser<'a> {
     errors: RefCell<Vec<String>>,
     compiled_functions: Vec<Root<ObjFunction>>,
     module_path: Gc<ObjString>,
-    attributes: HashMap<String, Token>,
+    attributes: HashMap<String, Attribute>,
     attribute_opener: Option<Token>,
     vm: &'a mut Vm,
 }
@@ -359,7 +364,7 @@ impl<'a> Parser<'a> {
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
             let chunk = function.chunk;
-            let func_name = format!("{}", *function);
+            let func_name = format!("{}", Value::ObjFunction(function.as_gc()));
             debug::disassemble_chunk(&chunk, &func_name);
         }
 
@@ -390,6 +395,10 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::RightParen, "Expected ')' after parameters.");
 
         self.consume(TokenKind::LeftBrace, "Expected '{' before function body.");
+        if kind == FunctionKind::Initialiser {
+            let arity = (self.compiler().func_arity - 1) as u8;
+            self.emit_bytes([OpCode::Construct as u8, arity]);
+        }
         self.block();
 
         let (function, upvalues) = self.finalise_compiler();
@@ -408,7 +417,8 @@ impl<'a> Parser<'a> {
             self.attributes_declaration();
         }
 
-        let static_attr = self.attributes.remove("static");
+        let static_attr = self.take_attribute("static", 0);
+        let constructor_attr = self.take_attribute("constructor", 0);
         self.check_supported_attributes("method");
 
         self.consume(TokenKind::Fn, "Expected 'fn' before method name.");
@@ -416,9 +426,9 @@ impl<'a> Parser<'a> {
         let previous = self.previous.clone();
         let constant = self.identifier_constant(&previous);
 
-        let kind = if self.previous.source == "__init__" {
+        let kind = if constructor_attr.is_some() {
             if let Some(attr) = static_attr {
-                self.error_at(attr, "Constructors cannot be static.");
+                self.error_at(attr.name, "Constructors cannot be static.");
             }
             FunctionKind::Initialiser
         } else if static_attr.is_some() {
@@ -427,16 +437,35 @@ impl<'a> Parser<'a> {
             FunctionKind::Method
         };
         self.function(kind);
-        let opcode = if kind == FunctionKind::StaticMethod {
-            OpCode::StaticMethod
-        } else {
+        let opcode = if kind == FunctionKind::Method {
             OpCode::Method
+        } else {
+            OpCode::StaticMethod
         };
         self.emit_constant_op(opcode, constant);
     }
 
+    fn initialiser(&mut self, name: Token) {
+        let name_constant = self.identifier_constant(&name);
+        let kind = FunctionKind::Initialiser;
+
+        self.new_compiler(kind, name.source.as_str());
+        self.begin_scope();
+        self.emit_bytes([OpCode::Construct as u8, 0]);
+        let (function, _) = self.finalise_compiler();
+
+        let constant = self.make_constant(value::Value::ObjFunction(function.as_gc()));
+        self.emit_constant_op(OpCode::Closure, constant);
+
+        let opcode = OpCode::StaticMethod;
+        self.emit_constant_op(opcode, name_constant);
+    }
+
     fn class_declaration(&mut self) {
+        let constructor_attr = self.take_attribute("constructor", 1);
+        let constructor_name = constructor_attr.map(|a| a.arguments[0].clone());
         self.check_supported_attributes("class");
+
         self.consume(TokenKind::Identifier, "Expected class name.");
         let name = self.previous.clone();
         let name_constant = self.identifier_constant(&name);
@@ -470,6 +499,11 @@ impl<'a> Parser<'a> {
 
         self.named_variable(name, false);
         self.consume(TokenKind::LeftBrace, "Expected '{' before class body.");
+
+        if let Some(name) = constructor_name {
+            self.initialiser(name);
+        }
+
         while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
             self.method();
         }
@@ -493,6 +527,55 @@ impl<'a> Parser<'a> {
         self.define_variable(global);
     }
 
+    fn take_attribute(&mut self, name: &str, num_args: usize) -> Option<Attribute> {
+        let attr = self.attributes.remove(name);
+        if let Some(attr) = attr {
+            if attr.arguments.len() != num_args {
+                let msg = format!(
+                    "Expected {} argument{} to '{}' attribute.",
+                    num_args,
+                    if num_args != 1 { "s" } else { "" },
+                    attr.name.source
+                );
+                self.error_at(attr.name, &msg);
+                None
+            } else {
+                Some(attr)
+            }
+        } else {
+            None
+        }
+    }
+
+    fn attribute(&mut self) -> Option<Attribute> {
+        if !self.match_token(TokenKind::Identifier) {
+            return None;
+        }
+        let name = self.previous.clone();
+        let mut arguments = Vec::new();
+
+        if self.match_token(TokenKind::LeftParen) {
+            loop {
+                if !self.match_token(TokenKind::Identifier) {
+                    self.error_at_current("Expected an attribute argument.");
+                    return None;
+                }
+                arguments.push(self.previous.clone());
+
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+
+            if !self.match_token(TokenKind::RightParen) {
+                self.error_at_current("Expected ')' after attribute arguments.");
+                return None;
+            }
+        }
+
+        Some(Attribute { name, arguments })
+    }
+
     fn attributes_declaration(&mut self) {
         let opener = self.previous.clone();
         if !self.match_token(TokenKind::LeftBracket) {
@@ -501,9 +584,9 @@ impl<'a> Parser<'a> {
         }
         let mut attributes = HashMap::new();
 
-        while self.match_token(TokenKind::Identifier) {
+        while let Some(attribute) = self.attribute() {
             if attributes
-                .insert(self.previous.source.clone(), self.previous.clone())
+                .insert(attribute.name.source.clone(), attribute)
                 .is_some()
             {
                 self.error(&format!("Duplicate attribute '{}'.", self.previous.source));
@@ -517,12 +600,12 @@ impl<'a> Parser<'a> {
         if attributes.is_empty() {
             self.error_at_current("Expected at least one attribute.");
         }
-        if self.match_token(TokenKind::RightBracket) {
-            self.attribute_opener = Some(opener);
-            self.attributes = attributes;
+        if !self.match_token(TokenKind::RightBracket) {
+            self.error_at_current("Expected ']' after attribute list.");
             return;
         }
-        self.error_at_current("Expected ']' after attribute list.");
+        self.attribute_opener = Some(opener);
+        self.attributes = attributes;
     }
 
     fn var_declaration(&mut self) {
@@ -1058,8 +1141,8 @@ impl<'a> Parser<'a> {
 
     fn check_supported_attributes(&mut self, kind: &str) {
         for attr in self.attributes.values() {
-            let msg = format!("Unsupported {} attribute '{}'.", kind, attr.source);
-            self.error_at(attr.clone(), &msg);
+            let msg = format!("Unsupported {} attribute '{}'.", kind, attr.name.source);
+            self.error_at(attr.name.clone(), &msg);
         }
         self.attributes.clear();
         self.attribute_opener = None;

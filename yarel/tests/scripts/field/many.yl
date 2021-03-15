@@ -1,4 +1,4 @@
-// [module "main", line 21887] Error at 'longan': Too many constants in one chunk.
+// [module "main", line 21887] Error at 'lime': Too many constants in one chunk.
 // [module "main", line 21888] Error at 'print': Too many constants in one chunk.
 // [module "main", line 21889] Error at 'print': Too many constants in one chunk.
 // [module "main", line 21890] Error at 'print': Too many constants in one chunk.
@@ -39,8 +39,9 @@
 // [module "main", line 21925] Error at 'print': Too many constants in one chunk.
 // [module "main", line 21926] Error at 'print': Too many constants in one chunk.
 // 65
+#[constructor(new)]
 class Foo {}
-var foo = Foo();
+var foo = Foo.new();
 foo.apple = "apple";
 foo.apricot = "apricot";
 foo.avocado = "avocado";
@@ -21923,4 +21924,3 @@ print(foo.tamarind);
 print(foo.tangerine);
 print(foo.tomato);
 print(foo.watermelon);
-print(foo.yuzu);

@@ -1,4 +1,4 @@
 // Fiber expects a closure that accepts at most 1 parameter.
 // [module "main", line 4] in script
 // 70
-Fiber(|a, b| {});
+Fiber.new(|a, b| {});

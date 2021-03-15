@@ -1,7 +1,7 @@
 // Expected at most 1 parameter but found 2.
 // [module "main", line 5] in lambda-0()
 // 70
-var fiber = Fiber(|| {
+var fiber = Fiber.new(|| {
     Fiber.yield(1, 2);
 });
 fiber.call();

@@ -8,6 +8,7 @@
 // 28
 // 36
 // 0
+#[constructor(new)]
 class Foo {
   fn method0(self) { return "no args"; }
   fn method1(self, a) { return a; }
@@ -19,7 +20,7 @@ class Foo {
   fn method7(self, a, b, c, d, e, f, g) { return a + b + c + d + e + f + g; }
   fn method8(self, a, b, c, d, e, f, g, h) { return a + b + c + d + e + f + g + h; }
 }
-var foo = Foo();
+var foo = Foo.new();
 print(foo.method0());
 print(foo.method1(1));
 print(foo.method2(1, 2));

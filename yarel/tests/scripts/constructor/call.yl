@@ -1,0 +1,17 @@
+// Foo.new(one)
+// Foo.new(two)
+// <Foo instance @ [MEMADDR]>
+// new
+// 0
+class Foo {
+  #[constructor]
+  fn new(self, arg) {
+    print("Foo.new(" + arg + ")");
+    self.field = "new";
+  }
+}
+var foo = Foo.new("one");
+foo.field = "field";
+var foo2 = foo.new("two");
+print(foo2);
+print(foo.field);

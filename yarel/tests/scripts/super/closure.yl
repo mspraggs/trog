@@ -3,6 +3,7 @@
 class Base {
   fn to_string(self) { return "Base"; }
 }
+#[constructor(new)]
 class Derived < Base {
   fn get_closure(self) {
     fn closure() {
@@ -12,5 +13,5 @@ class Derived < Base {
   }
   fn to_string(self) { return "Derived"; }
 }
-var closure = Derived().get_closure();
+var closure = Derived.new().get_closure();
 print(closure());

@@ -12,12 +12,13 @@ class Bar < Foo {
     print("in bar");
   }
 }
+#[constructor(new)]
 class Baz < Bar {
   fn in_baz(self) {
     print("in baz");
   }
 }
-var baz = Baz();
+var baz = Baz.new();
 baz.in_foo();
 baz.in_bar();
 baz.in_baz();

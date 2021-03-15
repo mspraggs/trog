@@ -6,10 +6,11 @@ class Base {
     print("Base.foo()");
   }
 }
+#[constructor(new)]
 class Derived < Base {
   fn bar(self) {
     print("Derived.bar()");
     super.foo();
   }
 }
-Derived().bar();
+Derived.new().bar();

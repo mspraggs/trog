@@ -1,8 +1,9 @@
 // <class Foo>
 // 0
+#[constructor(new)]
 class Foo {
   fn return_self(self) {
     return Foo;
   }
 }
-print(Foo().return_self());
+print(Foo.new().return_self());

@@ -4,7 +4,7 @@ class Iter {
     }
 
     fn map(self, f) {
-        return MapIter(self.iter(), f);
+        return MapIter.new(self.iter(), f);
     }
 
     fn collect(self) {
@@ -16,7 +16,7 @@ class Iter {
     }
 
     fn filter(self, pred) {
-        return FilterIter(self.iter(), pred);
+        return FilterIter.new(self.iter(), pred);
     }
 
     fn reduce(self, func, init) {
@@ -29,7 +29,8 @@ class Iter {
 }
 
 class MapIter < Iter {
-    fn __init__(self, iterable, func) {
+    #[constructor]
+    fn new(self, iterable, func) {
         self.iterable = iterable;
         self.func = func;
         self.sentinel = sentinel();
@@ -49,7 +50,8 @@ class MapIter < Iter {
 }
 
 class FilterIter < Iter {
-    fn __init__(self, iterable, predicate) {
+    #[constructor]
+    fn new(self, iterable, predicate) {
         self.iterable = iterable;
         self.predicate = predicate;
         self.sentinel = sentinel();

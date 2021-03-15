@@ -24,6 +24,7 @@
 // false
 // false
 // 0
+#[constructor(new)]
 class Foo {
     fn foo(self) {
     }
@@ -31,18 +32,18 @@ class Foo {
 
 print(type(Type) == Type);
 
-print(type(Foo().foo) == Type);
-print(type(Foo().foo) == Nil);
-print(type(Foo().foo) == Bool);
-print(type(Foo().foo) == Num);
-print(type(Foo().foo) == Sentinel);
-print(type(Foo().foo) == Func);
-print(type(Foo().foo) == BuiltIn);
-print(type(Foo().foo) == Method);
-print(type(Foo().foo) == BuiltInMethod);
-print(type(Foo().foo) == String);
-print(type(Foo().foo) == Vec);
-print(type(Foo().foo) == Range);
+print(type(Foo.new().foo) == Type);
+print(type(Foo.new().foo) == Nil);
+print(type(Foo.new().foo) == Bool);
+print(type(Foo.new().foo) == Num);
+print(type(Foo.new().foo) == Sentinel);
+print(type(Foo.new().foo) == Func);
+print(type(Foo.new().foo) == BuiltIn);
+print(type(Foo.new().foo) == Method);
+print(type(Foo.new().foo) == BuiltInMethod);
+print(type(Foo.new().foo) == String);
+print(type(Foo.new().foo) == Vec);
+print(type(Foo.new().foo) == Range);
 
 print(type([].push) == Type);
 print(type([].push) == Nil);

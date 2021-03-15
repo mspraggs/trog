@@ -1,6 +1,7 @@
 // nil
 // 0
+#[constructor(new)]
 class Foo {
   fn bar(self) {}
 }
-print(Foo().bar());
+print(Foo.new().bar());

@@ -1,6 +1,7 @@
-// [module "main", line 4] Error at 'a': Expected 'self' as first parameter in method.
+// [module "main", line 5] Error at 'a': Expected 'self' as first parameter in method.
 // 65
+#[constructor(new)]
 class Foo {
   fn method(a) {}
 }
-Foo().method(1);
+Foo.new().method(1);

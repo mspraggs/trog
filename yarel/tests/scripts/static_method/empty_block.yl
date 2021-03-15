@@ -1,9 +1,10 @@
 // nil
 // nil
 // 0
+#[constructor(new)]
 class Foo {
   #[static]
   fn bar() {}
 }
-print(Foo().bar());
+print(Foo.new().bar());
 print(Foo.bar());

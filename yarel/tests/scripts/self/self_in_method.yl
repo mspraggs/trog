@@ -1,7 +1,8 @@
 // baz
 // 0
+#[constructor(new)]
 class Foo {
   fn bar(self) { return self; }
   fn baz(self) { return "baz"; }
 }
-print(Foo().bar().baz());
+print(Foo.new().bar().baz());

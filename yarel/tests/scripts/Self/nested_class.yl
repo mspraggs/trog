@@ -2,21 +2,23 @@
 // <class Outer>
 // <class Inner>
 // 0
+#[constructor(new)]
 class Outer {
   #[static]
   fn method() {
     print(Self);
     fn f() {
       print(Self);
+      #[constructor(new)]
       class Inner {
         #[static]
         fn method() {
           print(Self);
         }
       }
-      Inner().method();
+      Inner.new().method();
     }
     f();
   }
 }
-Outer().method();
+Outer.new().method();
