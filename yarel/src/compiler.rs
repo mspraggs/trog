@@ -272,6 +272,7 @@ impl<'a> Parser<'a> {
         while !self.match_token(TokenKind::Eof) {
             self.declaration();
         }
+        self.check_no_attributes();
 
         let had_error = !self.errors.borrow().is_empty();
         if had_error {
