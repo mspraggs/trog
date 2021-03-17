@@ -472,11 +472,20 @@ impl Vm {
         fiber: Gc<UnsafeRefCell<ObjFiber>>,
         arg: Option<Value>,
     ) -> Result<(), Error> {
-        if unsafe { &*fiber.get() }.has_finished() {
-            return Err(error!(
-                ErrorKind::RuntimeError,
-                "Cannot call a finished fiber."
-            ));
+        {
+            let borrowed_fiber = fiber.borrow();
+            if borrowed_fiber.has_finished() {
+                return Err(error!(
+                    ErrorKind::RuntimeError,
+                    "Cannot call a finished fiber."
+                ));
+            }
+            if borrowed_fiber.caller.is_some() {
+                return Err(error!(
+                    ErrorKind::RuntimeError,
+                    "Cannot call a fiber that has already been called.",
+                ));
+            }
         }
         if self.fiber.is_some() {
             self.active_fiber_mut().current_frame_mut().unwrap().ip = self.ip;
@@ -507,10 +516,13 @@ impl Vm {
         }
         let caller = self.active_fiber().caller;
         if let Some(caller) = caller {
-            self.fiber.replace(caller);
+            let mut current = self.fiber.replace(caller);
+            current.as_mut().unwrap().borrow_mut().caller = None;
         } else {
-            self.fiber = None;
-            return Ok(());
+            return Err(error!(
+                ErrorKind::RuntimeError,
+                "Cannot yield from module-level code."
+            ));
         }
         if let Some(arg) = arg {
             self.poke(0, arg);

@@ -1,0 +1,4 @@
+// Cannot yield from module-level code.
+// [module "main", line 4] in script
+// 70
+Fiber.yield();

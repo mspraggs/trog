@@ -1,0 +1,7 @@
+// Cannot call a fiber that has already been called.
+// [module "main", line 5] in lambda-0()
+// 70
+var fiber = Fiber.new(|| {
+    fiber.call();
+});
+fiber.call();

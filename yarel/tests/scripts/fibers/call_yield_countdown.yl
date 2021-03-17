@@ -1,0 +1,34 @@
+// 10
+// 9
+// 8
+// 7
+// 6
+// 5
+// 4
+// 3
+// 2
+// 1
+// Done
+// 0
+
+var n = 10;
+
+var fiber1 = Fiber.new(|| {
+    while n > 0 {
+        print(n);
+        n -= 1;
+        Fiber.yield();
+    }
+});
+
+var fiber2 = Fiber.new(|| {
+    while n > 0 {
+        print(n);
+        n -= 1;
+        fiber1.call();
+    }
+});
+
+fiber2.call();
+
+print("Done");
