@@ -14,7 +14,7 @@
  */
 
 use crate::core;
-use crate::memory::{Gc, GcBoxPtr, Root};
+use crate::memory::{Gc, GcBoxPtr, Heap, Root};
 use crate::object::{self, ObjClass};
 use crate::vm::{self, Vm};
 
@@ -357,7 +357,7 @@ impl CoreClassStore {
     }
 }
 
-pub(crate) unsafe fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
+pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> GcBoxPtr<ObjClass> {
     // # Safety
     // The root metaclass is its own metaclass, so we need to add a pointer to the metaclass to the
     // class's data. To do this we allocate the object and mutate it whilst an immutable reference
@@ -369,7 +369,7 @@ pub(crate) unsafe fn new_base_metaclass(vm: &mut Vm) -> GcBoxPtr<ObjClass> {
         superclass: None,
         methods: object::new_obj_string_value_map(),
     };
-    let mut ptr = vm.allocate_bare(data);
+    let mut ptr = heap.allocate_bare(data);
     let root = Root::from(ptr);
     ptr.as_mut().data.metaclass = root.as_gc();
     ptr

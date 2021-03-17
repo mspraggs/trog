@@ -319,11 +319,19 @@ impl ObjClass {
         superclass: Option<Gc<ObjClass>>,
         methods: ObjStringValueMap,
     ) -> Self {
+        let mut merged_methods = if let Some(parent) = superclass {
+            parent.methods.clone()
+        } else {
+            new_obj_string_value_map()
+        };
+        for (&k, &v) in &methods {
+            merged_methods.insert(k, v);
+        }
         ObjClass {
             name,
             metaclass,
             superclass,
-            methods,
+            methods: merged_methods,
         }
     }
 }
