@@ -1100,7 +1100,14 @@ pub fn new_root_obj_fiber_class(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Fiber");
-    let (methods, _native_roots) = build_methods(vm, &[("call", fiber_call as NativeFn)], None);
+    let (methods, _native_roots) = build_methods(
+        vm,
+        &[
+            ("call", fiber_call as NativeFn),
+            ("has_finished", fiber_has_finished as NativeFn),
+        ],
+        None,
+    );
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
@@ -1178,4 +1185,11 @@ fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     }
     vm.unload_fiber(arg)?;
     Ok(vm.peek(0))
+}
+
+fn fiber_has_finished(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+    let fiber = vm.peek(0).try_as_obj_fiber().expect("Expected ObjFiber.");
+    let has_finished = fiber.borrow().has_finished();
+    Ok(Value::Boolean(has_finished))
 }

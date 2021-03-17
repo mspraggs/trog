@@ -1,0 +1,14 @@
+// false
+// false
+// true
+// 0
+
+var fiber = Fiber.new(|| {
+    Fiber.yield();
+});
+
+print(fiber.has_finished());
+fiber.call();
+print(fiber.has_finished());
+fiber.call();
+print(fiber.has_finished());
