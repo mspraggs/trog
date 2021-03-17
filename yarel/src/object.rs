@@ -233,6 +233,18 @@ impl memory::GcManaged for ObjFunction {
     }
 }
 
+impl Default for ObjFunction {
+    fn default() -> Self {
+        ObjFunction {
+            name: Gc::null(),
+            arity: 0,
+            upvalue_count: 0,
+            chunk: Gc::null(),
+            module_path: Gc::null(),
+        }
+    }
+}
+
 impl fmt::Display for ObjFunction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.name.len() {

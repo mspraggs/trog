@@ -256,6 +256,7 @@ impl<T: 'static + GcManaged + ?Sized> Drop for UniqueRoot<T> {
     }
 }
 
+#[derive(Default)]
 pub struct Gc<T: GcManaged + ?Sized> {
     ptr: Option<GcBoxPtr<T>>,
 }

@@ -113,9 +113,8 @@ struct Upvalue {
 }
 
 struct Compiler {
+    function: ObjFunction,
     kind: FunctionKind,
-    func_arity: u32,
-    func_name: String,
     chunk: Chunk,
 
     locals: Vec<Local>,
@@ -132,11 +131,10 @@ enum CompilerError {
 }
 
 impl Compiler {
-    fn new(kind: FunctionKind, name: &str) -> Self {
+    fn new(kind: FunctionKind, name: Gc<ObjString>, module_path: Gc<ObjString>) -> Self {
         Compiler {
+            function: ObjFunction::new(name, 1, 0, Gc::null(), module_path),
             kind,
-            func_arity: 1,
-            func_name: name.to_owned(),
             chunk: Chunk::new(),
             locals: vec![Local {
                 name: if kind == FunctionKind::StaticMethod {
@@ -156,12 +154,12 @@ impl Compiler {
         }
     }
 
-    fn make_function(&mut self, vm: &mut Vm, module_path: Gc<ObjString>) -> Root<ObjFunction> {
-        let name = vm.new_gc_obj_string(self.func_name.as_str());
-        let num_upvalues = self.upvalues.len();
+    fn allocate_function(&mut self, vm: &mut Vm) -> Root<ObjFunction> {
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk = vm.add_chunk(chunk);
-        vm.new_root_obj_function(name, self.func_arity, num_upvalues, chunk, module_path)
+        self.function.chunk = chunk;
+        let function = mem::take(&mut self.function);
+        vm.heap.allocate_root(function)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {
@@ -205,6 +203,7 @@ impl Compiler {
         }
 
         self.upvalues.push(Upvalue { index, is_local });
+        self.function.upvalue_count += 1;
         Ok(upvalue_count as u8)
     }
 }
@@ -247,6 +246,7 @@ struct Parser<'a> {
 impl<'a> Parser<'a> {
     fn new(vm: &'a mut Vm, scanner: &'a mut Scanner, module_path: Option<&str>) -> Parser<'a> {
         let module_path = vm.new_gc_obj_string(module_path.unwrap_or("main"));
+        let empty = vm.new_gc_obj_string("");
         let mut ret = Parser {
             current: Token::new(),
             previous: Token::new(),
@@ -262,7 +262,7 @@ impl<'a> Parser<'a> {
             attribute_opener: None,
             vm,
         };
-        ret.new_compiler(FunctionKind::Script, "");
+        ret.new_compiler(FunctionKind::Script, empty, module_path);
         ret
     }
 
@@ -352,15 +352,20 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::RightBrace, "Expected '}' after block.");
     }
 
-    fn new_compiler(&mut self, kind: FunctionKind, name: &str) {
-        self.compilers.push(Compiler::new(kind, name));
+    fn new_compiler(
+        &mut self,
+        kind: FunctionKind,
+        name: Gc<ObjString>,
+        module_path: Gc<ObjString>,
+    ) {
+        self.compilers.push(Compiler::new(kind, name, module_path));
     }
 
     fn finalise_compiler(&mut self) -> (Root<ObjFunction>, Vec<Upvalue>) {
         self.emit_return();
 
         let mut compiler = self.compilers.pop().expect("Compiler stack empty.");
-        let function = compiler.make_function(self.vm, self.module_path);
+        let function = compiler.allocate_function(self.vm);
         self.compiled_functions.push(function.clone());
 
         if cfg!(feature = "debug_bytecode") && self.errors.borrow().is_empty() {
@@ -374,7 +379,8 @@ impl<'a> Parser<'a> {
 
     fn function(&mut self, kind: FunctionKind) {
         let name = self.previous.source.clone();
-        self.new_compiler(kind, name.as_str());
+        let name = self.vm.new_gc_obj_string(name.as_str());
+        self.new_compiler(kind, name, self.module_path);
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expected '(' after function name.");
@@ -397,7 +403,7 @@ impl<'a> Parser<'a> {
 
         self.consume(TokenKind::LeftBrace, "Expected '{' before function body.");
         if kind == FunctionKind::Initialiser {
-            let arity = (self.compiler().func_arity - 1) as u8;
+            let arity = (self.compiler().function.arity - 1) as u8;
             self.emit_bytes([OpCode::Construct as u8, arity]);
         }
         self.block();
@@ -450,7 +456,8 @@ impl<'a> Parser<'a> {
         let name_constant = self.identifier_constant(&name);
         let kind = FunctionKind::Initialiser;
 
-        self.new_compiler(kind, name.source.as_str());
+        let name = self.vm.new_gc_obj_string(name.source.as_str());
+        self.new_compiler(kind, name, self.module_path);
         self.begin_scope();
         self.emit_bytes([OpCode::Construct as u8, 0]);
         let (function, _) = self.finalise_compiler();
@@ -1068,8 +1075,8 @@ impl<'a> Parser<'a> {
     fn parameter_list(&mut self, right_delim: TokenKind, count_msg: &str, param_msg: &str) {
         if !self.check(right_delim) {
             loop {
-                self.compiler_mut().func_arity += 1;
-                if self.compiler().func_arity > 256 {
+                self.compiler_mut().function.arity += 1;
+                if self.compiler().function.arity > 256 {
                     self.error_at_current(count_msg);
                 }
 
@@ -1358,10 +1365,9 @@ impl<'a> Parser<'a> {
     fn lambda(s: &mut Parser, _can_assign: bool) {
         let lambda_count = s.compiler().lambda_count;
         s.compiler_mut().lambda_count += 1;
-        s.new_compiler(
-            FunctionKind::Function,
-            format!("lambda-{}", lambda_count).as_str(),
-        );
+        let name =
+            s.vm.new_gc_obj_string(format!("lambda-{}", lambda_count).as_str());
+        s.new_compiler(FunctionKind::Function, name, s.module_path);
         s.begin_scope();
 
         s.parameter_list(
