@@ -182,7 +182,7 @@ macro_rules! test_case {
         #[test]
         fn $name() {
             let outcome = run_test($source);
-            assert!(outcome.pass, format!("\n{}", outcome),);
+            assert!(outcome.pass, "\n{}", outcome);
         }
     };
 }
