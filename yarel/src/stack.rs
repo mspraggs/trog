@@ -17,19 +17,15 @@ use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
 use std::slice::{self};
 
-use crate::common;
 use crate::memory::GcManaged;
 
-const STACK_MAX: usize = common::LOCALS_MAX * common::FRAMES_MAX;
-
-// TODO: Use const-generics here when available
 #[derive(Debug)]
-pub(crate) struct Stack<T: Clone + Copy + Default> {
-    stack: [T; STACK_MAX],
+pub(crate) struct Stack<T: Clone + Copy + Default, const N: usize> {
+    stack: [T; N],
     size: usize,
 }
 
-impl<T: Clone + Copy + Default> Stack<T> {
+impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
     pub(crate) fn new() -> Self {
         Default::default()
     }
@@ -58,7 +54,7 @@ impl<T: Clone + Copy + Default> Stack<T> {
     }
 
     pub(crate) fn push(&mut self, data: T) {
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == STACK_MAX {
+        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == N {
             panic!("Stack overflow.");
         }
         if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
@@ -96,7 +92,10 @@ impl<T: Clone + Copy + Default> Stack<T> {
     }
 }
 
-impl<T: Clone + Copy + Default + GcManaged> GcManaged for Stack<T> {
+impl<T, const N: usize> GcManaged for Stack<T, N>
+where
+    T: Clone + Copy + Default + GcManaged,
+{
     fn mark(&self) {
         for elem in &self.stack[0..self.size] {
             elem.mark();
@@ -110,16 +109,22 @@ impl<T: Clone + Copy + Default + GcManaged> GcManaged for Stack<T> {
     }
 }
 
-impl<T: Clone + Copy + Default> Default for Stack<T> {
+impl<T, const N: usize> Default for Stack<T, N>
+where
+    T: Clone + Copy + Default,
+{
     fn default() -> Self {
         Stack {
-            stack: [Default::default(); STACK_MAX],
+            stack: [Default::default(); N],
             size: 0,
         }
     }
 }
 
-impl<T: Clone + Copy + Default + Display> Display for Stack<T> {
+impl<T, const N: usize> Display for Stack<T, N>
+where
+    T: Clone + Copy + Default + Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for elem in &self.stack[0..self.size] {
             write!(f, "[ {} ]", elem)?;
@@ -128,8 +133,9 @@ impl<T: Clone + Copy + Default + Display> Display for Stack<T> {
     }
 }
 
-impl<T: Clone + Copy + Default + GcManaged, Idx> Index<Idx> for Stack<T>
+impl<T, Idx, const N: usize> Index<Idx> for Stack<T, N>
 where
+    T: Clone + Copy + Default + GcManaged,
     Idx: slice::SliceIndex<[T]>,
 {
     type Output = Idx::Output;
@@ -139,7 +145,7 @@ where
     }
 }
 
-impl<T: Clone + Copy + Default + GcManaged, Idx> IndexMut<Idx> for Stack<T>
+impl<T: Clone + Copy + Default + GcManaged, Idx, const N: usize> IndexMut<Idx> for Stack<T, N>
 where
     Idx: slice::SliceIndex<[T]>,
 {

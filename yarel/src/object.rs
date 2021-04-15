@@ -30,6 +30,8 @@ use crate::unsafe_ref_cell::UnsafeRefCell;
 use crate::value::Value;
 use crate::vm::Vm;
 
+const STACK_MAX: usize = common::LOCALS_MAX * common::FRAMES_MAX;
+
 pub struct ObjString {
     pub(crate) class: Gc<ObjClass>,
     string: String,
@@ -884,7 +886,7 @@ impl GcManaged for CallFrame {
 pub struct ObjFiber {
     pub(crate) class: Gc<ObjClass>,
     pub(crate) caller: Option<Gc<UnsafeRefCell<ObjFiber>>>,
-    pub(crate) stack: Stack<Value>,
+    pub(crate) stack: Stack<Value, STACK_MAX>,
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     pub(crate) call_arity: usize,
