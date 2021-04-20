@@ -27,7 +27,6 @@ pub struct CoreClassStore {
     root_nil_class: Root<ObjClass>,
     root_boolean_class: Root<ObjClass>,
     root_number_class: Root<ObjClass>,
-    root_sentinel_class: Root<ObjClass>,
     root_obj_closure_class: Root<ObjClass>,
     root_obj_native_class: Root<ObjClass>,
     root_obj_closure_method_class: Root<ObjClass>,
@@ -45,6 +44,8 @@ pub struct CoreClassStore {
     root_obj_module_class: Root<ObjClass>,
     root_obj_string_iter_class: Root<ObjClass>,
     root_obj_fiber_class: Root<ObjClass>,
+    root_obj_err_class: Root<ObjClass>,
+    root_obj_stop_iter_class: Root<ObjClass>,
 }
 
 impl CoreClassStore {
@@ -55,7 +56,6 @@ impl CoreClassStore {
             root_nil_class: Root::null(),
             root_boolean_class: Root::null(),
             root_number_class: Root::null(),
-            root_sentinel_class: Root::null(),
             root_obj_closure_class: Root::null(),
             root_obj_native_class: Root::null(),
             root_obj_closure_method_class: Root::null(),
@@ -73,6 +73,8 @@ impl CoreClassStore {
             root_obj_module_class: Root::null(),
             root_obj_string_iter_class: Root::null(),
             root_obj_fiber_class: Root::null(),
+            root_obj_err_class: Root::null(),
+            root_obj_stop_iter_class: Root::null(),
         }
     }
 
@@ -89,7 +91,6 @@ impl CoreClassStore {
         let root_nil_class = build_empty_class();
         let root_boolean_class = build_empty_class();
         let root_number_class = build_empty_class();
-        let root_sentinel_class = build_empty_class();
         let root_obj_closure_class = build_empty_class();
         let root_obj_native_class = build_empty_class();
         let root_obj_closure_method_class = build_empty_class();
@@ -106,13 +107,14 @@ impl CoreClassStore {
         let root_obj_module_class = build_empty_class();
         let root_obj_string_iter_class = build_empty_class();
         let root_obj_fiber_class = build_empty_class();
+        let root_obj_err_class = build_empty_class();
+        let root_obj_stop_iter_class = build_empty_class();
         CoreClassStore {
             root_base_metaclass,
             root_object_class,
             root_nil_class,
             root_boolean_class,
             root_number_class,
-            root_sentinel_class,
             root_obj_closure_class,
             root_obj_native_class,
             root_obj_closure_method_class,
@@ -130,6 +132,8 @@ impl CoreClassStore {
             root_obj_module_class,
             root_obj_string_iter_class,
             root_obj_fiber_class,
+            root_obj_err_class,
+            root_obj_stop_iter_class,
         }
     }
 
@@ -159,11 +163,22 @@ impl CoreClassStore {
         let root_nil_class = build_value_type_class("Nil");
         let root_boolean_class = build_value_type_class("Bool");
         let root_number_class = build_value_type_class("Num");
-        let root_sentinel_class = build_value_type_class("Sentinel");
         let root_obj_closure_class = build_value_type_class("Func");
         let root_obj_native_class = build_value_type_class("BuiltIn");
         let root_obj_closure_method_class = build_value_type_class("Method");
         let root_obj_native_method_class = build_value_type_class("BuiltInMethod");
+        let root_obj_err_class = vm
+            .get_global("main", "Err")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_stop_iter_class = vm
+            .get_global("main", "StopIter")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
         let root_obj_iter_class = vm
             .get_global("main", "Iter")
             .unwrap()
@@ -243,7 +258,6 @@ impl CoreClassStore {
             root_nil_class,
             root_boolean_class,
             root_number_class,
-            root_sentinel_class,
             root_obj_closure_class,
             root_obj_native_class,
             root_obj_closure_method_class,
@@ -261,6 +275,8 @@ impl CoreClassStore {
             root_obj_module_class,
             root_obj_string_iter_class,
             root_obj_fiber_class,
+            root_obj_err_class,
+            root_obj_stop_iter_class,
         }
     }
 
@@ -282,10 +298,6 @@ impl CoreClassStore {
 
     pub(crate) fn get_number_class(&self) -> Gc<ObjClass> {
         self.root_number_class.as_gc()
-    }
-
-    pub(crate) fn get_sentinel_class(&self) -> Gc<ObjClass> {
-        self.root_sentinel_class.as_gc()
     }
 
     pub(crate) fn get_obj_closure_class(&self) -> Gc<ObjClass> {
@@ -354,6 +366,14 @@ impl CoreClassStore {
 
     pub(crate) fn get_obj_fiber_class(&self) -> Gc<ObjClass> {
         self.root_obj_fiber_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_err_class(&self) -> Gc<ObjClass> {
+        self.root_obj_err_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_stop_iter_class(&self) -> Gc<ObjClass> {
+        self.root_obj_stop_iter_class.as_gc()
     }
 }
 

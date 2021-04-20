@@ -52,7 +52,6 @@ pub enum Value {
     ObjModule(Gc<RefCell<ObjModule>>),
     ObjFiber(Gc<UnsafeRefCell<ObjFiber>>),
     None,
-    Sentinel,
 }
 
 impl Value {
@@ -87,7 +86,6 @@ impl Value {
             Value::ObjModule(module) => module.borrow().class,
             Value::ObjFiber(fiber) => unsafe { &*fiber.get() }.class,
             Value::None => class_store.get_nil_class(),
-            Value::Sentinel => class_store.get_sentinel_class(),
         }
     }
 
@@ -100,7 +98,6 @@ impl Value {
             Value::ObjTuple(t) => t.has_hash(),
             Value::ObjRange(_) => true,
             Value::None => true,
-            Value::Sentinel => true,
             _ => false,
         }
     }
@@ -348,7 +345,6 @@ impl fmt::Display for Value {
                 )
             }
             Value::None => write!(f, "nil"),
-            Value::Sentinel => write!(f, "<sentinel>"),
         }
     }
 }
@@ -379,7 +375,6 @@ impl cmp::PartialEq for Value {
             }
             (Value::ObjModule(first), Value::ObjModule(second)) => *first == *second,
             (Value::ObjFiber(first), Value::ObjFiber(second)) => *first == *second,
-            (Value::Sentinel, Value::Sentinel) => true,
             (Value::None, Value::None) => true,
             _ => false,
         }
@@ -408,7 +403,6 @@ impl Hash for Value {
                 utils::hash_number(r.begin as f64) ^ utils::hash_number(r.end as f64)
             }
             Value::None => 2_u64,
-            Value::Sentinel => 3_u64,
             _ => {
                 panic!("Unhashable value type: {}", self);
             }

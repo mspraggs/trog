@@ -1,7 +1,7 @@
 // 3
 // 4
 // 1
-// <sentinel>
+// <StopIter instance @ [MEMADDR]>
 // 0
 var t = (3, 4, 1);
 var it = t.iter();

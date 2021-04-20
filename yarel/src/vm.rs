@@ -375,6 +375,16 @@ impl Vm {
             .allocate_root(RefCell::new(ObjModule::new(class, path)))
     }
 
+    pub fn new_root_obj_err(&mut self, context: Value) -> Root<RefCell<ObjInstance>> {
+        let class = self.class_store.get_obj_err_class();
+        self.new_root_obj_err_with_class(class, context)
+    }
+
+    pub fn new_root_obj_stop_iter(&mut self) -> Root<RefCell<ObjInstance>> {
+        let class = self.class_store.get_obj_stop_iter_class();
+        self.new_root_obj_err_with_class(class, Value::None)
+    }
+
     pub(crate) fn new_root_obj_fiber(
         &mut self,
         closure: Gc<RefCell<ObjClosure>>,
@@ -885,10 +895,13 @@ impl Vm {
                     }
                 }
 
-                byte if byte == OpCode::JumpIfSentinel as u8 => {
+                byte if byte == OpCode::JumpIfStopIter as u8 => {
                     let offset = read_short!();
-                    if let Value::Sentinel = self.peek(0) {
-                        self.ip = unsafe { self.ip.offset(offset as isize) };
+                    let stop_iter_class = self.class_store.get_obj_stop_iter_class();
+                    if let Some(instance) = self.peek(0).try_as_obj_instance() {
+                        if instance.borrow().class == stop_iter_class {
+                            self.ip = unsafe { self.ip.offset(offset as isize) };
+                        }
                     }
                 }
 
@@ -1235,9 +1248,6 @@ impl Vm {
             Value::None => {
                 self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
             }
-            Value::Sentinel => {
-                self.invoke_from_class(self.class_store.get_sentinel_class(), name, arg_count)
-            }
         }
     }
 
@@ -1405,6 +1415,17 @@ impl Vm {
         range_gc
     }
 
+    pub fn new_root_obj_err_with_class(
+        &mut self,
+        class: Gc<ObjClass>,
+        context: Value,
+    ) -> Root<RefCell<ObjInstance>> {
+        let context_string = self.new_gc_obj_string("context");
+        let instance = self.new_root_obj_instance(class);
+        instance.borrow_mut().fields.insert(context_string, context);
+        instance
+    }
+
     fn init_heap_allocated_data(&mut self) {
         let mut base_metaclass_ptr = unsafe { class_store::new_base_metaclass(&mut self.heap) };
         let root_base_metaclass = Root::from(base_metaclass_ptr);
@@ -1467,7 +1488,6 @@ impl Vm {
         self.define_native(module_path, "clock", core::clock);
         self.define_native(module_path, "type", core::type_);
         self.define_native(module_path, "print", self.printer);
-        self.define_native(module_path, "sentinel", core::sentinel);
         let base_metaclass = self.class_store.get_base_metaclass();
         self.set_global(module_path, "Type", Value::ObjClass(base_metaclass));
         let object_class = self.class_store.get_object_class();
@@ -1478,8 +1498,6 @@ impl Vm {
         self.set_global(module_path, "Bool", Value::ObjClass(boolean_class));
         let number_class = self.class_store.get_number_class();
         self.set_global(module_path, "Num", Value::ObjClass(number_class));
-        let sentinel_class = self.class_store.get_sentinel_class();
-        self.set_global(module_path, "Sentinel", Value::ObjClass(sentinel_class));
         let obj_closure_class = self.class_store.get_obj_closure_class();
         self.set_global(module_path, "Func", Value::ObjClass(obj_closure_class));
         let obj_native_class = self.class_store.get_obj_native_class();

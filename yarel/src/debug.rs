@@ -71,7 +71,7 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::IterNext => simple_instruction("ITER_NEXT", offset),
         OpCode::Jump => jump_instruction("JUMP", 1, chunk, offset),
         OpCode::JumpIfFalse => jump_instruction("JUMP_IF_FALSE", 1, chunk, offset),
-        OpCode::JumpIfSentinel => jump_instruction("JUMP_IF_SENTINEL", 1, chunk, offset),
+        OpCode::JumpIfStopIter => jump_instruction("JUMP_IF_STOP_ITER", 1, chunk, offset),
         OpCode::Loop => jump_instruction("LOOP", -1, chunk, offset),
         OpCode::Call => byte_instruction("CALL", chunk, offset),
         OpCode::Invoke => invoke_instruction("INVOKE", chunk, offset),

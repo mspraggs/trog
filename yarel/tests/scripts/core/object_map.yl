@@ -15,7 +15,7 @@ class Foo < Iter {
 
     fn next(self) {
         if self.count == self.max {
-            return sentinel();
+            return StopIter.new();
         }
         self.count += 1;
         var old_first = self.first;

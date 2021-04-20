@@ -84,11 +84,6 @@ pub(crate) fn type_(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     Ok(Value::ObjClass(vm.get_class(vm.peek(0))))
 }
 
-pub(crate) fn sentinel(_vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 0)?;
-    Ok(Value::Sentinel)
-}
-
 /// Type implementation
 
 pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
@@ -596,7 +591,7 @@ fn string_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         let string = vm.new_gc_obj_string(slice);
         return Ok(Value::ObjString(string));
     }
-    Ok(Value::Sentinel)
+    Ok(Value::ObjInstance(vm.new_root_obj_stop_iter().as_gc()))
 }
 
 pub fn new_root_obj_string_iter_class(
@@ -692,8 +687,11 @@ fn tuple_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .peek(0)
         .try_as_obj_tuple_iter()
         .expect("Expected ObjTupleIter instance.");
-    let mut borrowed_iter = iter.borrow_mut();
-    Ok(borrowed_iter.next())
+    let next = {
+        let mut borrowed_iter = iter.borrow_mut();
+        borrowed_iter.next()
+    };
+    Ok(next.unwrap_or_else(|| Value::ObjInstance(vm.new_root_obj_stop_iter().as_gc())))
 }
 
 /// Vec implemenation
@@ -838,8 +836,11 @@ fn vec_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .peek(0)
         .try_as_obj_vec_iter()
         .expect("Expected ObjVecIter instance.");
-    let mut borrowed_iter = iter.borrow_mut();
-    Ok(borrowed_iter.next())
+    let next = {
+        let mut borrowed_iter = iter.borrow_mut();
+        borrowed_iter.next()
+    };
+    Ok(next.unwrap_or_else(|| Value::ObjInstance(vm.new_root_obj_stop_iter().as_gc())))
 }
 
 /// Range implementation
@@ -874,8 +875,11 @@ fn range_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .peek(0)
         .try_as_obj_range_iter()
         .expect("Expected ObjIter instance.");
-    let mut borrowed_iter = iter.borrow_mut();
-    Ok(borrowed_iter.next())
+    let next = {
+        let mut borrowed_iter = iter.borrow_mut();
+        borrowed_iter.next()
+    };
+    Ok(next.unwrap_or_else(|| Value::ObjInstance(vm.new_root_obj_stop_iter().as_gc())))
 }
 
 pub fn new_root_obj_range_iter_class(

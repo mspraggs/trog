@@ -720,7 +720,7 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::IterNext as u8);
         self.emit_bytes([OpCode::SetLocal as u8, loop_var]);
 
-        let exit_jump = self.emit_jump(OpCode::JumpIfSentinel);
+        let exit_jump = self.emit_jump(OpCode::JumpIfStopIter);
 
         self.emit_byte(OpCode::Pop as u8);
 

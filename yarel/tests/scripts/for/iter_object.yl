@@ -24,7 +24,7 @@ class Foo {
 
     fn next(self) {
         if (self.counter == self.max) {
-            return sentinel();
+            return StopIter.new();
         }
         self.counter += 1;
 

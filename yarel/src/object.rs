@@ -512,14 +512,14 @@ impl ObjVecIter {
         }
     }
 
-    pub(crate) fn next(&mut self) -> Value {
+    pub(crate) fn next(&mut self) -> Option<Value> {
         let borrowed_vec = self.iterable.borrow();
         if self.current >= borrowed_vec.elements.len() {
-            return Value::Sentinel;
+            return None;
         }
         let ret = borrowed_vec.elements[self.current];
         self.current += 1;
-        ret
+        Some(ret)
     }
 }
 
@@ -618,13 +618,13 @@ impl ObjRangeIter {
         }
     }
 
-    pub(crate) fn next(&mut self) -> Value {
+    pub(crate) fn next(&mut self) -> Option<Value> {
         if self.current == self.iterable.end {
-            return Value::Sentinel;
+            return None;
         }
         let ret = Value::Number(self.current as f64);
         self.current += self.step;
-        ret
+        Some(ret)
     }
 }
 
@@ -807,13 +807,13 @@ impl ObjTupleIter {
         }
     }
 
-    pub(crate) fn next(&mut self) -> Value {
+    pub(crate) fn next(&mut self) -> Option<Value> {
         if self.current >= self.iterable.elements.len() {
-            return Value::Sentinel;
+            return None;
         }
         let ret = self.iterable.elements[self.current];
         self.current += 1;
-        ret
+        Some(ret)
     }
 }
 

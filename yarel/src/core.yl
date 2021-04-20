@@ -1,3 +1,17 @@
+class Err {
+    #[constructor]
+    fn new(self, context) {
+        self.context = context;
+    }
+}
+
+class StopIter < Err {
+    #[constructor]
+    fn new(self) {
+        super.new(nil);
+    }
+}
+
 class Iter {
     fn iter(self) {
         return self;
@@ -33,7 +47,6 @@ class MapIter < Iter {
     fn new(self, iterable, func) {
         self.iterable = iterable;
         self.func = func;
-        self.sentinel = sentinel();
     }
 
     fn iter(self) {
@@ -42,8 +55,8 @@ class MapIter < Iter {
 
     fn next(self) {
         var next = self.iterable.next();
-        if next == self.sentinel {
-            return self.sentinel;
+        if next.is_a(StopIter) {
+            return next;
         }
         return self.func(next);
     }
@@ -54,7 +67,6 @@ class FilterIter < Iter {
     fn new(self, iterable, predicate) {
         self.iterable = iterable;
         self.predicate = predicate;
-        self.sentinel = sentinel();
     }
 
     fn iter(self) {
@@ -62,9 +74,8 @@ class FilterIter < Iter {
     }
 
     fn next(self) {
-        var sentinel = self.sentinel;
         var next = self.iterable.next();
-        while next != sentinel and !self.predicate(next) {
+        while !next.is_a(StopIter) and !self.predicate(next) {
             next = self.iterable.next();
         }
         return next;
