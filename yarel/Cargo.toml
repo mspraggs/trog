@@ -16,7 +16,6 @@ harness = false
 [dependencies]
 
 [features]
-#default = ["debug_bytecode", "debug_trace"]
 debug_bytecode = []
 debug_trace = []
 debug_stress_gc = []
