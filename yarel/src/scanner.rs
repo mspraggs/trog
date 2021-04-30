@@ -53,9 +53,11 @@ pub enum TokenKind {
     Number,
     And,
     CapSelf,
+    Catch,
     Class,
     Else,
     False,
+    Finally,
     For,
     Fn,
     If,
@@ -67,7 +69,9 @@ pub enum TokenKind {
     Return,
     Self_,
     Super,
+    Throw,
     True,
+    Try,
     Var,
     While,
     Error,
@@ -377,13 +381,24 @@ impl Scanner {
                 }
                 TokenKind::Identifier
             }
-            "c" => self.check_keyword(1, "lass", TokenKind::Class),
+            "c" => {
+                if self.current - self.start > 1 {
+                    let next = &self.source[self.start + 1..self.start + 2];
+                    return match next {
+                        "a" => self.check_keyword(2, "tch", TokenKind::Catch),
+                        "l" => self.check_keyword(2, "ass", TokenKind::Class),
+                        _ => TokenKind::Identifier,
+                    };
+                }
+                TokenKind::Identifier
+            }
             "e" => self.check_keyword(1, "lse", TokenKind::Else),
             "f" => {
                 if self.current - self.start > 1 {
                     let next = &self.source[self.start + 1..self.start + 2];
                     return match next {
                         "a" => self.check_keyword(2, "lse", TokenKind::False),
+                        "i" => self.check_keyword(2, "nally", TokenKind::Finally),
                         "o" => self.check_keyword(2, "r", TokenKind::For),
                         "n" => self.check_keyword(2, "", TokenKind::Fn),
                         _ => TokenKind::Identifier,
@@ -418,7 +433,28 @@ impl Scanner {
                 }
                 TokenKind::Identifier
             }
-            "t" => self.check_keyword(1, "rue", TokenKind::True),
+            "t" => {
+                if self.current - self.start > 1 {
+                    let next = &self.source[self.start + 1..self.start + 2];
+                    return match next {
+                        "h" => self.check_keyword(2, "row", TokenKind::Throw),
+                        "r" => {
+                            if self.current - self.start > 2 {
+                                let next = &self.source[self.start + 2..self.start + 3];
+                                match next {
+                                    "u" => self.check_keyword(3, "e", TokenKind::True),
+                                    "y" => self.check_keyword(3, "", TokenKind::Try),
+                                    _ => TokenKind::Identifier,
+                                }
+                            } else {
+                                TokenKind::Identifier
+                            }
+                        }
+                        _ => TokenKind::Identifier,
+                    };
+                }
+                TokenKind::Identifier
+            }
             "v" => self.check_keyword(1, "ar", TokenKind::Var),
             "w" => self.check_keyword(1, "hile", TokenKind::While),
             _ => TokenKind::Identifier,

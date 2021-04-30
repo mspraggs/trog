@@ -116,11 +116,11 @@ struct Compiler {
     function: ObjFunction,
     kind: FunctionKind,
     chunk: Chunk,
-
     locals: Vec<Local>,
     upvalues: Vec<Upvalue>,
     scope_depth: usize,
     lambda_count: usize,
+    in_try_block: bool,
 }
 
 enum CompilerError {
@@ -151,6 +151,7 @@ impl Compiler {
             upvalues: Vec::new(),
             scope_depth: 0,
             lambda_count: 0,
+            in_try_block: false,
         }
     }
 
@@ -773,7 +774,75 @@ impl<'a> Parser<'a> {
             }
             self.expression();
             self.consume(TokenKind::SemiColon, "Expected ';' after return value.");
+            if self.compiler().in_try_block {
+                self.emit_byte(OpCode::JumpFinally as u8);
+            }
             self.emit_byte(OpCode::Return as u8);
+        }
+    }
+
+    fn throw_statement(&mut self) {
+        self.expression();
+        self.consume(TokenKind::SemiColon, "Expected ';' after throw value.");
+        self.emit_byte(OpCode::Throw as u8);
+    }
+
+    fn try_statement(&mut self) {
+        let prev_in_try_block = self.compiler().in_try_block;
+        self.compiler_mut().in_try_block = true;
+
+        self.emit_byte(OpCode::PushExcHandler as u8);
+        let handler_catch_arg_pos = self.chunk().code.len();
+        self.emit_bytes([0xff, 0xff]);
+        self.emit_bytes([0xff, 0xff]);
+        let post_handler_args_ip_pos = self.chunk().code.len();
+
+        self.consume(TokenKind::LeftBrace, "Expected '{' after 'try'.");
+        self.begin_scope();
+        self.block();
+        self.end_scope();
+        self.compiler_mut().in_try_block = prev_in_try_block;
+
+        self.emit_byte(OpCode::PopExcHandler as u8);
+        let catch_jump_pos = self.emit_jump(OpCode::Jump);
+        self.patch_offset_at(handler_catch_arg_pos, post_handler_args_ip_pos);
+        let catch_start_pos = self.chunk().code.len();
+
+        let have_catch = self.match_token(TokenKind::Catch);
+
+        if have_catch {
+            self.emit_byte(OpCode::PopExcHandler as u8);
+            if !self.match_token(TokenKind::Identifier) {
+                self.error_at_current("Expected exception variable name.");
+                return;
+            }
+            self.begin_scope();
+
+            self.declare_variable();
+            self.mark_initialised();
+
+            self.consume(TokenKind::LeftBrace, "Expected '{' after variable.");
+
+            self.block();
+            self.end_scope();
+        }
+
+        self.patch_jump(catch_jump_pos);
+
+        self.patch_offset_at(handler_catch_arg_pos + 2, catch_start_pos);
+        let have_finally = self.match_token(TokenKind::Finally);
+
+        if have_finally {
+            self.consume(TokenKind::LeftBrace, "Expected '{' after 'finally'.");
+            self.begin_scope();
+            self.block();
+            self.end_scope();
+            self.emit_byte(OpCode::EndFinally as u8);
+        }
+
+        if !have_catch && !have_finally {
+            self.error("Expected 'catch' or 'finally' after 'try' block.");
+            return;
         }
     }
 
@@ -861,6 +930,10 @@ impl<'a> Parser<'a> {
             self.if_statement();
         } else if self.match_token(TokenKind::Return) {
             self.return_statement();
+        } else if self.match_token(TokenKind::Throw) {
+            self.throw_statement();
+        } else if self.match_token(TokenKind::Try) {
+            self.try_statement();
         } else if self.match_token(TokenKind::While) {
             self.while_statement();
         } else if self.match_token(TokenKind::LeftBrace) {
@@ -939,6 +1012,9 @@ impl<'a> Parser<'a> {
         } else {
             self.emit_byte(OpCode::Nil as u8);
         }
+        if self.compiler().in_try_block {
+            self.emit_byte(OpCode::JumpFinally as u8);
+        }
         self.emit_byte(OpCode::Return as u8);
     }
 
@@ -968,6 +1044,18 @@ impl<'a> Parser<'a> {
 
         self.chunk().code[offset] = bytes[0];
         self.chunk().code[offset + 1] = bytes[1];
+    }
+
+    fn patch_offset_at(&mut self, pos: usize, offset: usize) {
+        let jump = self.chunk().code.len() - offset;
+        if jump > common::JUMP_SIZE_MAX {
+            self.error("Too much code in block.");
+        }
+
+        let bytes = (jump as u16).to_ne_bytes();
+
+        self.chunk().code[pos] = bytes[0];
+        self.chunk().code[pos + 1] = bytes[1];
     }
 
     fn parse_precedence(&mut self, precedence: Precedence) {
@@ -1572,7 +1660,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 54] = [
+const RULES: [ParseRule; 58] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -1783,6 +1871,12 @@ const RULES: [ParseRule; 54] = [
         infix: None,
         precedence: Precedence::None,
     },
+    // Catch
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
     // Class
     ParseRule {
         prefix: None,
@@ -1798,6 +1892,12 @@ const RULES: [ParseRule; 54] = [
     // False
     ParseRule {
         prefix: Some(Parser::literal),
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Finally
+    ParseRule {
+        prefix: None,
         infix: None,
         precedence: Precedence::None,
     },
@@ -1867,9 +1967,21 @@ const RULES: [ParseRule; 54] = [
         infix: None,
         precedence: Precedence::None,
     },
+    // Throw
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
     // True
     ParseRule {
         prefix: Some(Parser::literal),
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Try
+    ParseRule {
+        prefix: None,
         infix: None,
         precedence: Precedence::None,
     },

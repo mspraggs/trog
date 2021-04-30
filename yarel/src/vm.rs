@@ -129,6 +129,7 @@ pub struct Vm {
     working_class_def: Option<ClassDef>,
     module_loader: LoadModuleFn,
     printer: NativeFn,
+    handling_exception: bool,
     pub(crate) heap: Heap,
 }
 
@@ -156,6 +157,7 @@ impl Vm {
             module_loader: default_read_module_source,
             printer: core::print,
             working_class_def: None,
+            handling_exception: false,
         };
         vm.init_heap_allocated_data();
         vm
@@ -910,6 +912,53 @@ impl Vm {
                     self.ip = unsafe { self.ip.offset(-(offset as isize)) };
                 }
 
+                byte if byte == OpCode::JumpFinally as u8 => {
+                    let return_value = self.peek(0);
+                    self.active_fiber_mut().return_ip = Some(self.ip);
+                    self.active_fiber_mut().return_value = return_value;
+                    self.pop();
+                    let (new_ip, init_stack_size) = {
+                        let handler = self
+                            .active_fiber_mut()
+                            .pop_exc_handler()
+                            .expect("Expected ExcHandler.");
+                        (handler.finally_ip, handler.init_stack_size)
+                    };
+                    self.active_fiber_mut().stack.truncate(init_stack_size);
+                    self.ip = new_ip;
+                }
+
+                byte if byte == OpCode::EndFinally as u8 => {
+                    if self.handling_exception {
+                        self.unwind_stack()?;
+                    }
+                    let return_data = self.active_fiber_mut().take_return_data();
+                    if let Some((value, ip)) = return_data {
+                        self.push(value);
+                        self.ip = ip;
+                    }
+                }
+
+                byte if byte == OpCode::PushExcHandler as u8 => {
+                    let try_size = read_short!() as usize;
+                    let catch_size = read_short!() as usize;
+
+                    let catch_ip = unsafe { self.ip.offset(try_size as isize) };
+                    let finally_ip = unsafe { self.ip.offset((try_size + catch_size) as isize) };
+
+                    self.active_fiber_mut().push_exc_handler(catch_ip, finally_ip);
+                }
+
+                byte if byte == OpCode::PopExcHandler as u8 => {
+                    self.active_fiber_mut().pop_exc_handler();
+                }
+
+                byte if byte == OpCode::Throw as u8 => {
+                    self.handling_exception = true;
+                    self.active_fiber_mut().error_ip = Some(self.ip);
+                    self.unwind_stack()?;
+                }
+
                 byte if byte == OpCode::Call as u8 => {
                     let arg_count = read_byte!() as usize;
                     self.call_value(self.peek(arg_count), arg_count)?;
@@ -1283,6 +1332,30 @@ impl Vm {
         Ok(())
     }
 
+    fn unwind_stack(&mut self) -> Result<(), Error> {
+        let exc_object = self.peek(0);
+
+        let handler = if let Some(h) = self.active_fiber_mut().pop_exc_handler() {
+            h
+        } else {
+            return Err(error!(
+                ErrorKind::RuntimeError,
+                "Unhandled exception: {}", exc_object
+            ));
+        };
+
+        self.active_fiber_mut()
+            .stack
+            .truncate(handler.init_stack_size);
+        self.push(exc_object);
+        self.active_fiber_mut().frames.truncate(handler.frame_count);
+        self.handling_exception = handler.has_catch_block();
+        self.active_fiber_mut().current_frame_mut().unwrap().ip = handler.catch_ip;
+        self.load_frame();
+
+        Ok(())
+    }
+
     fn reset_stack(&mut self) {
         if let Some(fiber) = self.fiber.as_ref() {
             let mut borrowed_fiber = fiber.borrow_mut();
@@ -1292,7 +1365,8 @@ impl Vm {
     }
 
     fn runtime_error(&mut self, error: &mut Error) -> Error {
-        self.active_fiber_mut().current_frame_mut().unwrap().ip = self.ip;
+        let ip = self.ip;
+        self.active_fiber_mut().store_error_ip_or(ip);
         for frame in self.active_fiber().frames.iter().rev() {
             let (function, module) = {
                 let borrowed_closure = frame.closure.borrow();

@@ -73,6 +73,28 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::JumpIfFalse => jump_instruction("JUMP_IF_FALSE", 1, chunk, offset),
         OpCode::JumpIfStopIter => jump_instruction("JUMP_IF_STOP_ITER", 1, chunk, offset),
         OpCode::Loop => jump_instruction("LOOP", -1, chunk, offset),
+        OpCode::JumpFinally => simple_instruction("JUMP_FINALLY", offset),
+        OpCode::EndFinally => simple_instruction("END_FINALLY", offset),
+        OpCode::PushExcHandler => {
+            let start = offset;
+            let offset = offset + 1;
+            let try_size =
+                u16::from_ne_bytes([chunk.code[offset], chunk.code[offset + 1]]) as usize;
+            let catch_pos = start + try_size + 5;
+            let offset = offset + 2;
+            let catch_size =
+                u16::from_ne_bytes([chunk.code[offset], chunk.code[offset + 1]]) as usize;
+            let finally_pos = catch_pos + catch_size;
+
+            println!(
+                "{:16} {:4} -> catch, {} -> finally",
+                "PUSH_EXC_HANDLER", catch_pos, finally_pos
+            );
+
+            offset + 2
+        }
+        OpCode::PopExcHandler => simple_instruction("POP_EXC_HANDLER", offset),
+        OpCode::Throw => simple_instruction("THROW", offset),
         OpCode::Call => byte_instruction("CALL", chunk, offset),
         OpCode::Invoke => invoke_instruction("INVOKE", chunk, offset),
         OpCode::Construct => byte_instruction("CONSTRUCT", chunk, offset),

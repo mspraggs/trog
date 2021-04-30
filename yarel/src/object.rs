@@ -883,6 +883,20 @@ impl GcManaged for CallFrame {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ExcHandler {
+    pub(crate) catch_ip: *const u8,
+    pub(crate) finally_ip: *const u8,
+    pub(crate) init_stack_size: usize,
+    pub(crate) frame_count: usize,
+}
+
+impl ExcHandler {
+    pub(crate) fn has_catch_block(&self) -> bool {
+        self.finally_ip == self.catch_ip
+    }
+}
+
 pub struct ObjFiber {
     pub(crate) class: Gc<ObjClass>,
     pub(crate) caller: Option<Gc<UnsafeRefCell<ObjFiber>>>,
@@ -890,6 +904,10 @@ pub struct ObjFiber {
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
     pub(crate) call_arity: usize,
+    pub(crate) return_value: Value,
+    pub(crate) exc_handlers: Vec<ExcHandler>,
+    pub(crate) return_ip: Option<*const u8>,
+    pub(crate) error_ip: Option<*const u8>,
 }
 
 impl ObjFiber {
@@ -914,6 +932,10 @@ impl ObjFiber {
             frames,
             open_upvalues: Vec::new(),
             call_arity: arity as usize,
+            return_value: Value::None,
+            exc_handlers: Vec::new(),
+            return_ip: None,
+            error_ip: None,
         }
     }
 
@@ -960,6 +982,34 @@ impl ObjFiber {
     pub(crate) fn has_finished(&self) -> bool {
         self.frames.is_empty()
     }
+
+    pub(crate) fn push_exc_handler(&mut self, catch_ip: *const u8, finally_ip: *const u8) {
+        self.exc_handlers.push(ExcHandler {
+            catch_ip,
+            finally_ip,
+            init_stack_size: self.stack.len(),
+            frame_count: self.frames.len(),
+        })
+    }
+
+    pub(crate) fn pop_exc_handler(&mut self) -> Option<ExcHandler> {
+        self.exc_handlers.pop()
+    }
+
+    pub(crate) fn take_return_data(&mut self) -> Option<(Value, *const u8)> {
+        if let Some(ip) = self.return_ip.take() {
+            let value = self.return_value;
+            self.return_value = Value::None;
+            Some((value, ip))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn store_error_ip_or(&mut self, alternative: *const u8) {
+        self.current_frame_mut().expect("Expected CallFrame.").ip =
+            self.error_ip.unwrap_or(alternative);
+    }
 }
 
 impl GcManaged for ObjFiber {
@@ -970,6 +1020,7 @@ impl GcManaged for ObjFiber {
         if let Some(&caller) = self.caller.as_ref() {
             caller.mark();
         }
+        self.return_value.mark();
     }
 
     fn blacken(&self) {
@@ -979,6 +1030,7 @@ impl GcManaged for ObjFiber {
         if let Some(&caller) = self.caller.as_ref() {
             caller.blacken();
         }
+        self.return_value.blacken();
     }
 }
 
