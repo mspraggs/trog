@@ -1,0 +1,5 @@
+// [module "main", line 3] Error at '#': Unexpected attribute list.
+// 65
+#[constructor(new)]
+#[constructor(new2)]
+class Foo {}

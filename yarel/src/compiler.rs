@@ -587,6 +587,7 @@ impl<'a> Parser<'a> {
     }
 
     fn attributes_declaration(&mut self) {
+        self.check_no_attributes();
         let opener = self.previous.clone();
         if !self.match_token(TokenKind::LeftBracket) {
             self.error_at_current("Expected '[' after '#'.");
