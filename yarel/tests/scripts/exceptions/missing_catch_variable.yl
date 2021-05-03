@@ -1,0 +1,6 @@
+// [module "main", line 5] Error at '{': Expected exception variable name.
+// 65
+try {
+}
+catch {
+}

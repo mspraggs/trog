@@ -1,0 +1,4 @@
+// Unhandled exception: error
+// [module "main", line 4] in script
+// 70
+throw "error";

@@ -1,0 +1,14 @@
+// try
+// catch error
+// finally
+// 0
+try {
+    print("try");
+    throw "error";
+}
+catch exc {
+    print("catch ${exc}");
+}
+finally {
+    print("finally");
+}

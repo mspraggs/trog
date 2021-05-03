@@ -1,0 +1,16 @@
+// Try...
+// Leaving function
+// [1, 2, 3]
+// 0
+
+fn function() {
+    try {
+        print("Try...");
+        return [1, 2, 3];
+    }
+    finally {
+        print("Leaving function");
+    }
+}
+
+print(function());

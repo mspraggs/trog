@@ -1,0 +1,8 @@
+// Error
+// 0
+try {
+    throw "Error";
+}
+catch err {
+    print(err);
+}

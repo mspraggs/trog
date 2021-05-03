@@ -1,0 +1,4 @@
+// [module "main", line 4] Error at '}': Expected 'catch' or 'finally' after 'try' block.
+// 65
+try {
+}

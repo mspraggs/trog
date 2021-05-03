@@ -1,0 +1,14 @@
+// Unhandled exception: Foo
+// [module "main", line 6] in lambda-0()
+// 70
+
+var fiber = Fiber.new(|| {
+    throw "Foo";
+});
+
+try {
+    fiber.call();
+}
+catch err {
+    print(err);
+}

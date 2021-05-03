@@ -1,0 +1,10 @@
+// Finally
+// Unhandled exception: Error
+// [module "main", line 6] in script
+// 70
+try {
+    throw "Error";
+}
+finally {
+    print("Finally");
+}

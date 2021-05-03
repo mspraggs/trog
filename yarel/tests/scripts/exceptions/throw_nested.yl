@@ -1,0 +1,19 @@
+// Unhandled exception: error
+// [module "main", line 8] in one()
+// [module "main", line 12] in two()
+// [module "main", line 16] in three()
+// [module "main", line 19] in script
+// 70
+fn one() {
+    throw "error";
+}
+
+fn two() {
+    one();
+}
+
+fn three() {
+    two();
+}
+
+three();
