@@ -6,8 +6,8 @@ class Foo {
   fn method_on_foo(self) { print("foo"); }
   fn override(self) { print("foo"); }
 }
-#[constructor(new)]
-class Bar < Foo {
+#[constructor(new), derive(Foo)]
+class Bar {
   fn method_on_bar(self) { print("bar"); }
   fn override(self) { print("bar"); }
 }

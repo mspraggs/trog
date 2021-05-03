@@ -3,8 +3,8 @@
 class Base {
   fn to_string(self) { return "Base"; }
 }
-#[constructor(new)]
-class Derived < Base {
+#[constructor(new), derive(Base)]
+class Derived {
   fn get_closure(self) {
     fn closure() {
       return super.to_string();

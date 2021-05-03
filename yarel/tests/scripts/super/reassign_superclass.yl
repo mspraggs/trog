@@ -6,8 +6,8 @@ class Base {
     print("Base.method()");
   }
 }
-#[constructor(new)]
-class Derived < Base {
+#[constructor(new), derive(Base)]
+class Derived {
   fn method(self) {
     super.method();
   }

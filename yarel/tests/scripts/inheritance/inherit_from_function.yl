@@ -2,4 +2,5 @@
 // [module "main", line 5] in script
 // 70
 fn foo() {}
-class Subclass < foo {}
+#[derive(foo)]
+class Subclass {}

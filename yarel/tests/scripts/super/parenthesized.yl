@@ -1,9 +1,10 @@
-// [module "main", line 8] Error at ')': Expected '.' after 'super'.
+// [module "main", line 9] Error at ')': Expected '.' after 'super'.
 // 65
 class A {
   fn method(self) {}
 }
-class B < A {
+#[derive(A)]
+class B {
   fn method(self) {
     (super).method();
   }

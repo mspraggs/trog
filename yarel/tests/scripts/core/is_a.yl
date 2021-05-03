@@ -18,8 +18,8 @@
 class Foo {
 }
 
-#[constructor(new)]
-class Bar < Foo {
+#[constructor(new), derive(Foo)]
+class Bar {
 
 }
 

@@ -7,13 +7,14 @@ class Foo {
     print("in foo");
   }
 }
-class Bar < Foo {
+#[derive(Foo)]
+class Bar {
   fn in_bar(self) {
     print("in bar");
   }
 }
-#[constructor(new)]
-class Baz < Bar {
+#[constructor(new), derive(Bar)]
+class Baz {
   fn in_baz(self) {
     print("in baz");
   }

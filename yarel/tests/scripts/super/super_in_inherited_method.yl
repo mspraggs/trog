@@ -5,7 +5,8 @@ class A {
     print("A");
   }
 }
-class B < A {
+#[derive(A)]
+class B {
   fn test(self) {
     super.say();
   }
@@ -13,8 +14,8 @@ class B < A {
     print("B");
   }
 }
-#[constructor(new)]
-class C < B {
+#[constructor(new), derive(B)]
+class C {
   fn say(self) {
     print("C");
   }

@@ -3,8 +3,8 @@
 // [module "main", line 12] in script
 // 70
 class Base {}
-#[constructor(new)]
-class Derived < Base {
+#[constructor(new), derive(Base)]
+class Derived {
   fn foo(self) {
     super.does_not_exist(1);
   }

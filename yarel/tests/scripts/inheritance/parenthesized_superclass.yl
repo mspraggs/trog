@@ -1,4 +1,5 @@
-// [module "main", line 4] Error at '(': Expected superclass name.
+// [module "main", line 4] Error at '(': Expected an attribute argument.
 // 65
 class Foo {}
-class Bar < (Foo) {}
+#[derive((Foo))]
+class Bar {}

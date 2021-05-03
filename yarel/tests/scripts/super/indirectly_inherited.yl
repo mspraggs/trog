@@ -6,9 +6,10 @@ class A {
     print("A.foo()");
   }
 }
-class B < A {}
-#[constructor(new)]
-class C < B {
+#[derive(A)]
+class B {}
+#[constructor(new), derive(B)]
+class C {
   fn foo(self) {
     print("C.foo()");
     super.foo();

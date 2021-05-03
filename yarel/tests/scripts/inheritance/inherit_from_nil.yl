@@ -2,4 +2,5 @@
 // [module "main", line 5] in script
 // 70
 var Nil = nil;
-class Foo < Nil {}
+#[derive(Nil)]
+class Foo {}

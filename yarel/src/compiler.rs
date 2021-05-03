@@ -473,6 +473,8 @@ impl<'a> Parser<'a> {
     fn class_declaration(&mut self) {
         let constructor_attr = self.take_attribute("constructor", 1);
         let constructor_name = constructor_attr.map(|a| a.arguments[0].clone());
+        let superclass_attr = self.take_attribute("derive", 1);
+        let superclass_name = superclass_attr.map(|a| a.arguments[0].clone());
         self.check_supported_attributes("class");
 
         self.consume(TokenKind::Identifier, "Expected class name.");
@@ -487,12 +489,11 @@ impl<'a> Parser<'a> {
             has_superclass: false,
         });
 
-        if self.match_token(TokenKind::Less) {
-            self.consume(TokenKind::Identifier, "Expected superclass name.");
-            Parser::variable(self, false);
+        if let Some(superclass_name) = superclass_name {
+            self.named_variable(superclass_name.clone(), false);
 
-            if name.source == self.previous.source {
-                self.error("A class cannot inherit from iteself.");
+            if name.source == superclass_name.source {
+                self.error("A class cannot inherit from itself.");
             }
 
             self.begin_scope();
@@ -500,7 +501,7 @@ impl<'a> Parser<'a> {
             self.define_variable(0);
 
             self.named_variable(name.clone(), false);
-            self.emit_byte(OpCode::Inherit as u8);
+            self.emit_byte_for_token(OpCode::Inherit as u8, superclass_name);
             self.class_compilers.last_mut().unwrap().has_superclass = true;
         }
 
@@ -971,6 +972,11 @@ impl<'a> Parser<'a> {
     fn emit_bytes(&mut self, bytes: [u8; 2]) {
         self.emit_byte(bytes[0]);
         self.emit_byte(bytes[1]);
+    }
+
+    fn emit_byte_for_token(&mut self, byte: u8, token: Token) {
+        let line = token.line as i32;
+        self.chunk().write(byte, line);
     }
 
     fn emit_constant_op(&mut self, opcode: OpCode, constant: u16) {

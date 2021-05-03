@@ -5,8 +5,8 @@ class A {
     print("A.method(" + arg + ")");
   }
 }
-#[constructor(new)]
-class B < A {
+#[constructor(new), derive(A)]
+class B {
   fn get_closure(self) {
     return super.method;
   }

@@ -7,8 +7,8 @@ class Base {
     print("Base.foo(" + a + ", " + b + ")");
   }
 }
-#[constructor(new)]
-class Derived < Base {
+#[constructor(new), derive(Base)]
+class Derived {
   fn foo(self) {
     super.foo(1);
   }

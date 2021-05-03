@@ -1,7 +1,8 @@
 // foo
 // 0
 class Foo {}
-class Baz < Foo {}
+#[derive(Foo)]
+class Baz {}
 
 {
   var foo = "foo";

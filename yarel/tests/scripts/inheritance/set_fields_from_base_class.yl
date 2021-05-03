@@ -15,8 +15,8 @@ class Foo {
     print(self.field2);
   }
 }
-#[constructor(new)]
-class Bar < Foo {
+#[constructor(new), derive(Foo)]
+class Bar {
   fn bar(self, a, b) {
     self.field1 = a;
     self.field2 = b;

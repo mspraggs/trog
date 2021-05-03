@@ -1,6 +1,7 @@
 // [0, 1, 1, 4, 9, 25, 64, 169, 441, 1156]
 // 0
-class Foo < Iter {
+#[derive(Iter)]
+class Foo {
     #[constructor]
     fn new(self, max) {
         self.first = 0;
