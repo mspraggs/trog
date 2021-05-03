@@ -1,4 +1,4 @@
-// Cannot call a fiber that has already been called.
+// Unhandled RuntimeError: Cannot call a fiber that has already been called.
 // [module "main", line 5] in lambda-0()
 // 70
 var fiber2 = Fiber.new(|| {

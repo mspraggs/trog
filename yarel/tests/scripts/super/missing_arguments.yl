@@ -1,4 +1,4 @@
-// Expected 2 arguments but found 1.
+// Unhandled TypeError: Expected 2 arguments but found 1.
 // [module "main", line 13] in foo()
 // [module "main", line 16] in script
 // 70

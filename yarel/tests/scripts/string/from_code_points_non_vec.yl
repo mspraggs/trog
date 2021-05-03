@@ -1,4 +1,4 @@
-// Expected a Vec instance but found 'not a vector'.
+// Unhandled TypeError: Expected a Vec instance but found 'not a vector'.
 // [module "main", line 4] in script
 // 70
 String.from_code_points("not a vector");

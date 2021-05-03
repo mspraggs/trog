@@ -1,4 +1,4 @@
-// Undefined property 'unknown'.
+// Unhandled AttributeError: Undefined property 'unknown'.
 // [module "main", line 5] in script
 // 70
 class Foo {}

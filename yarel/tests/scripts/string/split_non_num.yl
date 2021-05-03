@@ -1,4 +1,4 @@
-// Expected a string but found 'false'.
+// Unhandled TypeError: Expected a string but found 'false'.
 // [module "main", line 4] in script
 // 70
 "".split(false);

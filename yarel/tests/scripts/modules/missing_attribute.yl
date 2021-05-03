@@ -1,5 +1,5 @@
 // foo
-// Undefined property 'bar'.
+// Unhandled AttributeError: Undefined property 'bar'.
 // [module "main", line 6] in script
 // 70
 import "modules/foo";

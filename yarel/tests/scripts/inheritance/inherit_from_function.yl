@@ -1,4 +1,4 @@
-// Superclass must be a class.
+// Unhandled RuntimeError: Superclass must be a class.
 // [module "main", line 5] in script
 // 70
 fn foo() {}

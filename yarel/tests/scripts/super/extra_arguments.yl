@@ -1,5 +1,5 @@
 // Derived.foo()
-// Expected 2 arguments but found 4.
+// Unhandled TypeError: Expected 2 arguments but found 4.
 // [module "main", line 15] in foo()
 // [module "main", line 18] in script
 // 70

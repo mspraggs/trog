@@ -1,4 +1,4 @@
-// Expected a string but found 'nil'.
+// Unhandled TypeError: Expected a string but found 'nil'.
 // [module "main", line 4] in script
 // 70
 "".replace("a", nil);

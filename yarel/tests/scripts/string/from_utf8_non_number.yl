@@ -1,4 +1,4 @@
-// Expected a number but found 'true'.
+// Unhandled TypeError: Expected a number but found 'true'.
 // [module "main", line 4] in script
 // 0
 String.from_utf8([true]);

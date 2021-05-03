@@ -1,4 +1,4 @@
-// String slice end out of range.
+// Unhandled IndexError: String slice end out of range.
 // [module "main", line 4] in script
 // 70
 "🙁😐🙂"[0..-16];

@@ -1,4 +1,4 @@
-// Tuple index parameter out of bounds
+// Unhandled IndexError: Tuple index parameter out of bounds
 // [module "main", line 5] in script
 // 70
 var t = (1, 2);

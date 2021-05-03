@@ -1,4 +1,4 @@
-// Expected an integer value but found 'nil'.
+// Unhandled TypeError: Expected an integer value but found 'nil'.
 // [module "main", line 4] in script
 // 70
 "".find("a", nil);

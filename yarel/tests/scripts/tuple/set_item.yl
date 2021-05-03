@@ -1,4 +1,4 @@
-// Undefined property '__setitem__'.
+// Unhandled AttributeError: Undefined property '__setitem__'.
 // [module "main", line 5] in script
 // 70
 var t = (1, 2);

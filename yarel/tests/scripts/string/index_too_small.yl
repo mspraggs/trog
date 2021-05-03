@@ -1,4 +1,4 @@
-// String index out of bounds.
+// Unhandled IndexError: String index out of bounds.
 // [module "main", line 4] in script
 // 70
 "abcd"[-20];

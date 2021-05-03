@@ -1,11 +1,25 @@
-class Err {
+class Error {
     #[constructor]
     fn new(self, context) {
         self.context = context;
     }
 }
 
-class StopIter < Err {
+class RuntimeError < Error {}
+
+class AttributeError < RuntimeError {}
+
+class IndexError < RuntimeError {}
+
+class ImportError < RuntimeError {}
+
+class NameError < RuntimeError {}
+
+class TypeError < RuntimeError {}
+
+class ValueError < RuntimeError {}
+
+class StopIter < Error {
     #[constructor]
     fn new(self) {
         super.new(nil);

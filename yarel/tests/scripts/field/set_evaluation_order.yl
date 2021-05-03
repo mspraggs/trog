@@ -1,4 +1,4 @@
-// Undefined variable 'undefined1'.
+// Unhandled NameError: Undefined variable 'undefined1'.
 // [module "main", line 4] in script
 // 70
 undefined1.bar

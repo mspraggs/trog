@@ -1,4 +1,4 @@
-// Provided string index is not on a character boundary.
+// Unhandled IndexError: Provided string index is not on a character boundary.
 // [module "main", line 4] in script
 // 70
 "🙁😐🙂"[3];

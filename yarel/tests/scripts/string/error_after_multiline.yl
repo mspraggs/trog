@@ -1,4 +1,4 @@
-// Undefined variable 'err'.
+// Unhandled NameError: Undefined variable 'err'.
 // [module "main", line 8] in script
 // 70
 var a = "1

@@ -103,7 +103,7 @@ fn default_read_module_source(path: &str) -> Result<String, Error> {
                 _ => "other",
             };
             return Err(error!(
-                crate::error::ErrorKind::RuntimeError,
+                crate::error::ErrorKind::ImportError,
                 "Unable to read file '{}' ({}).", filename, reason
             ));
         }
@@ -378,7 +378,7 @@ impl Vm {
     }
 
     pub fn new_root_obj_err(&mut self, context: Value) -> Root<RefCell<ObjInstance>> {
-        let class = self.class_store.get_obj_err_class();
+        let class = self.class_store.get_obj_error_class();
         self.new_root_obj_err_with_class(class, context)
     }
 
@@ -521,9 +521,11 @@ impl Vm {
                             Value::Number(second)
                         ) => (first, second),
                         _ => {
-                            return Err(error!(
-                                ErrorKind::RuntimeError, "Binary operands must both be numbers."
-                            ));
+                            let err = error!(
+                                ErrorKind::TypeError, "Binary operands must both be numbers."
+                            );
+                            self.try_handle_error(err)?;
+                            continue;
                         }
                     };
                     self.push($value_type(first $op second));
@@ -616,16 +618,18 @@ impl Vm {
 
                 byte if byte == OpCode::GetGlobal as u8 => {
                     let name = read_string!();
-                    let value = match self.active_module.borrow().attributes.get(&name) {
-                        Some(value) => *value,
-                        None => {
-                            return Err(error!(
-                                ErrorKind::RuntimeError,
-                                "Undefined variable '{}'.", *name
-                            ));
-                        }
-                    };
-                    self.push(value);
+                    let value = self
+                        .active_module
+                        .borrow()
+                        .attributes
+                        .get(&name)
+                        .map(|&v| v);
+                    if let Some(value) = value {
+                        self.push(value);
+                    } else {
+                        let err = error!(ErrorKind::NameError, "Undefined variable '{}'.", *name);
+                        self.try_handle_error(err)?;
+                    }
                 }
 
                 byte if byte == OpCode::DefineGlobal as u8 => {
@@ -641,14 +645,17 @@ impl Vm {
                 byte if byte == OpCode::SetGlobal as u8 => {
                     let name = read_string!();
                     let value = self.peek(0);
-                    let globals = &mut self.active_module.borrow_mut().attributes;
-                    let prev = globals.insert(name, value);
-                    if prev.is_none() {
-                        globals.remove(&name);
-                        return Err(error!(
-                            ErrorKind::RuntimeError,
-                            "Undefined variable '{}'.", *name
-                        ));
+                    let global_is_undefined = {
+                        let globals = &mut self.active_module.borrow_mut().attributes;
+                        let prev = globals.insert(name, value);
+                        if prev.is_none() {
+                            globals.remove(&name);
+                        }
+                        prev.is_none()
+                    };
+                    if global_is_undefined {
+                        let err = error!(ErrorKind::NameError, "Undefined variable '{}'.", *name);
+                        self.try_handle_error(err)?;
                     }
                 }
 
@@ -711,10 +718,9 @@ impl Vm {
                     let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
                         ptr
                     } else {
-                        return Err(error!(
-                            ErrorKind::RuntimeError,
-                            "Only instances have fields."
-                        ));
+                        let err = error!(ErrorKind::AttributeError, "Only instances have fields.");
+                        self.try_handle_error(err)?;
+                        continue;
                     };
                     let name = read_string!();
                     let value = self.peek(0);
@@ -772,10 +778,11 @@ impl Vm {
                         }
 
                         _ => {
-                            return Err(error!(
-                                ErrorKind::RuntimeError,
+                            let err = error!(
+                                ErrorKind::TypeError,
                                 "Binary operands must be two numbers or two strings.",
-                            ));
+                            );
+                            self.try_handle_error(err)?;
                         }
                     }
                 }
@@ -796,10 +803,8 @@ impl Vm {
                     if let Some(num) = value.try_as_number() {
                         self.push(Value::Number(-num));
                     } else {
-                        return Err(error!(
-                            ErrorKind::RuntimeError,
-                            "Unary operand must be a number."
-                        ));
+                        let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
+                        self.try_handle_error(err)?;
                     }
                 }
 
@@ -815,26 +820,30 @@ impl Vm {
 
                 byte if byte == OpCode::BuildHashMap as u8 => {
                     let num_elements = read_byte!() as usize;
-                    let map = self.new_root_obj_hash_map();
-                    let begin = self.stack_size() - num_elements * 2;
-                    for i in 0..num_elements {
-                        let key = self.active_fiber().stack[begin + 2 * i];
-                        if !key.has_hash() {
-                            return Err(error!(
-                                ErrorKind::ValueError,
-                                "Cannot use unhashable value '{}' as HashMap key.", key
-                            ));
+                    match self.build_hash_map(num_elements) {
+                        Ok(map) => {
+                            self.push(Value::ObjHashMap(map.as_gc()));
                         }
-                        let value = self.active_fiber().stack[begin + 2 * i + 1];
-                        map.borrow_mut().elements.insert(key, value);
+                        Err(e) => {
+                            self.try_handle_error(e)?;
+                        }
                     }
-                    self.discard(num_elements * 2);
-                    self.push(Value::ObjHashMap(map.as_gc()));
                 }
 
                 byte if byte == OpCode::BuildRange as u8 => {
-                    let end = utils::validate_integer(self.pop())?;
-                    let begin = utils::validate_integer(self.pop())?;
+                    macro_rules! pop_integer {
+                        () => {
+                            match utils::validate_integer(self.pop()) {
+                                Ok(i) => i,
+                                Err(e) => {
+                                    self.try_handle_error(e)?;
+                                    continue;
+                                }
+                            }
+                        };
+                    }
+                    let end = pop_integer!();
+                    let begin = pop_integer!();
                     let range = self.build_range(begin, end);
                     self.push(Value::ObjRange(range));
                 }
@@ -946,7 +955,8 @@ impl Vm {
                     let catch_ip = unsafe { self.ip.offset(try_size as isize) };
                     let finally_ip = unsafe { self.ip.offset((try_size + catch_size) as isize) };
 
-                    self.active_fiber_mut().push_exc_handler(catch_ip, finally_ip);
+                    self.active_fiber_mut()
+                        .push_exc_handler(catch_ip, finally_ip);
                 }
 
                 byte if byte == OpCode::PopExcHandler as u8 => {
@@ -1079,10 +1089,9 @@ impl Vm {
                     let superclass = if let Some(ptr) = self.peek(1).try_as_obj_class() {
                         ptr
                     } else {
-                        return Err(error!(
-                            ErrorKind::RuntimeError,
-                            "Superclass must be a class."
-                        ));
+                        let err = error!(ErrorKind::RuntimeError, "Superclass must be a class.");
+                        self.try_handle_error(err)?;
+                        continue;
                     };
                     self.working_class_def.as_mut().unwrap().class.superclass = Some(superclass);
                     for (name, method) in &superclass.methods {
@@ -1113,27 +1122,35 @@ impl Vm {
                         if module.borrow().imported {
                             self.push(Value::ObjModule(module));
                             self.push(Value::None);
-                            continue;
                         } else {
-                            return Err(error!(
-                                ErrorKind::RuntimeError,
+                            let err = error!(
+                                ErrorKind::ImportError,
                                 "Circular dependency encountered when importing module '{}'.",
                                 path.as_str()
-                            ));
+                            );
+                            self.try_handle_error(err)?;
                         }
+                        continue;
                     }
 
-                    let source = (self.module_loader)(&path)?;
+                    let source = match (self.module_loader)(&path) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            self.try_handle_error(e)?;
+                            continue;
+                        }
+                    };
 
                     let function = match compiler::compile(self, source, Some(&path)) {
                         Ok(f) => f,
                         Err(e) => {
                             let mut error =
-                                error!(ErrorKind::RuntimeError, "Error compiling module:");
+                                error!(ErrorKind::ImportError, "Error compiling module:");
                             for msg in e.get_messages() {
                                 error.add_message(&format!("    {}", msg));
                             }
-                            return Err(error);
+                            self.try_handle_error(error)?;
+                            continue;
                         }
                     };
 
@@ -1186,10 +1203,10 @@ impl Vm {
 
             Value::ObjNative(wrapped) => self.call_native(wrapped, arg_count),
 
-            _ => Err(error!(
-                ErrorKind::TypeError,
-                "Can only call functions and methods."
-            )),
+            _ => {
+                let err = error!(ErrorKind::TypeError, "Can only call functions and methods.");
+                self.try_handle_error(err)
+            }
         }
     }
 
@@ -1206,10 +1223,8 @@ impl Vm {
                 _ => unreachable!(),
             };
         }
-        Err(error!(
-            ErrorKind::AttributeError,
-            "Undefined property '{}'.", *name
-        ))
+        let err = error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
+        self.try_handle_error(err)
     }
 
     fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), Error> {
@@ -1306,16 +1321,19 @@ impl Vm {
         arg_count: usize,
     ) -> Result<(), Error> {
         if arg_count as u32 + 1 != closure.borrow().function.arity {
-            return Err(error!(
+            let err = error!(
                 ErrorKind::TypeError,
                 "Expected {} arguments but found {}.",
                 closure.borrow().function.arity - 1,
                 arg_count
-            ));
+            );
+            self.try_handle_error(err)?;
+            return Ok(());
         }
 
         if self.active_fiber().frames.len() == common::FRAMES_MAX {
-            return Err(error!(ErrorKind::IndexError, "Stack overflow."));
+            let err = error!(ErrorKind::IndexError, "Stack overflow.");
+            return self.try_handle_error(err);
         }
 
         self.active_fiber_mut().current_frame_mut().unwrap().ip = self.ip;
@@ -1326,22 +1344,29 @@ impl Vm {
 
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
         let function = native.function;
-        let result = function(self, arg_count)?;
+        let result = function(self, arg_count);
         self.discard(arg_count);
-        self.poke(0, result);
+        match result {
+            Ok(value) => {
+                self.poke(0, value);
+            }
+            Err(error) => {
+                let exc_object = self.new_root_obj_err_from_error(error);
+                self.poke(0, Value::ObjInstance(exc_object.as_gc()));
+                self.unwind_stack()?;
+            }
+        }
         Ok(())
     }
 
     fn unwind_stack(&mut self) -> Result<(), Error> {
         let exc_object = self.peek(0);
 
-        let handler = if let Some(h) = self.active_fiber_mut().pop_exc_handler() {
+        let exc_handler = self.active_fiber_mut().pop_exc_handler();
+        let handler = if let Some(h) = exc_handler {
             h
         } else {
-            return Err(error!(
-                ErrorKind::RuntimeError,
-                "Unhandled exception: {}", exc_object
-            ));
+            return Err(self.new_error_from_value(exc_object));
         };
 
         self.active_fiber_mut()
@@ -1420,10 +1445,8 @@ impl Vm {
                 Value::ObjBoundNative(self.new_root_obj_bound_method(instance, *ptr).as_gc())
             }
             None => {
-                return Err(error!(
-                    ErrorKind::AttributeError,
-                    "Undefined property '{}'.", *name
-                ));
+                let err = error!(ErrorKind::AttributeError, "Undefined property '{}'.", *name);
+                return self.try_handle_error(err);
             }
             _ => unreachable!(),
         };
@@ -1489,7 +1512,7 @@ impl Vm {
         range_gc
     }
 
-    pub fn new_root_obj_err_with_class(
+    fn new_root_obj_err_with_class(
         &mut self,
         class: Gc<ObjClass>,
         context: Value,
@@ -1498,6 +1521,86 @@ impl Vm {
         let instance = self.new_root_obj_instance(class);
         instance.borrow_mut().fields.insert(context_string, context);
         instance
+    }
+
+    fn new_root_obj_err_from_error(&mut self, error: Error) -> Root<RefCell<ObjInstance>> {
+        let msg = self.new_gc_obj_string(&error.get_messages().join("\n"));
+        let class = match error.get_kind() {
+            ErrorKind::AttributeError => self.class_store.get_obj_attribute_error_class(),
+            ErrorKind::CompileError => self.class_store.get_obj_runtime_error_class(),
+            ErrorKind::ImportError => self.class_store.get_obj_import_error_class(),
+            ErrorKind::IndexError => self.class_store.get_obj_index_error_class(),
+            ErrorKind::NameError => self.class_store.get_obj_name_error_class(),
+            ErrorKind::RuntimeError => self.class_store.get_obj_runtime_error_class(),
+            ErrorKind::TypeError => self.class_store.get_obj_type_error_class(),
+            ErrorKind::ValueError => self.class_store.get_obj_value_error_class(),
+        };
+
+        self.new_root_obj_err_with_class(class, Value::ObjString(msg))
+    }
+
+    fn new_error_from_value(&mut self, value: Value) -> Error {
+        let (kind, exc_description, context) = if let Some(instance) = value.try_as_obj_instance() {
+            let class = instance.borrow().class;
+            let kind = if class == self.class_store.get_obj_attribute_error_class() {
+                ErrorKind::AttributeError
+            } else if class == self.class_store.get_obj_runtime_error_class() {
+                ErrorKind::CompileError
+            } else if class == self.class_store.get_obj_import_error_class() {
+                ErrorKind::ImportError
+            } else if class == self.class_store.get_obj_index_error_class() {
+                ErrorKind::IndexError
+            } else if class == self.class_store.get_obj_name_error_class() {
+                ErrorKind::NameError
+            } else if class == self.class_store.get_obj_runtime_error_class() {
+                ErrorKind::RuntimeError
+            } else if class == self.class_store.get_obj_type_error_class() {
+                ErrorKind::TypeError
+            } else if class == self.class_store.get_obj_value_error_class() {
+                ErrorKind::ValueError
+            } else {
+                ErrorKind::RuntimeError
+            };
+            let context_string = self.new_gc_obj_string("context");
+            let borrowed_instance = instance.borrow();
+            let context = borrowed_instance
+                .fields
+                .get(&context_string)
+                .map(|&v| v)
+                .unwrap_or(value);
+            (kind, class.name.as_str().to_owned(), context)
+        } else {
+            (ErrorKind::RuntimeError, "exception".to_owned(), value)
+        };
+
+        let msg = format!("Unhandled {}: {}", exc_description, context);
+        let lines = msg.lines().collect::<Vec<_>>();
+
+        Error::with_messages(kind, &lines)
+    }
+
+    fn try_handle_error(&mut self, error: Error) -> Result<(), Error> {
+        let obj_err = self.new_root_obj_err_from_error(error);
+        self.push(Value::ObjInstance(obj_err.as_gc()));
+        self.unwind_stack()
+    }
+
+    fn build_hash_map(&mut self, num_elements: usize) -> Result<Root<RefCell<ObjHashMap>>, Error> {
+        let map = self.new_root_obj_hash_map();
+        let begin = self.stack_size() - num_elements * 2;
+        for i in 0..num_elements {
+            let key = self.active_fiber().stack[begin + 2 * i];
+            if !key.has_hash() {
+                return Err(error!(
+                    ErrorKind::ValueError,
+                    "Cannot use unhashable value '{}' as HashMap key.", key
+                ));
+            }
+            let value = self.active_fiber().stack[begin + 2 * i + 1];
+            map.borrow_mut().elements.insert(key, value);
+        }
+        self.discard(num_elements * 2);
+        Ok(map)
     }
 
     fn init_heap_allocated_data(&mut self) {

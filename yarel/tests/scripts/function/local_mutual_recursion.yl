@@ -1,4 +1,4 @@
-// Undefined variable 'is_odd'.
+// Unhandled NameError: Undefined variable 'is_odd'.
 // [module "main", line 8] in is_even()
 // [module "main", line 13] in script
 // 70

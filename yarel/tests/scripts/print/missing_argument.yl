@@ -1,4 +1,4 @@
-// Expected one argument to 'print'.
+// Unhandled TypeError: Expected one argument to 'print'.
 // [module "main", line 4] in script
 // 70
 print();

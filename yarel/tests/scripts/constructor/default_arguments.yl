@@ -1,4 +1,4 @@
-// Expected 0 arguments but found 3.
+// Unhandled TypeError: Expected 0 arguments but found 3.
 // [module "main", line 6] in script
 // 70
 #[constructor(new)]

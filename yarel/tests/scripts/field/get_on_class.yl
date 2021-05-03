@@ -1,4 +1,4 @@
-// Undefined property 'bar'.
+// Unhandled AttributeError: Undefined property 'bar'.
 // [module "main", line 5] in script
 // 70
 class Foo {}

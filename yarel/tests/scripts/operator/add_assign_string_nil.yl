@@ -1,4 +1,4 @@
-// Binary operands must be two numbers or two strings.
+// Unhandled TypeError: Binary operands must be two numbers or two strings.
 // [module "main", line 5] in script
 // 70
 var s = "s";

@@ -1,4 +1,4 @@
-// Expected 2 arguments but found 1.
+// Unhandled TypeError: Expected 2 arguments but found 1.
 // [module "main", line 5] in script
 // 70
 fn f(a, b) {}

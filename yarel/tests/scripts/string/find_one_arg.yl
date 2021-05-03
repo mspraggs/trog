@@ -1,4 +1,4 @@
-// Expected 2 parameters but found 1.
+// Unhandled TypeError: Expected 2 parameters but found 1.
 // [module "main", line 4] in script
 // 70
 "".find("a");

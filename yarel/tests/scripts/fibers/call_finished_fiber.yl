@@ -1,5 +1,5 @@
 // In fiber.
-// Cannot call a finished fiber.
+// Unhandled RuntimeError: Cannot call a finished fiber.
 // [module "main", line 7] in script
 // 70
 var fiber = Fiber.new(|| { print("In fiber."); });

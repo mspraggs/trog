@@ -1,4 +1,4 @@
-// Cannot use unhashable value '[]' as HashMap key.
+// Unhandled ValueError: Cannot use unhashable value '[]' as HashMap key.
 // [module "main", line 5] in script
 // 70
 var d = {};

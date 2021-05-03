@@ -19,6 +19,7 @@ use std::fmt;
 pub enum ErrorKind {
     AttributeError,
     CompileError,
+    ImportError,
     IndexError,
     NameError,
     RuntimeError,

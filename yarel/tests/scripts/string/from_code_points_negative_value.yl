@@ -1,4 +1,4 @@
-// Expected a positive integer less than 4294967295 but found '-1'.
+// Unhandled ValueError: Expected a positive integer less than 4294967295 but found '-1'.
 // [module "main", line 4] in script
 // 70
 String.from_code_points([-1]);

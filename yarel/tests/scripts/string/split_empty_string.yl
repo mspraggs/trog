@@ -1,4 +1,4 @@
-// Cannot split using an empty string.
+// Unhandled ValueError: Cannot split using an empty string.
 // [module "main", line 4] in script
 // 70
 "".split("");

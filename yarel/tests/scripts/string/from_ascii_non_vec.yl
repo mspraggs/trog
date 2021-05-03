@@ -1,4 +1,4 @@
-// Expected a Vec instance but found 'some arg'.
+// Unhandled TypeError: Expected a Vec instance but found 'some arg'.
 // [module "main", line 4] in script
 // 0
 String.from_ascii("some arg");

@@ -1,4 +1,4 @@
-// Undefined property 'does_not_exist'.
+// Unhandled AttributeError: Undefined property 'does_not_exist'.
 // [module "main", line 9] in foo()
 // [module "main", line 12] in script
 // 70

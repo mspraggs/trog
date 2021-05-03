@@ -123,7 +123,7 @@ fn parse_test(source: &str) -> Vec<String> {
 fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     if num_args != 1 {
         return Err(Error::with_message(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             "Expected one argument to 'print'.",
         ));
     }
@@ -194,7 +194,7 @@ macro_rules! gen_module_loader {
             match path {
                 $($key => Ok($result.to_string()),)*
                 _ => Err(Error::with_message(
-                    ErrorKind::RuntimeError,
+                    ErrorKind::ImportError,
                     &format!("Unable to read file '{}.yl' (file not found).", path),
                 )),
             }

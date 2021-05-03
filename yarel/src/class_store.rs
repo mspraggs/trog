@@ -44,8 +44,15 @@ pub struct CoreClassStore {
     root_obj_module_class: Root<ObjClass>,
     root_obj_string_iter_class: Root<ObjClass>,
     root_obj_fiber_class: Root<ObjClass>,
-    root_obj_err_class: Root<ObjClass>,
+    root_obj_error_class: Root<ObjClass>,
     root_obj_stop_iter_class: Root<ObjClass>,
+    root_obj_runtime_error_class: Root<ObjClass>,
+    root_obj_attribute_error_class: Root<ObjClass>,
+    root_obj_index_error_class: Root<ObjClass>,
+    root_obj_import_error_class: Root<ObjClass>,
+    root_obj_name_error_class: Root<ObjClass>,
+    root_obj_type_error_class: Root<ObjClass>,
+    root_obj_value_error_class: Root<ObjClass>,
 }
 
 impl CoreClassStore {
@@ -73,8 +80,15 @@ impl CoreClassStore {
             root_obj_module_class: Root::null(),
             root_obj_string_iter_class: Root::null(),
             root_obj_fiber_class: Root::null(),
-            root_obj_err_class: Root::null(),
+            root_obj_error_class: Root::null(),
             root_obj_stop_iter_class: Root::null(),
+            root_obj_runtime_error_class: Root::null(),
+            root_obj_attribute_error_class: Root::null(),
+            root_obj_import_error_class: Root::null(),
+            root_obj_index_error_class: Root::null(),
+            root_obj_name_error_class: Root::null(),
+            root_obj_type_error_class: Root::null(),
+            root_obj_value_error_class: Root::null(),
         }
     }
 
@@ -107,8 +121,15 @@ impl CoreClassStore {
         let root_obj_module_class = build_empty_class();
         let root_obj_string_iter_class = build_empty_class();
         let root_obj_fiber_class = build_empty_class();
-        let root_obj_err_class = build_empty_class();
+        let root_obj_error_class = build_empty_class();
         let root_obj_stop_iter_class = build_empty_class();
+        let root_obj_runtime_error_class = build_empty_class();
+        let root_obj_attribute_error_class = build_empty_class();
+        let root_obj_index_error_class = build_empty_class();
+        let root_obj_import_error_class = build_empty_class();
+        let root_obj_name_error_class = build_empty_class();
+        let root_obj_type_error_class = build_empty_class();
+        let root_obj_value_error_class = build_empty_class();
         CoreClassStore {
             root_base_metaclass,
             root_object_class,
@@ -132,8 +153,15 @@ impl CoreClassStore {
             root_obj_module_class,
             root_obj_string_iter_class,
             root_obj_fiber_class,
-            root_obj_err_class,
+            root_obj_error_class,
             root_obj_stop_iter_class,
+            root_obj_runtime_error_class,
+            root_obj_attribute_error_class,
+            root_obj_import_error_class,
+            root_obj_index_error_class,
+            root_obj_name_error_class,
+            root_obj_type_error_class,
+            root_obj_value_error_class,
         }
     }
 
@@ -167,14 +195,56 @@ impl CoreClassStore {
         let root_obj_native_class = build_value_type_class("BuiltIn");
         let root_obj_closure_method_class = build_value_type_class("Method");
         let root_obj_native_method_class = build_value_type_class("BuiltInMethod");
-        let root_obj_err_class = vm
-            .get_global("main", "Err")
+        let root_obj_error_class = vm
+            .get_global("main", "Error")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
             .as_root();
         let root_obj_stop_iter_class = vm
             .get_global("main", "StopIter")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_runtime_error_class = vm
+            .get_global("main", "RuntimeError")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_attribute_error_class = vm
+            .get_global("main", "AttributeError")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_import_error_class = vm
+            .get_global("main", "ImportError")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_index_error_class = vm
+            .get_global("main", "IndexError")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_name_error_class = vm
+            .get_global("main", "NameError")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_type_error_class = vm
+            .get_global("main", "TypeError")
+            .unwrap()
+            .try_as_obj_class()
+            .expect("Expected ObjClass.")
+            .as_root();
+        let root_obj_value_error_class = vm
+            .get_global("main", "ValueError")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
@@ -275,8 +345,15 @@ impl CoreClassStore {
             root_obj_module_class,
             root_obj_string_iter_class,
             root_obj_fiber_class,
-            root_obj_err_class,
+            root_obj_error_class,
             root_obj_stop_iter_class,
+            root_obj_runtime_error_class,
+            root_obj_attribute_error_class,
+            root_obj_import_error_class,
+            root_obj_index_error_class,
+            root_obj_name_error_class,
+            root_obj_type_error_class,
+            root_obj_value_error_class,
         }
     }
 
@@ -368,12 +445,40 @@ impl CoreClassStore {
         self.root_obj_fiber_class.as_gc()
     }
 
-    pub(crate) fn get_obj_err_class(&self) -> Gc<ObjClass> {
-        self.root_obj_err_class.as_gc()
+    pub(crate) fn get_obj_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_error_class.as_gc()
     }
 
     pub(crate) fn get_obj_stop_iter_class(&self) -> Gc<ObjClass> {
         self.root_obj_stop_iter_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_runtime_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_runtime_error_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_attribute_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_attribute_error_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_import_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_import_error_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_index_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_index_error_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_name_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_name_error_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_type_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_type_error_class.as_gc()
+    }
+
+    pub(crate) fn get_obj_value_error_class(&self) -> Gc<ObjClass> {
+        self.root_obj_value_error_class.as_gc()
     }
 }
 

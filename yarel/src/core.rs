@@ -27,7 +27,7 @@ use crate::vm::Vm;
 fn check_num_args(num_args: usize, expected: usize) -> Result<(), Error> {
     if num_args != expected {
         return Err(error!(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             "Expected {} parameter{} but found {}.",
             expected,
             if expected == 1 { "" } else { "s" },
@@ -407,7 +407,7 @@ fn string_find(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     let string = vm.peek(2).try_as_obj_string().expect("Expected ObjString.");
     let substring = vm.peek(1).try_as_obj_string().ok_or_else(|| {
         error!(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             "Expected a string but found '{}'.",
             vm.peek(1)
         )
@@ -425,7 +425,7 @@ fn string_find(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         }
     };
     if start < 0 || start >= string_len {
-        return Err(error!(ErrorKind::ValueError, "String index out of bounds."));
+        return Err(error!(ErrorKind::IndexError, "String index out of bounds."));
     }
     let start = start as usize;
     check_char_boundary(string, start, "string index")?;
@@ -447,7 +447,7 @@ fn string_replace(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     let string = vm.peek(2).try_as_obj_string().expect("Expected ObjString.");
     let old = vm.peek(1).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             &format!("Expected a string but found '{}'.", vm.peek(1)),
         )
     })?;
@@ -459,7 +459,7 @@ fn string_replace(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     }
     let new = vm.peek(0).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             &format!("Expected a string but found '{}'.", vm.peek(0)),
         )
     })?;
@@ -473,7 +473,7 @@ fn string_split(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
     let delim = vm.peek(0).try_as_obj_string().ok_or_else(|| {
         Error::with_message(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             &format!("Expected a string but found '{}'.", vm.peek(0)),
         )
     })?;
@@ -632,7 +632,7 @@ fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             let index = get_bounded_index(
                 vm.peek(0),
                 tuple.elements.len() as isize,
-                "Tuple index parameter out of bounds",
+                "Tuple index parameter out of bounds.",
             )?;
             Ok(tuple.elements[index])
         }
@@ -752,7 +752,7 @@ fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             let index = get_bounded_index(
                 vm.peek(0),
                 borrowed_vec.elements.len() as isize,
-                "Vec index parameter out of bounds",
+                "Vec index parameter out of bounds.",
             )?;
             Ok(borrowed_vec.elements[index])
         }
@@ -780,7 +780,7 @@ fn vec_set_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     let index = get_bounded_index(
         vm.peek(1),
         vec.borrow().elements.len() as isize,
-        "Vec index parameter out of bounds",
+        "Vec index parameter out of bounds.",
     )?;
     let mut borrowed_vec = vec.borrow_mut();
     borrowed_vec.elements[index] = vm.peek(0);
@@ -1119,14 +1119,14 @@ fn fiber_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 1)?;
     let closure = vm.peek(0).try_as_obj_closure().ok_or_else(|| {
         error!(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             "Expected a function but found '{}'.",
             vm.peek(0)
         )
     })?;
     if closure.borrow().function.arity > 2 {
         return Err(error!(
-            ErrorKind::RuntimeError,
+            ErrorKind::ValueError,
             "Fiber expects a closure that accepts at most 1 parameter."
         ));
     }
@@ -1155,7 +1155,7 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     } else {
         if num_args > 1 {
             return Err(error!(
-                ErrorKind::RuntimeError,
+                ErrorKind::TypeError,
                 "Expected at most 1 parameter but found {}.", num_args
             ));
         }
@@ -1175,7 +1175,7 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     if num_args > 1 {
         return Err(error!(
-            ErrorKind::RuntimeError,
+            ErrorKind::TypeError,
             "Expected at most 1 parameter but found {}.", num_args
         ));
     }

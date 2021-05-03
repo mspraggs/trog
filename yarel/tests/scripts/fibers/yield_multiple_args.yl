@@ -1,4 +1,4 @@
-// Expected at most 1 parameter but found 2.
+// Unhandled TypeError: Expected at most 1 parameter but found 2.
 // [module "main", line 5] in lambda-0()
 // 70
 var fiber = Fiber.new(|| {

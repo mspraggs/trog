@@ -1,4 +1,4 @@
-// Expected an integer value but found 'eh'.
+// Unhandled TypeError: Expected an integer value but found 'eh'.
 // [module "main", line 5] in script
 // 70
 var s = "foo🎅bar🎄baz";

@@ -1,4 +1,4 @@
-// Circular dependency encountered when importing module 'modules/circular_foo'.
+// Unhandled ImportError: Circular dependency encountered when importing module 'modules/circular_foo'.
 // [module "modules/circular_bar", line 6] in script
 // [module "modules/circular_foo", line 6] in script
 // [module "main", line 6] in script

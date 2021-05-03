@@ -1,4 +1,4 @@
-// Unable to parse number from 'some string'.
+// Unhandled ValueError: Unable to parse number from 'some string'.
 // [module "main", line 4] in script
 // 0
 "some string".as_num();

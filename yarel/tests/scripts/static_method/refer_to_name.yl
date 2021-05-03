@@ -1,4 +1,4 @@
-// Undefined variable 'method'.
+// Unhandled NameError: Undefined variable 'method'.
 // [module "main", line 8] in method()
 // [module "main", line 11] in script
 // 70

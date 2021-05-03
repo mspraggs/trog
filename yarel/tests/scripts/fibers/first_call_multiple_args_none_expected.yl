@@ -1,4 +1,4 @@
-// Expected 0 parameters but found 2.
+// Unhandled TypeError: Expected 0 parameters but found 2.
 // [module "main", line 5] in script
 // 70
 var fiber = Fiber.new(|| {});

@@ -1,4 +1,4 @@
-// Expected 1 parameter but found 2.
+// Unhandled TypeError: Expected 1 parameter but found 2.
 // [module "main", line 4] in script
 // 70
 Fiber.new(|a| {}, |b| {});

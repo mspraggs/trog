@@ -1,4 +1,4 @@
-// Cannot pop from empty Vec instance.
+// Unhandled RuntimeError: Cannot pop from empty Vec instance.
 // [module "main", line 5] in script
 // 70
 var v = [];

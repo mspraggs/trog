@@ -1,4 +1,4 @@
-// Expected a positive integer less than 256 but found '256'.
+// Unhandled ValueError: Expected a positive integer less than 256 but found '256'.
 // [module "main", line 4] in script
 // 0
 String.from_ascii([256]);

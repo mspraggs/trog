@@ -1,4 +1,4 @@
-// Undefined property 'foo'.
+// Unhandled AttributeError: Undefined property 'foo'.
 // [module "main", line 4] in script
 // 70
 nil.foo;

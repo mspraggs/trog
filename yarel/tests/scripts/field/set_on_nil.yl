@@ -1,4 +1,4 @@
-// Only instances have fields.
+// Unhandled AttributeError: Only instances have fields.
 // [module "main", line 4] in script
 // 70
 nil.foo = "value";

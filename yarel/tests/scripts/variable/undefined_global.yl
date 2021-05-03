@@ -1,4 +1,4 @@
-// Undefined variable 'not_defined'.
+// Unhandled NameError: Undefined variable 'not_defined'.
 // [module "main", line 4] in script
 // 70
 print(not_defined);
