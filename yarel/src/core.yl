@@ -78,7 +78,7 @@ class MapIter {
 
     fn next(self) {
         var next = self.iterable.next();
-        if next.is_a(StopIter) {
+        if next.derives(StopIter) {
             return next;
         }
         return self.func(next);
@@ -99,7 +99,7 @@ class FilterIter {
 
     fn next(self) {
         var next = self.iterable.next();
-        while !next.is_a(StopIter) and !self.predicate(next) {
+        while !next.derives(StopIter) and !self.predicate(next) {
             next = self.iterable.next();
         }
         return next;

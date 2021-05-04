@@ -99,7 +99,7 @@ pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass
 
 /// Object implementation
 
-pub(crate) fn object_is_a(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+pub(crate) fn object_derives(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 1)?;
 
     let receiver_class = vm.get_class(vm.peek(1));
@@ -125,7 +125,7 @@ pub(crate) fn object_is_a(vm: &mut Vm, num_args: usize) -> Result<Value, Error> 
 }
 
 pub(crate) unsafe fn bind_object_class(vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
-    let method_map = [("is_a", object_is_a as NativeFn)];
+    let method_map = [("derives", object_derives as NativeFn)];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     class.as_mut().data.methods = methods;
 }

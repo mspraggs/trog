@@ -1,0 +1,46 @@
+// true
+// true
+// false
+// true
+// true
+// true
+// false
+// true
+// false
+// true
+// false
+// true
+// false
+// true
+// true
+// 0
+#[constructor(new)]
+class Foo {
+}
+
+#[constructor(new), derive(Foo)]
+class Bar {
+
+}
+
+print(Type.derives(Object));
+
+print(1.derives(Object));
+print(1.derives(String));
+print(1.derives(Num));
+
+print("".derives(Object));
+print("".derives(String));
+print("".derives(Num));
+
+var foo = Foo.new();
+print(foo.derives(Object));
+print(foo.derives(Num));
+print(foo.derives(Foo));
+print(foo.derives(Bar));
+
+var bar = Bar.new();
+print(bar.derives(Object));
+print(bar.derives(String));
+print(bar.derives(Foo));
+print(bar.derives(Bar));
