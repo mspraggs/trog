@@ -18,7 +18,6 @@ use std::cmp;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::class_store::CoreClassStore;
 use crate::hash::PassThroughHasher;
 use crate::memory::{self, Gc};
 use crate::object::{
@@ -60,32 +59,6 @@ impl Value {
             Value::Boolean(underlying) => *underlying,
             Value::None => false,
             _ => true,
-        }
-    }
-
-    pub(crate) fn get_class(&self, class_store: &CoreClassStore) -> Gc<ObjClass> {
-        match self {
-            Value::Boolean(_) => class_store.get_boolean_class(),
-            Value::Number(_) => class_store.get_number_class(),
-            Value::ObjString(string) => string.class,
-            Value::ObjStringIter(iter) => iter.borrow().class,
-            Value::ObjFunction(_) => unreachable!(),
-            Value::ObjNative(_) => class_store.get_obj_native_class(),
-            Value::ObjClosure(_) => class_store.get_obj_closure_class(),
-            Value::ObjClass(class) => class.metaclass,
-            Value::ObjInstance(instance) => instance.borrow().class,
-            Value::ObjBoundMethod(_) => class_store.get_obj_closure_method_class(),
-            Value::ObjBoundNative(_) => class_store.get_obj_native_method_class(),
-            Value::ObjTuple(tuple) => tuple.class,
-            Value::ObjTupleIter(iter) => iter.borrow().class,
-            Value::ObjVec(vec) => vec.borrow().class,
-            Value::ObjVecIter(iter) => iter.borrow().class,
-            Value::ObjRange(range) => range.class,
-            Value::ObjRangeIter(iter) => iter.borrow().class,
-            Value::ObjHashMap(hash_map) => hash_map.borrow().class,
-            Value::ObjModule(module) => module.borrow().class,
-            Value::ObjFiber(fiber) => unsafe { &*fiber.get() }.class,
-            Value::None => class_store.get_nil_class(),
         }
     }
 

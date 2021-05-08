@@ -229,7 +229,37 @@ impl Vm {
     }
 
     pub fn get_class(&self, value: Value) -> Gc<ObjClass> {
-        value.get_class(&self.class_store)
+        match value {
+            Value::Boolean(_) => self.class_store.get_boolean_class(),
+            Value::Number(_) => self.class_store.get_number_class(),
+            Value::ObjString(string) => string.class,
+            Value::ObjStringIter(iter) => iter.borrow().class,
+            Value::ObjFunction(_) => {
+                if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+                    unreachable!()
+                } else {
+                    unsafe {
+                        hint::unreachable_unchecked()
+                    }
+                }
+            },
+            Value::ObjNative(_) => self.class_store.get_obj_native_class(),
+            Value::ObjClosure(_) => self.class_store.get_obj_closure_class(),
+            Value::ObjClass(class) => class.metaclass,
+            Value::ObjInstance(instance) => instance.borrow().class,
+            Value::ObjBoundMethod(_) => self.class_store.get_obj_closure_method_class(),
+            Value::ObjBoundNative(_) => self.class_store.get_obj_native_method_class(),
+            Value::ObjTuple(tuple) => tuple.class,
+            Value::ObjTupleIter(iter) => iter.borrow().class,
+            Value::ObjVec(vec) => vec.borrow().class,
+            Value::ObjVecIter(iter) => iter.borrow().class,
+            Value::ObjRange(range) => range.class,
+            Value::ObjRangeIter(iter) => iter.borrow().class,
+            Value::ObjHashMap(hash_map) => hash_map.borrow().class,
+            Value::ObjModule(module) => module.borrow().class,
+            Value::ObjFiber(fiber) => unsafe { &*fiber.get() }.class,
+            Value::None => self.class_store.get_nil_class(),
+        }
     }
 
     pub fn new_gc_obj_string(&mut self, data: &str) -> Gc<ObjString> {
@@ -697,7 +727,7 @@ impl Vm {
                         }
                     }
 
-                    let class = self.peek(0).get_class(&self.class_store);
+                    let class = self.get_class(self.peek(0));
                     self.bind_method(class, name)?;
                 }
 
@@ -735,7 +765,7 @@ impl Vm {
                             self.poke(0, Value::ObjClass(instance.borrow().class));
                         }
                         _ => {
-                            let class = value.get_class(&self.class_store);
+                            let class = self.get_class(value);
                             self.poke(0, Value::ObjClass(class));
                         }
                     }
@@ -1265,90 +1295,27 @@ impl Vm {
 
     fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), Error> {
         let receiver = self.peek(arg_count);
-        match receiver {
+        let class = match receiver {
             Value::ObjInstance(instance) => {
                 if let Some(value) = instance.borrow().fields.get(&name) {
                     self.poke(arg_count, *value);
                     return self.call_value(*value, arg_count);
                 }
-
-                self.invoke_from_class(instance.borrow().class, name, arg_count)
+                instance.borrow().class
             }
-            Value::ObjTuple(tuple) => {
-                let class = tuple.class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjTupleIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjVec(vec) => {
-                let class = vec.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjVecIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjRange(range) => {
-                let class = range.class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjRangeIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjHashMap(map) => {
-                let class = map.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjString(string) => self.invoke_from_class(string.class, name, arg_count),
-            Value::ObjStringIter(iter) => {
-                let class = iter.borrow().class;
-                self.invoke_from_class(class, name, arg_count)
-            }
-            Value::ObjClass(class) => self.invoke_from_class(class.metaclass, name, arg_count),
-            Value::Boolean(_) => {
-                self.invoke_from_class(self.class_store.get_boolean_class(), name, arg_count)
-            }
-            Value::Number(_) => {
-                self.invoke_from_class(self.class_store.get_number_class(), name, arg_count)
-            }
-            Value::ObjFunction(_) => {
-                self.invoke_from_class(self.class_store.get_obj_closure_class(), name, arg_count)
-            }
-            Value::ObjNative(_) => {
-                self.invoke_from_class(self.class_store.get_obj_native_class(), name, arg_count)
-            }
-            Value::ObjClosure(_) => {
-                self.invoke_from_class(self.class_store.get_obj_closure_class(), name, arg_count)
-            }
-            Value::ObjBoundMethod(_) => self.invoke_from_class(
-                self.class_store.get_obj_closure_method_class(),
-                name,
-                arg_count,
-            ),
-            Value::ObjBoundNative(_) => self.invoke_from_class(
-                self.class_store.get_obj_native_method_class(),
-                name,
-                arg_count,
-            ),
             Value::ObjModule(module) => {
                 let global = module.borrow().attributes.get(&name).copied();
                 if let Some(value) = global {
                     self.poke(arg_count, value);
                     return self.call_value(value, arg_count);
                 }
-                self.invoke_from_class(module.borrow().class, name, arg_count)
+                module.borrow().class
             }
-            Value::ObjFiber(fiber) => {
-                let class = unsafe { &*fiber.get() }.class;
-                self.invoke_from_class(class, name, arg_count)
+            _ => {
+                self.get_class(receiver)
             }
-            Value::None => {
-                self.invoke_from_class(self.class_store.get_nil_class(), name, arg_count)
-            }
-        }
+        };
+        self.invoke_from_class(class, name, arg_count)
     }
 
     fn call_closure(
