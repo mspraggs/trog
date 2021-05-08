@@ -99,7 +99,7 @@ class FilterIter {
 
     fn next(self) {
         var next = self.iterable.next();
-        while !next.derives(StopIter) and !self.predicate(next) {
+        while !next.derives(StopIter) && !self.predicate(next) {
             next = self.iterable.next();
         }
         return next;

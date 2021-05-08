@@ -4,8 +4,8 @@
 // 0
 // s
 // 0
-print(false or "ok");
-print(nil or "ok");
-print(true or "ok");
-print(0 or "ok");
-print("s" or "ok");
+print(false || "ok");
+print(nil || "ok");
+print(true || "ok");
+print(0 || "ok");
+print("s" || "ok");

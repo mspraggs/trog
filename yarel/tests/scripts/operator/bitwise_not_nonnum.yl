@@ -1,0 +1,4 @@
+// Unhandled TypeError: Unary operand must be a number.
+// [module "main", line 4] in script
+// 0
+print(~nil);

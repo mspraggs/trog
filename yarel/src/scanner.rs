@@ -45,13 +45,26 @@ pub enum TokenKind {
     GreaterEqual,
     Less,
     LessEqual,
-    Hash,
+    Amp,
+    AmpEqual,
     Bar,
+    BarEqual,
+    Caret,
+    CaretEqual,
+    Percent,
+    PercentEqual,
+    GreaterGreater,
+    GreaterGreaterEqual,
+    LessLess,
+    LessLessEqual,
+    AmpAmp,
+    BarBar,
+    Tilde,
+    Hash,
     Identifier,
     Str,
     Interpolation,
     Number,
-    And,
     CapSelf,
     Catch,
     Class,
@@ -65,7 +78,6 @@ pub enum TokenKind {
     As,
     In,
     Nil,
-    Or,
     Return,
     Self_,
     Super,
@@ -243,22 +255,64 @@ impl Scanner {
                 })
             }
             "<" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::LessEqual
-                } else {
-                    TokenKind::Less
-                })
+                let double_less = self.match_char("<");
+                let equal = self.match_char("=");
+                let token_kind = match (double_less, equal) {
+                    (true, true) => TokenKind::LessLessEqual,
+                    (true, false) => TokenKind::LessLess,
+                    (false, true) => TokenKind::LessEqual,
+                    (false, false) => TokenKind::Less,
+                };
+                self.make_token(token_kind)
             }
             ">" => {
+                let double_greater = self.match_char(">");
+                let equal = self.match_char("=");
+                let token_kind = match (double_greater, equal) {
+                    (true, true) => TokenKind::GreaterGreaterEqual,
+                    (true, false) => TokenKind::GreaterGreater,
+                    (false, true) => TokenKind::GreaterEqual,
+                    (false, false) => TokenKind::Greater,
+                };
+                self.make_token(token_kind)
+            }
+            "|" => {
+                let token_kind = if self.match_char("|") {
+                    TokenKind::BarBar
+                } else if self.match_char("=") {
+                    TokenKind::BarEqual
+                } else {
+                    TokenKind::Bar
+                };
+                self.make_token(token_kind)
+            }
+            "&" => {
+                let token_kind = if self.match_char("&") {
+                    TokenKind::AmpAmp
+                } else if self.match_char("=") {
+                    TokenKind::AmpEqual
+                } else {
+                    TokenKind::Amp
+                };
+                self.make_token(token_kind)
+            }
+            "^" => {
                 let match_char = self.match_char("=");
                 self.make_token(if match_char {
-                    TokenKind::GreaterEqual
+                    TokenKind::CaretEqual
                 } else {
-                    TokenKind::Greater
+                    TokenKind::Caret
                 })
             }
-            "|" => self.make_token(TokenKind::Bar),
+            "%" => {
+                let match_char = self.match_char("=");
+                self.make_token(if match_char {
+                    TokenKind::PercentEqual
+                } else {
+                    TokenKind::Percent
+                })
+            }
+            "~" => self.make_token(TokenKind::Tilde),
             "\"" => self.string(),
             c => {
                 let msg = format!("Unexpected character: '{}'.", c);
@@ -370,17 +424,7 @@ impl Scanner {
     fn identifier_type(&self) -> TokenKind {
         let start = &self.source[self.start..self.start + 1];
         match start {
-            "a" => {
-                if self.current - self.start > 1 {
-                    let next = &self.source[self.start + 1..self.start + 2];
-                    return match next {
-                        "s" => self.check_keyword(2, "", TokenKind::As),
-                        "n" => self.check_keyword(2, "d", TokenKind::And),
-                        _ => TokenKind::Identifier,
-                    };
-                }
-                TokenKind::Identifier
-            }
+            "a" => self.check_keyword(1, "s", TokenKind::As),
             "c" => {
                 if self.current - self.start > 1 {
                     let next = &self.source[self.start + 1..self.start + 2];
@@ -419,7 +463,6 @@ impl Scanner {
                 TokenKind::Identifier
             }
             "n" => self.check_keyword(1, "il", TokenKind::Nil),
-            "o" => self.check_keyword(1, "r", TokenKind::Or),
             "r" => self.check_keyword(1, "eturn", TokenKind::Return),
             "S" => self.check_keyword(1, "elf", TokenKind::CapSelf),
             "s" => {

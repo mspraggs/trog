@@ -1,0 +1,4 @@
+// Unhandled TypeError: Binary operands must both be numbers.
+// [module "main", line 4] in script
+// 70
+"1" | 1;

@@ -511,26 +511,22 @@ impl Vm {
     fn run(&mut self) -> Result<Value, Error> {
         debug_assert!(self.modules.len() == 1);
         macro_rules! binary_op {
-            ($value_type:expr, $op:tt) => {
-                {
-                    let second_value = self.pop();
-                    let first_value = self.pop();
-                    let (first, second) = match (first_value, second_value) {
-                        (
-                            Value::Number(first),
-                            Value::Number(second)
-                        ) => (first, second),
-                        _ => {
-                            let err = error!(
-                                ErrorKind::TypeError, "Binary operands must both be numbers."
-                            );
-                            self.try_handle_error(err)?;
-                            continue;
-                        }
-                    };
-                    self.push($value_type(first $op second));
-                }
-            };
+            ($op:expr) => {{
+                let second_value = self.pop();
+                let first_value = self.pop();
+                let (first, second) = match (first_value, second_value) {
+                    (Value::Number(first), Value::Number(second)) => (first, second),
+                    _ => {
+                        let err = error!(
+                            ErrorKind::TypeError,
+                            "Binary operands must both be numbers."
+                        );
+                        self.try_handle_error(err)?;
+                        continue;
+                    }
+                };
+                self.push($op(first, second));
+            }};
         }
 
         macro_rules! read_byte {
@@ -758,9 +754,11 @@ impl Vm {
                     self.push(Value::Boolean(a == b));
                 }
 
-                byte if byte == OpCode::Greater as u8 => binary_op!(Value::Boolean, >),
+                byte if byte == OpCode::Greater as u8 => {
+                    binary_op!(|a, b| Value::Boolean(a > b))
+                }
 
-                byte if byte == OpCode::Less as u8 => binary_op!(Value::Boolean, <),
+                byte if byte == OpCode::Less as u8 => binary_op!(|a, b| Value::Boolean(a < b)),
 
                 byte if byte == OpCode::Add as u8 => {
                     let b = self.pop();
@@ -787,15 +785,53 @@ impl Vm {
                     }
                 }
 
-                byte if byte == OpCode::Subtract as u8 => binary_op!(Value::Number, -),
+                byte if byte == OpCode::Subtract as u8 => binary_op!(|a, b| Value::Number(a - b)),
 
-                byte if byte == OpCode::Multiply as u8 => binary_op!(Value::Number, *),
+                byte if byte == OpCode::Multiply as u8 => binary_op!(|a, b| Value::Number(a * b)),
 
-                byte if byte == OpCode::Divide as u8 => binary_op!(Value::Number, /),
+                byte if byte == OpCode::Divide as u8 => binary_op!(|a, b| Value::Number(a / b)),
 
-                byte if byte == OpCode::Not as u8 => {
+                byte if byte == OpCode::BitwiseAnd as u8 => {
+                    binary_op!(|a, b| Value::Number(((a as i64) & (b as i64)) as f64))
+                }
+
+                byte if byte == OpCode::BitwiseOr as u8 => {
+                    binary_op!(|a, b| Value::Number(((a as i64) | (b as i64)) as f64))
+                }
+
+                byte if byte == OpCode::BitwiseXor as u8 => {
+                    binary_op!(|a, b| Value::Number(((a as i64) ^ (b as i64)) as f64))
+                }
+
+                byte if byte == OpCode::Modulo as u8 => {
+                    binary_op!(|a, b| Value::Number(a % b))
+                }
+
+                byte if byte == OpCode::LogicalNot as u8 => {
                     let value = self.pop();
                     self.push(Value::Boolean(!value.as_bool()));
+                }
+
+                byte if byte == OpCode::BitwiseNot as u8 => {
+                    let value = self.pop();
+                    if let Some(num) = value.try_as_number() {
+                        self.push(Value::Number(!(num as i64) as f64));
+                    } else {
+                        let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
+                        self.try_handle_error(err)?;
+                    }
+                }
+
+                byte if byte == OpCode::BitShiftLeft as u8 => {
+                    binary_op!(|a, b| Value::Number(
+                        (a as i64).checked_shl(b as u32).unwrap_or_default() as f64
+                    ))
+                }
+
+                byte if byte == OpCode::BitShiftRight as u8 => {
+                    binary_op!(|a, b| Value::Number(
+                        (a as i64).checked_shr(b as u32).unwrap_or_default() as f64
+                    ))
                 }
 
                 byte if byte == OpCode::Negate as u8 => {

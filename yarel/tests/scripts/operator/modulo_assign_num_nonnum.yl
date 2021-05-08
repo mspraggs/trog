@@ -1,0 +1,5 @@
+// Unhandled TypeError: Binary operands must both be numbers.
+// [module "main", line 5] in script
+// 70
+var n = 2;
+n %= nil;

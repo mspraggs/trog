@@ -6,15 +6,15 @@
 // false
 // true
 // 0
-print(1 or true);
-print(false or 1);
-print(false or false or true);
-print(false or false);
-print(false or false or false);
+print(1 || true);
+print(false || 1);
+print(false || false || true);
+print(false || false);
+print(false || false || false);
 var a = "before";
 var b = "before";
-(a = false) or
-    (b = true) or
+(a = false) ||
+    (b = true) ||
     (a = "bad");
 print(a);
 print(b);

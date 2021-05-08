@@ -37,6 +37,10 @@ enum Precedence {
     And,
     Equality,
     Comparison,
+    BitwiseOr,
+    BitwiseXor,
+    BitwiseAnd,
+    BitShift,
     Term,
     Factor,
     Range,
@@ -54,6 +58,10 @@ impl From<usize> for Precedence {
             value if value == Precedence::And as usize => Precedence::And,
             value if value == Precedence::Equality as usize => Precedence::Equality,
             value if value == Precedence::Comparison as usize => Precedence::Comparison,
+            value if value == Precedence::BitwiseOr as usize => Precedence::BitwiseOr,
+            value if value == Precedence::BitwiseXor as usize => Precedence::BitwiseXor,
+            value if value == Precedence::BitwiseAnd as usize => Precedence::BitwiseAnd,
+            value if value == Precedence::BitShift as usize => Precedence::BitShift,
             value if value == Precedence::Term as usize => Precedence::Term,
             value if value == Precedence::Factor as usize => Precedence::Factor,
             value if value == Precedence::Range as usize => Precedence::Range,
@@ -334,11 +342,17 @@ impl<'a> Parser<'a> {
             || self.match_token(TokenKind::PlusEqual)
             || self.match_token(TokenKind::SlashEqual)
             || self.match_token(TokenKind::StarEqual)
+            || self.match_token(TokenKind::AmpEqual)
+            || self.match_token(TokenKind::BarEqual)
+            || self.match_token(TokenKind::CaretEqual)
+            || self.match_token(TokenKind::PercentEqual)
+            || self.match_token(TokenKind::LessLessEqual)
+            || self.match_token(TokenKind::GreaterGreaterEqual)
     }
 
     fn expression(&mut self) {
         let precedence = if self.single_target_mode {
-            Precedence::Term
+            Precedence::BitwiseOr
         } else {
             Precedence::Assignment
         };
@@ -1302,6 +1316,12 @@ impl<'a> Parser<'a> {
             TokenKind::PlusEqual => self.emit_byte(OpCode::Add as u8),
             TokenKind::SlashEqual => self.emit_byte(OpCode::Divide as u8),
             TokenKind::StarEqual => self.emit_byte(OpCode::Multiply as u8),
+            TokenKind::AmpEqual => self.emit_byte(OpCode::BitwiseAnd as u8),
+            TokenKind::BarEqual => self.emit_byte(OpCode::BitwiseOr as u8),
+            TokenKind::CaretEqual => self.emit_byte(OpCode::BitwiseXor as u8),
+            TokenKind::PercentEqual => self.emit_byte(OpCode::Modulo as u8),
+            TokenKind::LessLessEqual => self.emit_byte(OpCode::BitShiftLeft as u8),
+            TokenKind::GreaterGreaterEqual => self.emit_byte(OpCode::BitShiftRight as u8),
             _ => unreachable!(),
         }
         self.single_target_mode = false;
@@ -1390,16 +1410,22 @@ impl<'a> Parser<'a> {
         s.parse_precedence(Precedence::from(rule_precedence as usize + 1));
 
         match operator_kind {
-            TokenKind::BangEqual => s.emit_bytes([OpCode::Equal as u8, OpCode::Not as u8]),
+            TokenKind::BangEqual => s.emit_bytes([OpCode::Equal as u8, OpCode::LogicalNot as u8]),
             TokenKind::EqualEqual => s.emit_byte(OpCode::Equal as u8),
             TokenKind::Greater => s.emit_byte(OpCode::Greater as u8),
-            TokenKind::GreaterEqual => s.emit_bytes([OpCode::Less as u8, OpCode::Not as u8]),
+            TokenKind::GreaterEqual => s.emit_bytes([OpCode::Less as u8, OpCode::LogicalNot as u8]),
             TokenKind::Less => s.emit_byte(OpCode::Less as u8),
-            TokenKind::LessEqual => s.emit_bytes([OpCode::Greater as u8, OpCode::Not as u8]),
+            TokenKind::LessEqual => s.emit_bytes([OpCode::Greater as u8, OpCode::LogicalNot as u8]),
             TokenKind::Plus => s.emit_byte(OpCode::Add as u8),
             TokenKind::Minus => s.emit_byte(OpCode::Subtract as u8),
             TokenKind::Star => s.emit_byte(OpCode::Multiply as u8),
             TokenKind::Slash => s.emit_byte(OpCode::Divide as u8),
+            TokenKind::Amp => s.emit_byte(OpCode::BitwiseAnd as u8),
+            TokenKind::Bar => s.emit_byte(OpCode::BitwiseOr as u8),
+            TokenKind::Caret => s.emit_byte(OpCode::BitwiseXor as u8),
+            TokenKind::Percent => s.emit_byte(OpCode::Modulo as u8),
+            TokenKind::LessLess => s.emit_byte(OpCode::BitShiftLeft as u8),
+            TokenKind::GreaterGreater => s.emit_byte(OpCode::BitShiftRight as u8),
             _ => {}
         }
     }
@@ -1465,12 +1491,14 @@ impl<'a> Parser<'a> {
         s.new_compiler(FunctionKind::Function, name, s.module_path);
         s.begin_scope();
 
-        s.parameter_list(
-            TokenKind::Bar,
-            "Cannot have more than 255 parameters.",
-            "Expected parameter name.",
-        );
-        s.consume(TokenKind::Bar, "Expected ')' after parameters.");
+        if s.previous.kind == TokenKind::Bar {
+            s.parameter_list(
+                TokenKind::Bar,
+                "Cannot have more than 255 parameters.",
+                "Expected parameter name.",
+            );
+            s.consume(TokenKind::Bar, "Expected ')' after parameters.");
+        }
 
         if s.match_token(TokenKind::LeftBrace) {
             s.block();
@@ -1529,7 +1557,8 @@ impl<'a> Parser<'a> {
 
         match operator_kind {
             TokenKind::Minus => s.emit_byte(OpCode::Negate as u8),
-            TokenKind::Bang => s.emit_byte(OpCode::Not as u8),
+            TokenKind::Bang => s.emit_byte(OpCode::LogicalNot as u8),
+            TokenKind::Tilde => s.emit_byte(OpCode::BitwiseNot as u8),
             _ => {}
         }
     }
@@ -1667,7 +1696,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 58] = [
+const RULES: [ParseRule; 70] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -1830,7 +1859,13 @@ const RULES: [ParseRule; 58] = [
         infix: Some(Parser::binary),
         precedence: Precedence::Comparison,
     },
-    // Hash
+    // Amp
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::binary),
+        precedence: Precedence::BitwiseAnd,
+    },
+    // AmpEqual
     ParseRule {
         prefix: None,
         infix: None,
@@ -1839,6 +1874,84 @@ const RULES: [ParseRule; 58] = [
     // Bar
     ParseRule {
         prefix: Some(Parser::lambda),
+        infix: Some(Parser::binary),
+        precedence: Precedence::BitwiseOr,
+    },
+    // BarEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Caret
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::binary),
+        precedence: Precedence::BitwiseXor,
+    },
+    // CaretEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Percent
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::binary),
+        precedence: Precedence::Factor,
+    },
+    // PercentEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // GreaterGreater
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::binary),
+        precedence: Precedence::BitShift,
+    },
+    // GreaterGreaterEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // LessLess
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::binary),
+        precedence: Precedence::BitShift,
+    },
+    // LessLessEqual
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // AmpAmp
+    ParseRule {
+        prefix: None,
+        infix: Some(Parser::and),
+        precedence: Precedence::And,
+    },
+    // BarBar
+    ParseRule {
+        prefix: Some(Parser::lambda),
+        infix: Some(Parser::or),
+        precedence: Precedence::Or,
+    },
+    // Tilde
+    ParseRule {
+        prefix: Some(Parser::unary),
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Hash
+    ParseRule {
+        prefix: None,
         infix: None,
         precedence: Precedence::None,
     },
@@ -1865,12 +1978,6 @@ const RULES: [ParseRule; 58] = [
         prefix: Some(Parser::number),
         infix: None,
         precedence: Precedence::None,
-    },
-    // And
-    ParseRule {
-        prefix: None,
-        infix: Some(Parser::and),
-        precedence: Precedence::And,
     },
     // CapSelf
     ParseRule {
@@ -1949,12 +2056,6 @@ const RULES: [ParseRule; 58] = [
         prefix: Some(Parser::literal),
         infix: None,
         precedence: Precedence::None,
-    },
-    // Or
-    ParseRule {
-        prefix: None,
-        infix: Some(Parser::or),
-        precedence: Precedence::Or,
     },
     // Return
     ParseRule {
