@@ -117,6 +117,7 @@ pub struct Vm {
     active_module: Gc<RefCell<ObjModule>>,
     active_chunk: Gc<Chunk>,
     fiber: Option<Root<UnsafeRefCell<ObjFiber>>>,
+    unsafe_fiber: *mut ObjFiber,
     init_string: Gc<ObjString>,
     next_string: Gc<ObjString>,
     pub(crate) class_store: CoreClassStore,
@@ -144,6 +145,7 @@ impl Vm {
             active_module: Gc::null(),
             active_chunk: Gc::null(),
             fiber: None,
+            unsafe_fiber: ptr::null_mut(),
             init_string: Gc::null(),
             next_string: Gc::null(),
             class_store: unsafe { CoreClassStore::new_empty() },
@@ -496,6 +498,7 @@ impl Vm {
         }
 
         let caller = self.fiber.replace(fiber.as_root());
+        self.unsafe_fiber = unsafe { fiber.get_mut() };
         self.active_fiber_mut().caller = caller.map(|p| p.as_gc());
 
         if self.active_fiber().is_new() {
@@ -521,6 +524,7 @@ impl Vm {
         let caller = self.active_fiber().caller;
         if let Some(caller) = caller {
             let mut current = self.fiber.replace(caller.as_root());
+            self.unsafe_fiber = unsafe { caller.get_mut() };
             current.as_mut().unwrap().borrow_mut().caller = None;
         } else {
             return Err(error!(
@@ -1747,7 +1751,7 @@ impl Vm {
 
     #[cfg(not(any(debug_assertions, feature = "more_vm_safety")))]
     fn active_fiber(&self) -> &ObjFiber {
-        unsafe { self.fiber.as_ref().unwrap().get() }
+        unsafe { &*(self.unsafe_fiber as *const _) }
     }
 
     #[cfg(any(debug_assertions, feature = "more_vm_safety"))]
@@ -1757,7 +1761,7 @@ impl Vm {
 
     #[cfg(not(any(debug_assertions, feature = "more_vm_safety")))]
     fn active_fiber_mut(&mut self) -> &mut ObjFiber {
-        unsafe { self.fiber.as_ref().unwrap().get_mut() }
+        unsafe { &mut (*self.unsafe_fiber) }
     }
 
     fn stack_size(&self) -> usize {
