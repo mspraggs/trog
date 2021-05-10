@@ -186,11 +186,11 @@ impl Vm {
         let module = self.get_module(&function.module_path);
         let closure = self.new_root_obj_closure(function.as_gc(), module);
         let fiber = self.new_root_obj_fiber(closure.as_gc());
-        if closure.borrow().function.arity != args.len() as u32 + 1 {
+        if closure.function.arity != args.len() as u32 + 1 {
             return Err(error!(
                 ErrorKind::TypeError,
                 "Expected {} arguments but found {}.",
-                closure.borrow().function.arity - 1,
+                closure.function.arity - 1,
                 args.len()
             ));
         }
@@ -316,7 +316,7 @@ impl Vm {
         &mut self,
         function: Gc<ObjFunction>,
         module: Gc<RefCell<ObjModule>>,
-    ) -> Root<RefCell<ObjClosure>> {
+    ) -> Root<ObjClosure> {
         let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
             .map(|_| {
                 self.heap
@@ -325,7 +325,7 @@ impl Vm {
             .collect();
         let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
         self.heap
-            .allocate_root(RefCell::new(ObjClosure::new(function, upvalues, module)))
+            .allocate_root(ObjClosure::new(function, upvalues, module))
     }
 
     pub fn new_root_obj_class(
@@ -421,7 +421,7 @@ impl Vm {
 
     pub(crate) fn new_root_obj_fiber(
         &mut self,
-        closure: Gc<RefCell<ObjClosure>>,
+        closure: Gc<ObjClosure>,
     ) -> Root<UnsafeRefCell<ObjFiber>> {
         let class = self.class_store.get_obj_fiber_class();
         self.heap
@@ -696,8 +696,8 @@ impl Vm {
                         .current_frame()
                         .unwrap()
                         .closure
-                        .borrow()
-                        .upvalues[upvalue_index]
+                        .upvalues
+                        .borrow()[upvalue_index]
                         .borrow()
                         .get();
                     self.push(upvalue);
@@ -707,7 +707,7 @@ impl Vm {
                     let upvalue_index = read_byte!() as usize;
                     let stack_value = self.peek(0);
                     let closure = self.active_fiber().current_frame().unwrap().closure;
-                    closure.borrow_mut().upvalues[upvalue_index]
+                    closure.upvalues.borrow_mut()[upvalue_index]
                         .borrow_mut()
                         .set(stack_value);
                 }
@@ -1084,15 +1084,15 @@ impl Vm {
                         let is_local = read_byte!() != 0;
                         let index = read_byte!() as usize;
                         let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
-                        closure.borrow_mut().upvalues[i] = if is_local {
+                        closure.upvalues.borrow_mut()[i] = if is_local {
                             self.capture_upvalue(slot_base + index)
                         } else {
                             self.active_fiber()
                                 .current_frame()
                                 .unwrap()
                                 .closure
-                                .borrow()
-                                .upvalues[index]
+                                .upvalues
+                                .borrow()[index]
                         };
                     }
                 }
@@ -1311,23 +1311,17 @@ impl Vm {
                 }
                 module.borrow().class
             }
-            _ => {
-                self.get_class(receiver)
-            }
+            _ => self.get_class(receiver),
         };
         self.invoke_from_class(class, name, arg_count)
     }
 
-    fn call_closure(
-        &mut self,
-        closure: Gc<RefCell<ObjClosure>>,
-        arg_count: usize,
-    ) -> Result<(), Error> {
-        if arg_count as u32 + 1 != closure.borrow().function.arity {
+    fn call_closure(&mut self, closure: Gc<ObjClosure>, arg_count: usize) -> Result<(), Error> {
+        if arg_count as u32 + 1 != closure.function.arity {
             let err = error!(
                 ErrorKind::TypeError,
                 "Expected {} arguments but found {}.",
-                closure.borrow().function.arity - 1,
+                closure.function.arity - 1,
                 arg_count
             );
             self.try_handle_error(err)?;
@@ -1396,13 +1390,10 @@ impl Vm {
         let ip = self.ip;
         self.active_fiber_mut().store_error_ip_or(ip);
         for frame in self.active_fiber().frames.iter().rev() {
-            let (function, module) = {
-                let borrowed_closure = frame.closure.borrow();
-                (borrowed_closure.function, borrowed_closure.module)
-            };
+            let (function, module) = (frame.closure.function, frame.closure.module);
 
             let mut new_msg = String::new();
-            let chunk = frame.closure.borrow().function.chunk;
+            let chunk = frame.closure.function.chunk;
             let instruction = chunk.code_offset(frame.ip) - 1;
             write!(
                 new_msg,
@@ -1719,24 +1710,17 @@ impl Vm {
     }
 
     fn load_frame(&mut self) {
-        let prev_chunk = self
-            .active_fiber()
-            .current_frame()
-            .unwrap()
-            .closure
-            .borrow()
-            .function
-            .chunk;
-        let prev_module = self
-            .active_fiber()
-            .current_frame()
-            .unwrap()
-            .closure
-            .borrow()
-            .module;
+        let (prev_chunk, prev_module, new_ip) = {
+            let active_fiber = self.active_fiber();
+            let current_frame = active_fiber.current_frame().unwrap();
+            (
+                current_frame.closure.function.chunk,
+                current_frame.closure.module,
+                current_frame.ip,
+            )
+        };
         self.active_chunk = prev_chunk;
         self.active_module = prev_module;
-        let new_ip = self.active_fiber().current_frame().unwrap().ip;
         self.ip = new_ip;
     }
 

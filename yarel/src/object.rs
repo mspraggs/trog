@@ -283,7 +283,7 @@ impl fmt::Display for ObjNative {
 
 pub struct ObjClosure {
     pub function: memory::Gc<ObjFunction>,
-    pub upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+    pub upvalues: RefCell<Vec<memory::Gc<RefCell<ObjUpvalue>>>>,
     pub(crate) module: Gc<RefCell<ObjModule>>,
 }
 
@@ -295,7 +295,7 @@ impl ObjClosure {
     ) -> Self {
         ObjClosure {
             function,
-            upvalues,
+            upvalues: RefCell::new(upvalues),
             module,
         }
     }
@@ -433,13 +433,12 @@ impl fmt::Display for ObjBoundMethod<ObjNative> {
     }
 }
 
-impl fmt::Display for ObjBoundMethod<RefCell<ObjClosure>> {
+impl fmt::Display for ObjBoundMethod<ObjClosure> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "method {} on {}",
-            *self.method.borrow().function.name,
-            self.receiver
+            *self.method.function.name, self.receiver
         )
     }
 }
@@ -868,7 +867,7 @@ impl fmt::Display for ObjModule {
 }
 
 pub(crate) struct CallFrame {
-    pub(crate) closure: Gc<RefCell<ObjClosure>>,
+    pub(crate) closure: Gc<ObjClosure>,
     pub(crate) ip: *const u8,
     pub(crate) slot_base: usize,
 }
@@ -911,14 +910,10 @@ pub struct ObjFiber {
 }
 
 impl ObjFiber {
-    pub(crate) fn new(class: Gc<ObjClass>, closure: Gc<RefCell<ObjClosure>>) -> Self {
+    pub(crate) fn new(class: Gc<ObjClass>, closure: Gc<ObjClosure>) -> Self {
         let mut frames = Vec::with_capacity(common::FRAMES_MAX);
         let (ip, arity) = {
-            let borrowed_closure = closure.borrow();
-            (
-                borrowed_closure.function.chunk.code.as_ptr(),
-                borrowed_closure.function.arity,
-            )
+            (closure.function.chunk.code.as_ptr(), closure.function.arity)
         };
         frames.push(CallFrame {
             closure,
@@ -939,14 +934,8 @@ impl ObjFiber {
         }
     }
 
-    pub(crate) fn push_call_frame(&mut self, closure: Gc<RefCell<ObjClosure>>) {
-        let (ip, arity) = {
-            let borrowed_closure = closure.borrow();
-            (
-                borrowed_closure.function.chunk.code.as_ptr(),
-                borrowed_closure.function.arity,
-            )
-        };
+    pub(crate) fn push_call_frame(&mut self, closure: Gc<ObjClosure>) {
+        let (ip, arity) = (closure.function.chunk.code.as_ptr(), closure.function.arity);
         self.frames.push(CallFrame {
             closure,
             ip,
@@ -987,7 +976,7 @@ impl ObjFiber {
 
     pub(crate) fn is_new(&self) -> bool {
         self.frames.len() == 1
-            && self.frames[0].ip == self.frames[0].closure.borrow().function.chunk.code.as_ptr()
+            && self.frames[0].ip == self.frames[0].closure.function.chunk.code.as_ptr()
     }
 
     pub(crate) fn has_finished(&self) -> bool {

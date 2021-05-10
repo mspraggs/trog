@@ -36,10 +36,10 @@ pub enum Value {
     ObjStringIter(Gc<RefCell<ObjStringIter>>),
     ObjFunction(Gc<ObjFunction>),
     ObjNative(Gc<ObjNative>),
-    ObjClosure(Gc<RefCell<ObjClosure>>),
+    ObjClosure(Gc<ObjClosure>),
     ObjClass(Gc<ObjClass>),
     ObjInstance(Gc<RefCell<ObjInstance>>),
-    ObjBoundMethod(Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>),
+    ObjBoundMethod(Gc<RefCell<ObjBoundMethod<ObjClosure>>>),
     ObjBoundNative(Gc<RefCell<ObjBoundMethod<ObjNative>>>),
     ObjTuple(Gc<ObjTuple>),
     ObjTupleIter(Gc<RefCell<ObjTupleIter>>),
@@ -116,7 +116,7 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_obj_closure(&self) -> Option<Gc<RefCell<ObjClosure>>> {
+    pub fn try_as_obj_closure(&self) -> Option<Gc<ObjClosure>> {
         match self {
             Value::ObjClosure(inner) => Some(*inner),
             _ => None,
@@ -134,9 +134,7 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_obj_bound_method(
-        &self,
-    ) -> Option<Gc<RefCell<ObjBoundMethod<RefCell<ObjClosure>>>>> {
+    pub fn try_as_obj_bound_method(&self) -> Option<Gc<RefCell<ObjBoundMethod<ObjClosure>>>> {
         match self {
             Value::ObjBoundMethod(inner) => Some(*inner),
             _ => None,
@@ -285,7 +283,7 @@ impl fmt::Display for Value {
             }
             Value::ObjNative(native) => write!(f, "<{}>", **native),
             Value::ObjClosure(underlying) => {
-                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
+                write!(f, "<{} @ {:p}>", **underlying, underlying.as_ptr())
             }
             Value::ObjClass(underlying) => write!(f, "<class {}>", **underlying),
             Value::ObjInstance(underlying) => {

@@ -1124,7 +1124,7 @@ fn fiber_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             vm.peek(0)
         )
     })?;
-    if closure.borrow().function.arity > 2 {
+    if closure.function.arity > 2 {
         return Err(error!(
             ErrorKind::ValueError,
             "Fiber expects a closure that accepts at most 1 parameter."
