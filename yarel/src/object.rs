@@ -966,6 +966,17 @@ impl ObjFiber {
         self.open_upvalues.retain(|u| u.borrow().is_open());
     }
 
+    pub(crate) fn close_all_upvalues_for_frame(&mut self) {
+        if self.open_upvalues.len() == 0 {
+            return;
+        }
+        let stack_top = self.stack.len();
+        let slot_base = self.current_frame().unwrap().slot_base;
+        for i in slot_base..stack_top {
+            self.close_upvalues(i);
+        }
+    }
+
     pub(crate) fn current_frame(&self) -> Option<&CallFrame> {
         self.frames.last()
     }

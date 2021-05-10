@@ -1105,11 +1105,7 @@ impl Vm {
 
                 byte if byte == OpCode::Return as u8 => {
                     let result = self.pop();
-                    let stack_top = self.stack_size();
-                    let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
-                    for i in slot_base..stack_top {
-                        self.active_fiber_mut().close_upvalues(i);
-                    }
+                    self.active_fiber_mut().close_all_upvalues_for_frame();
 
                     let prev_stack_size = self.active_fiber().current_frame().unwrap().slot_base;
                     self.active_fiber_mut().frames.pop();
