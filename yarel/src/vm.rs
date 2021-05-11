@@ -124,7 +124,7 @@ pub struct Vm {
     chunks: Vec<Root<Chunk>>,
     modules: HashMap<Gc<ObjString>, Root<RefCell<ObjModule>>, BuildPassThroughHasher>,
     core_chunks: Vec<Root<Chunk>>,
-    string_class: Root<ObjClass>,
+    string_class: Option<Root<ObjClass>>,
     string_store: string_store::ObjStringStore,
     range_cache: Vec<(Root<ObjRange>, time::Instant)>,
     working_class_def: Option<ClassDef>,
@@ -142,18 +142,18 @@ impl Vm {
         // re-assigned immediately to valid GC pointers by init_heap_allocated_data.
         let mut vm = Vm {
             ip: ptr::null(),
-            active_module: Gc::null(),
-            active_chunk: Gc::null(),
+            active_module: Gc::dangling(),
+            active_chunk: Gc::dangling(),
             fiber: None,
             unsafe_fiber: ptr::null_mut(),
-            init_string: Gc::null(),
-            next_string: Gc::null(),
+            init_string: Gc::dangling(),
+            next_string: Gc::dangling(),
             class_store: unsafe { CoreClassStore::new_empty() },
             chunks: Vec::new(),
             modules: HashMap::with_hasher(BuildPassThroughHasher::default()),
             core_chunks: Vec::new(),
-            string_class: Root::null(),
-            string_store: string_store::ObjStringStore::new(), // HashMap::with_hasher(BuildPassThroughHasher::default()),
+            string_class: None,
+            string_store: string_store::ObjStringStore::new(),
             heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
             module_loader: default_read_module_source,
@@ -240,11 +240,9 @@ impl Vm {
                 if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
                     unreachable!()
                 } else {
-                    unsafe {
-                        hint::unreachable_unchecked()
-                    }
+                    unsafe { hint::unreachable_unchecked() }
                 }
-            },
+            }
             Value::ObjNative(_) => self.class_store.get_obj_native_class(),
             Value::ObjClosure(_) => self.class_store.get_obj_closure_class(),
             Value::ObjClass(class) => class.metaclass,
@@ -274,9 +272,11 @@ impl Vm {
         if let Some(string) = self.string_store.get(key) {
             return string.as_gc();
         }
-        let string = self
-            .heap
-            .allocate_root(ObjString::new(self.string_class.as_gc(), data, hash));
+        let string = self.heap.allocate_root(ObjString::new(
+            self.string_class.as_ref().expect("Expected Root.").as_gc(),
+            data,
+            hash,
+        ));
         let ret = string.as_gc();
         self.string_store.insert(string);
         ret
@@ -1601,27 +1601,27 @@ impl Vm {
         let mut base_metaclass_ptr = unsafe { class_store::new_base_metaclass(&mut self.heap) };
         let root_base_metaclass = Root::from(base_metaclass_ptr);
         let mut object_class_ptr = self.heap.allocate_bare(ObjClass {
-            name: Gc::null(),
+            name: Gc::dangling(),
             metaclass: root_base_metaclass.as_gc(),
             superclass: None,
             methods: object::new_obj_string_value_map(),
         });
         let root_object_class = Root::from(object_class_ptr);
         let mut string_metaclass_ptr = self.heap.allocate_bare(ObjClass::new(
-            Gc::null(),
+            Gc::dangling(),
             root_base_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),
         ));
         let root_string_metaclass = Root::from(string_metaclass_ptr);
         let mut string_class_ptr = self.heap.allocate_bare(ObjClass::new(
-            Gc::null(),
+            Gc::dangling(),
             root_string_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),
         ));
 
-        self.string_class = Root::from(string_class_ptr);
+        self.string_class = Some(Root::from(string_class_ptr));
         let object_class_name = self.new_gc_obj_string("Object");
         let base_metaclass_name = self.new_gc_obj_string("Type");
         let string_metaclass_name = self.new_gc_obj_string("StringClass");
@@ -1685,7 +1685,7 @@ impl Vm {
             "BuiltInMethod",
             Value::ObjClass(obj_native_method_class),
         );
-        let obj_string_class = self.string_class.as_gc();
+        let obj_string_class = self.string_class.as_ref().expect("Expected Root.").as_gc();
         self.set_global(module_path, "String", Value::ObjClass(obj_string_class));
         let obj_iter_class = self.class_store.get_obj_iter_class();
         self.set_global(module_path, "Iter", Value::ObjClass(obj_iter_class));

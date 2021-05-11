@@ -238,11 +238,11 @@ impl memory::GcManaged for ObjFunction {
 impl Default for ObjFunction {
     fn default() -> Self {
         ObjFunction {
-            name: Gc::null(),
+            name: Gc::dangling(),
             arity: 0,
             upvalue_count: 0,
-            chunk: Gc::null(),
-            module_path: Gc::null(),
+            chunk: Gc::dangling(),
+            module_path: Gc::dangling(),
         }
     }
 }
@@ -912,9 +912,7 @@ pub struct ObjFiber {
 impl ObjFiber {
     pub(crate) fn new(class: Gc<ObjClass>, closure: Gc<ObjClosure>) -> Self {
         let mut frames = Vec::with_capacity(common::FRAMES_MAX);
-        let (ip, arity) = {
-            (closure.function.chunk.code.as_ptr(), closure.function.arity)
-        };
+        let (ip, arity) = { (closure.function.chunk.code.as_ptr(), closure.function.arity) };
         frames.push(CallFrame {
             closure,
             ip,

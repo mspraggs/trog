@@ -23,7 +23,7 @@ use std::marker::PhantomPinned;
 use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::ptr::{self, NonNull};
+use std::ptr::NonNull;
 
 use crate::common;
 use crate::unsafe_ref_cell::UnsafeRefCell;
@@ -85,18 +85,10 @@ impl<T: 'static + GcManaged + ?Sized> GcBox<T> {
 }
 
 pub struct Root<T: 'static + GcManaged + ?Sized> {
-    ptr: Option<GcBoxPtr<T>>,
+    ptr: GcBoxPtr<T>,
 }
 
 impl<T: GcManaged> Root<T> {
-    pub fn null() -> Self {
-        Root { ptr: None }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_none()
-    }
-
     pub fn as_gc(&self) -> Gc<T> {
         Gc { ptr: self.ptr }
     }
@@ -104,33 +96,27 @@ impl<T: GcManaged> Root<T> {
 
 impl<T: 'static + GcManaged + ?Sized> Root<T> {
     fn inc_num_roots(&self) {
-        self.gc_box().expect("Expected GcBox.").inc_num_roots();
+        self.gc_box().inc_num_roots();
     }
 
     fn dec_num_roots(&self) {
-        self.gc_box().expect("Expected GcBox.").dec_num_roots();
+        self.gc_box().dec_num_roots();
     }
 }
 
 impl<T: GcManaged + ?Sized> Root<T> {
-    fn gc_box(&self) -> Option<&GcBox<T>> {
-        unsafe { self.ptr.as_ref().map(|p| p.as_ref()) }
+    fn gc_box(&self) -> &GcBox<T> {
+        unsafe { self.ptr.as_ref() }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcManaged for Root<T> {
     fn mark(&self) {
-        match self.gc_box() {
-            Some(p) => p.mark(),
-            None => {}
-        }
+        self.gc_box().mark();
     }
 
     fn blacken(&self) {
-        match self.gc_box() {
-            Some(p) => p.blacken(),
-            None => {}
-        }
+        self.gc_box().blacken();
     }
 }
 
@@ -146,15 +132,12 @@ impl<T: 'static + GcManaged> Deref for Root<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &self.gc_box().expect("Expected GcBox.").data
+        &self.gc_box().data
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
-        if self.ptr.is_none() {
-            return;
-        }
         self.dec_num_roots();
     }
 }
@@ -169,7 +152,7 @@ impl<T: GcManaged> From<Gc<T>> for Root<T> {
 
 impl<T: GcManaged> From<GcBoxPtr<T>> for Root<T> {
     fn from(ptr: GcBoxPtr<T>) -> Self {
-        let ret = Root { ptr: Some(ptr) };
+        let ret = Root { ptr };
         ret.inc_num_roots();
         ret
     }
@@ -184,52 +167,36 @@ impl<T: GcManaged> From<UniqueRoot<T>> for Root<T> {
 }
 
 pub struct UniqueRoot<T: 'static + GcManaged + ?Sized> {
-    ptr: Option<GcBoxPtr<T>>,
-}
-
-impl<T: GcManaged> UniqueRoot<T> {
-    pub fn null() -> Self {
-        UniqueRoot { ptr: None }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_none()
-    }
+    ptr: GcBoxPtr<T>,
 }
 
 impl<T: 'static + GcManaged + ?Sized> UniqueRoot<T> {
     fn inc_num_roots(&self) {
-        self.gc_box().expect("Expected GcBox.").inc_num_roots();
+        self.gc_box().inc_num_roots();
     }
 
     fn dec_num_roots(&self) {
-        self.gc_box().expect("Expected GcBox.").dec_num_roots();
+        self.gc_box().dec_num_roots();
     }
 }
 
 impl<T: GcManaged + ?Sized> UniqueRoot<T> {
-    fn gc_box(&self) -> Option<&GcBox<T>> {
-        unsafe { self.ptr.as_ref().map(|p| p.as_ref()) }
+    fn gc_box(&self) -> &GcBox<T> {
+        unsafe { self.ptr.as_ref() }
     }
 
-    fn gc_box_mut(&mut self) -> Option<&mut GcBox<T>> {
-        unsafe { self.ptr.as_mut().map(|p| p.as_mut()) }
+    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
+        unsafe { self.ptr.as_mut() }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcManaged for UniqueRoot<T> {
     fn mark(&self) {
-        match self.gc_box() {
-            Some(p) => p.mark(),
-            None => {}
-        }
+        self.gc_box().mark();
     }
 
     fn blacken(&self) {
-        match self.gc_box() {
-            Some(p) => p.blacken(),
-            None => {}
-        }
+        self.gc_box().blacken();
     }
 }
 
@@ -237,28 +204,24 @@ impl<T: 'static + GcManaged> Deref for UniqueRoot<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &self.gc_box().expect("Expected GcBox.").data
+        &self.gc_box().data
     }
 }
 
 impl<T: 'static + GcManaged> DerefMut for UniqueRoot<T> {
     fn deref_mut(&mut self) -> &mut T {
-        &mut self.gc_box_mut().expect("Expected GcBox.").data
+        &mut self.gc_box_mut().data
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Drop for UniqueRoot<T> {
     fn drop(&mut self) {
-        if self.ptr.is_none() {
-            return;
-        }
         self.dec_num_roots();
     }
 }
 
-#[derive(Default)]
 pub struct Gc<T: GcManaged + ?Sized> {
-    ptr: Option<GcBoxPtr<T>>,
+    ptr: GcBoxPtr<T>,
 }
 
 impl<T: GcManaged> Gc<T> {
@@ -266,43 +229,32 @@ impl<T: GcManaged> Gc<T> {
         Root::from(*self)
     }
 
-    pub(crate) fn null() -> Self {
-        Gc { ptr: None }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.ptr.is_none()
+    pub(crate) fn dangling() -> Self {
+        Gc {
+            ptr: GcBoxPtr::dangling(),
+        }
     }
 }
 
 impl<T: 'static + GcManaged> Gc<T> {
     pub fn as_ptr(&self) -> *const T {
-        match self.gc_box() {
-            Some(p) => &p.data,
-            None => ptr::null(),
-        }
+        &self.gc_box().data
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Gc<T> {
-    fn gc_box(&self) -> Option<&GcBox<T>> {
-        unsafe { self.ptr.as_ref().map(|p| p.as_ref()) }
+    fn gc_box(&self) -> &GcBox<T> {
+        unsafe { self.ptr.as_ref() }
     }
 }
 
 impl<T: 'static + GcManaged + ?Sized> GcManaged for Gc<T> {
     fn mark(&self) {
-        match self.gc_box() {
-            Some(p) => p.mark(),
-            None => {}
-        }
+        self.gc_box().mark();
     }
 
     fn blacken(&self) {
-        match self.gc_box() {
-            Some(p) => p.blacken(),
-            None => {}
-        }
+        self.gc_box().blacken();
     }
 }
 
@@ -318,16 +270,13 @@ impl<T: 'static + GcManaged> Deref for Gc<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &self.gc_box().expect("Expected GcBox.").data
+        &self.gc_box().data
     }
 }
 
 impl<T: GcManaged> PartialEq for Gc<T> {
     fn eq(&self, other: &Self) -> bool {
-        match (self.ptr, other.ptr) {
-            (Some(p0), Some(p1)) => p0.as_ptr() == p1.as_ptr(),
-            _ => false,
-        }
+        self.ptr.as_ptr() == other.ptr.as_ptr()
     }
 }
 
@@ -349,7 +298,7 @@ impl Heap {
 
     pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
         Gc {
-            ptr: Some(self.allocate_bare(data)),
+            ptr: self.allocate_bare(data),
         }
     }
     pub(crate) fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
@@ -358,7 +307,7 @@ impl Heap {
 
     pub(crate) fn allocate_unique<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
         let root = UniqueRoot {
-            ptr: Some(self.allocate_bare(data)),
+            ptr: self.allocate_bare(data),
         };
         root.inc_num_roots();
         root

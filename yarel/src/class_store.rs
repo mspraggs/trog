@@ -22,73 +22,73 @@ include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 
 #[derive(Clone)]
 pub struct CoreClassStore {
-    root_base_metaclass: Root<ObjClass>,
-    root_object_class: Root<ObjClass>,
-    root_nil_class: Root<ObjClass>,
-    root_boolean_class: Root<ObjClass>,
-    root_number_class: Root<ObjClass>,
-    root_obj_closure_class: Root<ObjClass>,
-    root_obj_native_class: Root<ObjClass>,
-    root_obj_closure_method_class: Root<ObjClass>,
-    root_obj_native_method_class: Root<ObjClass>,
-    root_obj_iter_class: Root<ObjClass>,
-    root_obj_map_iter_class: Root<ObjClass>,
-    root_obj_filter_iter_class: Root<ObjClass>,
-    root_obj_tuple_class: Root<ObjClass>,
-    root_obj_tuple_iter_class: Root<ObjClass>,
-    root_obj_vec_class: Root<ObjClass>,
-    root_obj_vec_iter_class: Root<ObjClass>,
-    root_obj_range_class: Root<ObjClass>,
-    root_obj_range_iter_class: Root<ObjClass>,
-    root_obj_hash_map_class: Root<ObjClass>,
-    root_obj_module_class: Root<ObjClass>,
-    root_obj_string_iter_class: Root<ObjClass>,
-    root_obj_fiber_class: Root<ObjClass>,
-    root_obj_error_class: Root<ObjClass>,
-    root_obj_stop_iter_class: Root<ObjClass>,
-    root_obj_runtime_error_class: Root<ObjClass>,
-    root_obj_attribute_error_class: Root<ObjClass>,
-    root_obj_index_error_class: Root<ObjClass>,
-    root_obj_import_error_class: Root<ObjClass>,
-    root_obj_name_error_class: Root<ObjClass>,
-    root_obj_type_error_class: Root<ObjClass>,
-    root_obj_value_error_class: Root<ObjClass>,
+    root_base_metaclass: Option<Root<ObjClass>>,
+    root_object_class: Option<Root<ObjClass>>,
+    root_nil_class: Option<Root<ObjClass>>,
+    root_boolean_class: Option<Root<ObjClass>>,
+    root_number_class: Option<Root<ObjClass>>,
+    root_obj_closure_class: Option<Root<ObjClass>>,
+    root_obj_native_class: Option<Root<ObjClass>>,
+    root_obj_closure_method_class: Option<Root<ObjClass>>,
+    root_obj_native_method_class: Option<Root<ObjClass>>,
+    root_obj_iter_class: Option<Root<ObjClass>>,
+    root_obj_map_iter_class: Option<Root<ObjClass>>,
+    root_obj_filter_iter_class: Option<Root<ObjClass>>,
+    root_obj_tuple_class: Option<Root<ObjClass>>,
+    root_obj_tuple_iter_class: Option<Root<ObjClass>>,
+    root_obj_vec_class: Option<Root<ObjClass>>,
+    root_obj_vec_iter_class: Option<Root<ObjClass>>,
+    root_obj_range_class: Option<Root<ObjClass>>,
+    root_obj_range_iter_class: Option<Root<ObjClass>>,
+    root_obj_hash_map_class: Option<Root<ObjClass>>,
+    root_obj_module_class: Option<Root<ObjClass>>,
+    root_obj_string_iter_class: Option<Root<ObjClass>>,
+    root_obj_fiber_class: Option<Root<ObjClass>>,
+    root_obj_error_class: Option<Root<ObjClass>>,
+    root_obj_stop_iter_class: Option<Root<ObjClass>>,
+    root_obj_runtime_error_class: Option<Root<ObjClass>>,
+    root_obj_attribute_error_class: Option<Root<ObjClass>>,
+    root_obj_index_error_class: Option<Root<ObjClass>>,
+    root_obj_import_error_class: Option<Root<ObjClass>>,
+    root_obj_name_error_class: Option<Root<ObjClass>>,
+    root_obj_type_error_class: Option<Root<ObjClass>>,
+    root_obj_value_error_class: Option<Root<ObjClass>>,
 }
 
 impl CoreClassStore {
     pub(crate) unsafe fn new_empty() -> Self {
         CoreClassStore {
-            root_base_metaclass: Root::null(),
-            root_object_class: Root::null(),
-            root_nil_class: Root::null(),
-            root_boolean_class: Root::null(),
-            root_number_class: Root::null(),
-            root_obj_closure_class: Root::null(),
-            root_obj_native_class: Root::null(),
-            root_obj_closure_method_class: Root::null(),
-            root_obj_native_method_class: Root::null(),
-            root_obj_iter_class: Root::null(),
-            root_obj_map_iter_class: Root::null(),
-            root_obj_filter_iter_class: Root::null(),
-            root_obj_tuple_class: Root::null(),
-            root_obj_tuple_iter_class: Root::null(),
-            root_obj_vec_class: Root::null(),
-            root_obj_vec_iter_class: Root::null(),
-            root_obj_range_class: Root::null(),
-            root_obj_range_iter_class: Root::null(),
-            root_obj_hash_map_class: Root::null(),
-            root_obj_module_class: Root::null(),
-            root_obj_string_iter_class: Root::null(),
-            root_obj_fiber_class: Root::null(),
-            root_obj_error_class: Root::null(),
-            root_obj_stop_iter_class: Root::null(),
-            root_obj_runtime_error_class: Root::null(),
-            root_obj_attribute_error_class: Root::null(),
-            root_obj_import_error_class: Root::null(),
-            root_obj_index_error_class: Root::null(),
-            root_obj_name_error_class: Root::null(),
-            root_obj_type_error_class: Root::null(),
-            root_obj_value_error_class: Root::null(),
+            root_base_metaclass: None,
+            root_object_class: None,
+            root_nil_class: None,
+            root_boolean_class: None,
+            root_number_class: None,
+            root_obj_closure_class: None,
+            root_obj_native_class: None,
+            root_obj_closure_method_class: None,
+            root_obj_native_method_class: None,
+            root_obj_iter_class: None,
+            root_obj_map_iter_class: None,
+            root_obj_filter_iter_class: None,
+            root_obj_tuple_class: None,
+            root_obj_tuple_iter_class: None,
+            root_obj_vec_class: None,
+            root_obj_vec_iter_class: None,
+            root_obj_range_class: None,
+            root_obj_range_iter_class: None,
+            root_obj_hash_map_class: None,
+            root_obj_module_class: None,
+            root_obj_string_iter_class: None,
+            root_obj_fiber_class: None,
+            root_obj_error_class: None,
+            root_obj_stop_iter_class: None,
+            root_obj_runtime_error_class: None,
+            root_obj_attribute_error_class: None,
+            root_obj_import_error_class: None,
+            root_obj_index_error_class: None,
+            root_obj_name_error_class: None,
+            root_obj_type_error_class: None,
+            root_obj_value_error_class: None,
         }
     }
 
@@ -131,37 +131,37 @@ impl CoreClassStore {
         let root_obj_type_error_class = build_empty_class();
         let root_obj_value_error_class = build_empty_class();
         CoreClassStore {
-            root_base_metaclass,
-            root_object_class,
-            root_nil_class,
-            root_boolean_class,
-            root_number_class,
-            root_obj_closure_class,
-            root_obj_native_class,
-            root_obj_closure_method_class,
-            root_obj_native_method_class,
-            root_obj_iter_class,
-            root_obj_map_iter_class,
-            root_obj_filter_iter_class,
-            root_obj_tuple_class,
-            root_obj_tuple_iter_class,
-            root_obj_vec_class,
-            root_obj_vec_iter_class,
-            root_obj_range_class,
-            root_obj_range_iter_class,
-            root_obj_hash_map_class,
-            root_obj_module_class,
-            root_obj_string_iter_class,
-            root_obj_fiber_class,
-            root_obj_error_class,
-            root_obj_stop_iter_class,
-            root_obj_runtime_error_class,
-            root_obj_attribute_error_class,
-            root_obj_import_error_class,
-            root_obj_index_error_class,
-            root_obj_name_error_class,
-            root_obj_type_error_class,
-            root_obj_value_error_class,
+            root_base_metaclass: Some(root_base_metaclass),
+            root_object_class: Some(root_object_class),
+            root_nil_class: Some(root_nil_class),
+            root_boolean_class: Some(root_boolean_class),
+            root_number_class: Some(root_number_class),
+            root_obj_closure_class: Some(root_obj_closure_class),
+            root_obj_native_class: Some(root_obj_native_class),
+            root_obj_closure_method_class: Some(root_obj_closure_method_class),
+            root_obj_native_method_class: Some(root_obj_native_method_class),
+            root_obj_iter_class: Some(root_obj_iter_class),
+            root_obj_map_iter_class: Some(root_obj_map_iter_class),
+            root_obj_filter_iter_class: Some(root_obj_filter_iter_class),
+            root_obj_tuple_class: Some(root_obj_tuple_class),
+            root_obj_tuple_iter_class: Some(root_obj_tuple_iter_class),
+            root_obj_vec_class: Some(root_obj_vec_class),
+            root_obj_vec_iter_class: Some(root_obj_vec_iter_class),
+            root_obj_range_class: Some(root_obj_range_class),
+            root_obj_range_iter_class: Some(root_obj_range_iter_class),
+            root_obj_hash_map_class: Some(root_obj_hash_map_class),
+            root_obj_module_class: Some(root_obj_module_class),
+            root_obj_string_iter_class: Some(root_obj_string_iter_class),
+            root_obj_fiber_class: Some(root_obj_fiber_class),
+            root_obj_error_class: Some(root_obj_error_class),
+            root_obj_stop_iter_class: Some(root_obj_stop_iter_class),
+            root_obj_runtime_error_class: Some(root_obj_runtime_error_class),
+            root_obj_attribute_error_class: Some(root_obj_attribute_error_class),
+            root_obj_import_error_class: Some(root_obj_import_error_class),
+            root_obj_index_error_class: Some(root_obj_index_error_class),
+            root_obj_name_error_class: Some(root_obj_name_error_class),
+            root_obj_type_error_class: Some(root_obj_type_error_class),
+            root_obj_value_error_class: Some(root_obj_value_error_class),
         }
     }
 
@@ -323,162 +323,255 @@ impl CoreClassStore {
             root_object_class.as_gc(),
         );
         CoreClassStore {
-            root_base_metaclass,
-            root_object_class,
-            root_nil_class,
-            root_boolean_class,
-            root_number_class,
-            root_obj_closure_class,
-            root_obj_native_class,
-            root_obj_closure_method_class,
-            root_obj_native_method_class,
-            root_obj_iter_class,
-            root_obj_map_iter_class,
-            root_obj_filter_iter_class,
-            root_obj_tuple_class,
-            root_obj_tuple_iter_class,
-            root_obj_vec_class,
-            root_obj_vec_iter_class,
-            root_obj_range_class,
-            root_obj_range_iter_class,
-            root_obj_hash_map_class,
-            root_obj_module_class,
-            root_obj_string_iter_class,
-            root_obj_fiber_class,
-            root_obj_error_class,
-            root_obj_stop_iter_class,
-            root_obj_runtime_error_class,
-            root_obj_attribute_error_class,
-            root_obj_import_error_class,
-            root_obj_index_error_class,
-            root_obj_name_error_class,
-            root_obj_type_error_class,
-            root_obj_value_error_class,
+            root_base_metaclass: Some(root_base_metaclass),
+            root_object_class: Some(root_object_class),
+            root_nil_class: Some(root_nil_class),
+            root_boolean_class: Some(root_boolean_class),
+            root_number_class: Some(root_number_class),
+            root_obj_closure_class: Some(root_obj_closure_class),
+            root_obj_native_class: Some(root_obj_native_class),
+            root_obj_closure_method_class: Some(root_obj_closure_method_class),
+            root_obj_native_method_class: Some(root_obj_native_method_class),
+            root_obj_iter_class: Some(root_obj_iter_class),
+            root_obj_map_iter_class: Some(root_obj_map_iter_class),
+            root_obj_filter_iter_class: Some(root_obj_filter_iter_class),
+            root_obj_tuple_class: Some(root_obj_tuple_class),
+            root_obj_tuple_iter_class: Some(root_obj_tuple_iter_class),
+            root_obj_vec_class: Some(root_obj_vec_class),
+            root_obj_vec_iter_class: Some(root_obj_vec_iter_class),
+            root_obj_range_class: Some(root_obj_range_class),
+            root_obj_range_iter_class: Some(root_obj_range_iter_class),
+            root_obj_hash_map_class: Some(root_obj_hash_map_class),
+            root_obj_module_class: Some(root_obj_module_class),
+            root_obj_string_iter_class: Some(root_obj_string_iter_class),
+            root_obj_fiber_class: Some(root_obj_fiber_class),
+            root_obj_error_class: Some(root_obj_error_class),
+            root_obj_stop_iter_class: Some(root_obj_stop_iter_class),
+            root_obj_runtime_error_class: Some(root_obj_runtime_error_class),
+            root_obj_attribute_error_class: Some(root_obj_attribute_error_class),
+            root_obj_import_error_class: Some(root_obj_import_error_class),
+            root_obj_index_error_class: Some(root_obj_index_error_class),
+            root_obj_name_error_class: Some(root_obj_name_error_class),
+            root_obj_type_error_class: Some(root_obj_type_error_class),
+            root_obj_value_error_class: Some(root_obj_value_error_class),
         }
     }
 
     pub(crate) fn get_base_metaclass(&self) -> Gc<ObjClass> {
-        self.root_base_metaclass.as_gc()
+        self.root_base_metaclass
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_object_class(&self) -> Gc<ObjClass> {
-        self.root_object_class.as_gc()
+        self.root_object_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_nil_class(&self) -> Gc<ObjClass> {
-        self.root_nil_class.as_gc()
+        self.root_nil_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_boolean_class(&self) -> Gc<ObjClass> {
-        self.root_boolean_class.as_gc()
+        self.root_boolean_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_number_class(&self) -> Gc<ObjClass> {
-        self.root_number_class.as_gc()
+        self.root_number_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_closure_class(&self) -> Gc<ObjClass> {
-        self.root_obj_closure_class.as_gc()
+        self.root_obj_closure_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_native_class(&self) -> Gc<ObjClass> {
-        self.root_obj_native_class.as_gc()
+        self.root_obj_native_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_closure_method_class(&self) -> Gc<ObjClass> {
-        self.root_obj_closure_method_class.as_gc()
+        self.root_obj_closure_method_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_native_method_class(&self) -> Gc<ObjClass> {
-        self.root_obj_native_method_class.as_gc()
+        self.root_obj_native_method_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_iter_class.as_gc()
+        self.root_obj_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_map_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_map_iter_class.as_gc()
+        self.root_obj_map_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_filter_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_filter_iter_class.as_gc()
+        self.root_obj_filter_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_tuple_class(&self) -> Gc<ObjClass> {
-        self.root_obj_tuple_class.as_gc()
+        self.root_obj_tuple_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_tuple_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_tuple_iter_class.as_gc()
+        self.root_obj_tuple_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_vec_class(&self) -> Gc<ObjClass> {
-        self.root_obj_vec_class.as_gc()
+        self.root_obj_vec_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_vec_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_vec_iter_class.as_gc()
+        self.root_obj_vec_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_range_class(&self) -> Gc<ObjClass> {
-        self.root_obj_range_class.as_gc()
+        self.root_obj_range_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_range_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_range_iter_class.as_gc()
+        self.root_obj_range_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_hash_map_class(&self) -> Gc<ObjClass> {
-        self.root_obj_hash_map_class.as_gc()
+        self.root_obj_hash_map_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_module_class(&self) -> Gc<ObjClass> {
-        self.root_obj_module_class.as_gc()
+        self.root_obj_module_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_string_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_string_iter_class.as_gc()
+        self.root_obj_string_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_fiber_class(&self) -> Gc<ObjClass> {
-        self.root_obj_fiber_class.as_gc()
+        self.root_obj_fiber_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_error_class.as_gc()
+        self.root_obj_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_stop_iter_class(&self) -> Gc<ObjClass> {
-        self.root_obj_stop_iter_class.as_gc()
+        self.root_obj_stop_iter_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_runtime_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_runtime_error_class.as_gc()
+        self.root_obj_runtime_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_attribute_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_attribute_error_class.as_gc()
+        self.root_obj_attribute_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_import_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_import_error_class.as_gc()
+        self.root_obj_import_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_index_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_index_error_class.as_gc()
+        self.root_obj_index_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_name_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_name_error_class.as_gc()
+        self.root_obj_name_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_type_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_type_error_class.as_gc()
+        self.root_obj_type_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 
     pub(crate) fn get_obj_value_error_class(&self) -> Gc<ObjClass> {
-        self.root_obj_value_error_class.as_gc()
+        self.root_obj_value_error_class
+            .as_ref()
+            .expect("Expected Root.")
+            .as_gc()
     }
 }
 
@@ -489,8 +582,8 @@ pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> GcBoxPtr<ObjClass> {
     // is held by a local `Root` instance. This is safe because the `Root` instance doesn't access
     // any fields on the pointer it holds whilst the metaclass assignment is being performed.
     let data = ObjClass {
-        name: Gc::null(),
-        metaclass: Gc::null(),
+        name: Gc::dangling(),
+        metaclass: Gc::dangling(),
         superclass: None,
         methods: object::new_obj_string_value_map(),
     };

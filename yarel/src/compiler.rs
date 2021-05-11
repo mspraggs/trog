@@ -141,7 +141,7 @@ enum CompilerError {
 impl Compiler {
     fn new(kind: FunctionKind, name: Gc<ObjString>, module_path: Gc<ObjString>) -> Self {
         Compiler {
-            function: ObjFunction::new(name, 1, 0, Gc::null(), module_path),
+            function: ObjFunction::new(name, 1, 0, Gc::dangling(), module_path),
             kind,
             chunk: Chunk::new(),
             locals: vec![Local {
