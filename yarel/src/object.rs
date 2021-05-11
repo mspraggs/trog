@@ -130,68 +130,76 @@ impl fmt::Display for ObjStringIter {
     }
 }
 
-pub enum ObjUpvalue {
+enum ObjUpvalueState {
     Closed(Value),
     Open(*mut Value),
 }
 
+pub struct ObjUpvalue {
+    data: ObjUpvalueState,
+    pub(crate) next: Option<Gc<RefCell<ObjUpvalue>>>,
+}
+
 impl ObjUpvalue {
     pub(crate) fn new(address: *mut Value) -> Self {
-        ObjUpvalue::Open(address)
+        ObjUpvalue {
+            data: ObjUpvalueState::Open(address),
+            next: None,
+        }
     }
 
     pub(crate) fn get(&self) -> Value {
-        match self {
-            Self::Open(a) => unsafe { **a },
-            Self::Closed(v) => *v,
+        match self.data {
+            ObjUpvalueState::Open(a) => unsafe { *a },
+            ObjUpvalueState::Closed(v) => v,
         }
     }
 
     pub(crate) fn set(&mut self, value: Value) {
-        match self {
-            Self::Open(a) => unsafe { **a = value },
-            Self::Closed(ref mut v) => *v = value,
+        match self.data {
+            ObjUpvalueState::Open(a) => unsafe { *a = value },
+            ObjUpvalueState::Closed(ref mut v) => *v = value,
         }
     }
 
     pub fn is_open(&self) -> bool {
-        match self {
-            Self::Open(_) => true,
-            Self::Closed(_) => false,
-        }
-    }
-
-    pub fn is_open_with_value(&self, value: &Value) -> bool {
-        match self {
-            Self::Open(address) => *address as *const _ == value,
-            Self::Closed(_) => false,
+        match self.data {
+            ObjUpvalueState::Open(_) => true,
+            ObjUpvalueState::Closed(_) => false,
         }
     }
 
     pub fn is_open_with_pred(&self, predicate: impl Fn(*const Value) -> bool) -> bool {
-        match self {
-            Self::Open(index) => predicate(*index),
-            Self::Closed(_) => false,
+        match self.data {
+            ObjUpvalueState::Open(address) => predicate(address),
+            ObjUpvalueState::Closed(_) => false,
         }
     }
 
-    pub fn close(&mut self, value: Value) {
-        *self = Self::Closed(value);
+    pub fn close(&mut self) {
+        let value = self.get();
+        self.data = ObjUpvalueState::Closed(value);
     }
 }
 
 impl memory::GcManaged for ObjUpvalue {
     fn mark(&self) {
-        match self {
-            ObjUpvalue::Closed(value) => value.mark(),
-            ObjUpvalue::Open(_) => {}
+        match self.data {
+            ObjUpvalueState::Closed(value) => value.mark(),
+            ObjUpvalueState::Open(_) => {}
+        }
+        if let Some(u) = self.next.as_ref() {
+            u.mark();
         }
     }
 
     fn blacken(&self) {
-        match self {
-            ObjUpvalue::Closed(value) => value.blacken(),
-            ObjUpvalue::Open(_) => {}
+        match self.data {
+            ObjUpvalueState::Closed(value) => value.blacken(),
+            ObjUpvalueState::Open(_) => {}
+        }
+        if let Some(u) = self.next.as_ref() {
+            u.blacken();
         }
     }
 }
@@ -901,7 +909,7 @@ pub struct ObjFiber {
     pub(crate) caller: Option<Gc<UnsafeRefCell<ObjFiber>>>,
     pub(crate) stack: Stack<Value, STACK_MAX>,
     pub(crate) frames: Vec<CallFrame>,
-    pub(crate) open_upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
+    pub(crate) open_upvalues: Option<Gc<RefCell<ObjUpvalue>>>,
     pub(crate) call_arity: usize,
     pub(crate) return_value: Value,
     pub(crate) exc_handlers: Vec<ExcHandler>,
@@ -923,7 +931,7 @@ impl ObjFiber {
             caller: None,
             stack: Stack::new(),
             frames,
-            open_upvalues: Vec::new(),
+            open_upvalues: None,
             call_arity: arity as usize,
             return_value: Value::None,
             exc_handlers: Vec::new(),
@@ -942,26 +950,28 @@ impl ObjFiber {
     }
 
     pub(crate) fn close_upvalues(&mut self, index: usize) {
-        let value = self.stack[index];
-        let value_ref = &self.stack[index];
-        for upvalue in self.open_upvalues.iter() {
-            if upvalue.borrow().is_open_with_value(value_ref) {
-                upvalue.borrow_mut().close(value);
-            }
-        }
+        let index_addr = &self.stack[index] as *const _;
+        let predicate = |v| v >= index_addr;
 
-        self.open_upvalues.retain(|u| u.borrow().is_open());
+        while self.open_upvalues.is_some()
+            && self
+                .open_upvalues
+                .unwrap()
+                .borrow()
+                .is_open_with_pred(predicate)
+        {
+            let upvalue = self.open_upvalues.unwrap();
+            self.open_upvalues = {
+                let mut borrowed_upvalue = upvalue.borrow_mut();
+                borrowed_upvalue.close();
+                borrowed_upvalue.next
+            };
+        }
     }
 
-    pub(crate) fn close_all_upvalues_for_frame(&mut self) {
-        if self.open_upvalues.len() == 0 {
-            return;
-        }
-        let stack_top = self.stack.len();
+    pub(crate) fn close_upvalues_for_frame(&mut self) {
         let slot_base = self.current_frame().unwrap().slot_base;
-        for i in slot_base..stack_top {
-            self.close_upvalues(i);
-        }
+        self.close_upvalues(slot_base);
     }
 
     pub(crate) fn current_frame(&self) -> Option<&CallFrame> {
@@ -1014,7 +1024,9 @@ impl GcManaged for ObjFiber {
     fn mark(&self) {
         self.stack.mark();
         self.frames.mark();
-        self.open_upvalues.mark();
+        if let Some(upvalues) = self.open_upvalues.as_ref() {
+            upvalues.mark();
+        }
         if let Some(&caller) = self.caller.as_ref() {
             caller.mark();
         }
@@ -1024,7 +1036,9 @@ impl GcManaged for ObjFiber {
     fn blacken(&self) {
         self.stack.blacken();
         self.frames.blacken();
-        self.open_upvalues.blacken();
+        if let Some(upvalues) = self.open_upvalues.as_ref() {
+            upvalues.blacken();
+        }
         if let Some(&caller) = self.caller.as_ref() {
             caller.blacken();
         }

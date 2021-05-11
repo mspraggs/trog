@@ -1105,7 +1105,7 @@ impl Vm {
 
                 byte if byte == OpCode::Return as u8 => {
                     let result = self.pop();
-                    self.active_fiber_mut().close_all_upvalues_for_frame();
+                    self.active_fiber_mut().close_upvalues_for_frame();
 
                     let prev_stack_size = self.active_fiber().current_frame().unwrap().slot_base;
                     self.active_fiber_mut().frames.pop();
@@ -1450,24 +1450,33 @@ impl Vm {
     }
 
     fn capture_upvalue(&mut self, location: usize) -> Gc<RefCell<ObjUpvalue>> {
-        let result = {
-            let value = &self.active_fiber().stack[location];
-            self.active_fiber()
-                .open_upvalues
-                .iter()
-                .find(|&u| u.borrow().is_open_with_value(value))
-                .copied()
-        };
+        let loc_addr = unsafe { self.active_fiber().stack.as_ptr().offset(location as isize) };
+        let predicate = |v| v > loc_addr;
+        let mut prev_upvalue = None;
+        let mut upvalue = self.active_fiber().open_upvalues;
 
-        let upvalue = if let Some(upvalue) = result {
-            upvalue
+        while upvalue.is_some() && upvalue.unwrap().borrow().is_open_with_pred(predicate) {
+            prev_upvalue = upvalue;
+            upvalue = upvalue.unwrap().borrow().next;
+        }
+
+        if let Some(upvalue) = upvalue {
+            if upvalue.borrow().is_open_with_pred(|v| v == loc_addr) {
+                return upvalue;
+            }
+        }
+
+        let created_upvalue = self
+            .heap
+            .allocate_root(RefCell::new(ObjUpvalue::new(loc_addr as *mut _)));
+        if let Some(uv) = prev_upvalue {
+            uv.borrow_mut().next = Some(created_upvalue.as_gc());
         } else {
-            let upvalue = ObjUpvalue::new(&mut self.active_fiber_mut().stack[location]);
-            self.heap.allocate(RefCell::new(upvalue))
-        };
+            self.active_fiber_mut().open_upvalues = Some(created_upvalue.as_gc());
+        }
 
-        self.active_fiber_mut().open_upvalues.push(upvalue);
-        upvalue
+        created_upvalue.borrow_mut().next = upvalue;
+        created_upvalue.as_gc()
     }
 
     fn build_range(&mut self, begin: isize, end: isize) -> Gc<ObjRange> {

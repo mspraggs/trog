@@ -87,6 +87,10 @@ impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
         self.size
     }
 
+    pub(crate) fn as_ptr(&self) -> *const T {
+        self.stack.as_ptr()
+    }
+
     pub(crate) fn clear(&mut self) {
         self.size = 0;
     }
