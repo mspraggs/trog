@@ -185,11 +185,12 @@ impl Vm {
         let module = self.get_module(&function.module_path);
         let closure = self.new_root_obj_closure(function.as_gc(), module);
         let fiber = self.new_root_obj_fiber(closure.as_gc());
-        if closure.function.arity != args.len() as u32 + 1 {
+        let arity = closure.function.arity - 1;
+        if arity != args.len() {
             return Err(error!(
                 ErrorKind::TypeError,
                 "Expected {} arguments but found {}.",
-                closure.function.arity - 1,
+                arity,
                 args.len()
             ));
         }
@@ -289,7 +290,7 @@ impl Vm {
     pub fn new_root_obj_function(
         &mut self,
         name: Gc<ObjString>,
-        arity: u32,
+        arity: usize,
         upvalue_count: usize,
         chunk: Gc<Chunk>,
         module_path: Gc<ObjString>,
@@ -1315,20 +1316,20 @@ impl Vm {
         self.invoke_from_class(class, name, arg_count)
     }
 
-    fn call_closure(&mut self, closure: Gc<ObjClosure>, arg_count: usize) -> Result<(), Error> {
-        if arg_count as u32 + 1 != closure.function.arity {
-            let err = error!(
+    pub fn call_closure(&mut self, closure: Gc<ObjClosure>, arg_count: usize) -> Result<(), Error> {
+        let arity = closure.function.arity - 1;
+        let err = if arg_count != arity {
+            Some(error!(
                 ErrorKind::TypeError,
-                "Expected {} arguments but found {}.",
-                closure.function.arity - 1,
-                arg_count
-            );
-            self.try_handle_error(err)?;
-            return Ok(());
-        }
+                "Expected {} arguments but found {}.", arity, arg_count
+            ))
+        } else if self.active_fiber().frames.len() == common::FRAMES_MAX {
+            Some(error!(ErrorKind::IndexError, "Stack overflow."))
+        } else {
+            None
+        };
 
-        if self.active_fiber().frames.len() == common::FRAMES_MAX {
-            let err = error!(ErrorKind::IndexError, "Stack overflow.");
+        if let Some(err) = err {
             return self.try_handle_error(err);
         }
 

@@ -205,7 +205,7 @@ impl memory::GcManaged for ObjUpvalue {
 
 #[derive(Clone)]
 pub struct ObjFunction {
-    pub arity: u32,
+    pub arity: usize,
     pub upvalue_count: usize,
     pub chunk: Gc<Chunk>,
     pub name: Gc<ObjString>,
@@ -215,7 +215,7 @@ pub struct ObjFunction {
 impl ObjFunction {
     pub(crate) fn new(
         name: memory::Gc<ObjString>,
-        arity: u32,
+        arity: usize,
         upvalue_count: usize,
         chunk: Gc<Chunk>,
         module_path: Gc<ObjString>,
