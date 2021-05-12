@@ -26,7 +26,6 @@ use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
 use crate::memory::{self, Gc, GcManaged};
 use crate::stack::Stack;
-use crate::unsafe_ref_cell::UnsafeRefCell;
 use crate::value::Value;
 use crate::vm::Vm;
 
@@ -906,7 +905,7 @@ impl ExcHandler {
 
 pub struct ObjFiber {
     pub(crate) class: Gc<ObjClass>,
-    pub(crate) caller: Option<Gc<UnsafeRefCell<ObjFiber>>>,
+    pub(crate) caller: Option<Gc<RefCell<ObjFiber>>>,
     pub(crate) stack: Stack<Value, STACK_MAX>,
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) open_upvalues: Option<Gc<RefCell<ObjUpvalue>>>,

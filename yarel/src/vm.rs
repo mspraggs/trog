@@ -13,7 +13,8 @@
  * limitations under the License.
  */
 
-use std::cell::RefCell;
+#[allow(unused_imports)]
+use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::fs;
@@ -38,8 +39,6 @@ use crate::object::{
     ObjInstance, ObjModule, ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter,
     ObjStringValueMap, ObjTuple, ObjTupleIter, ObjUpvalue, ObjVec, ObjVecIter,
 };
-#[allow(unused_imports)]
-use crate::unsafe_ref_cell::{Ref, RefMut, UnsafeRefCell};
 use crate::utils;
 use crate::value::Value;
 
@@ -116,7 +115,7 @@ pub struct Vm {
     ip: *const u8,
     active_module: Gc<RefCell<ObjModule>>,
     active_chunk: Gc<Chunk>,
-    fiber: Option<Root<UnsafeRefCell<ObjFiber>>>,
+    fiber: Option<Root<RefCell<ObjFiber>>>,
     unsafe_fiber: *mut ObjFiber,
     init_string: Gc<ObjString>,
     next_string: Gc<ObjString>,
@@ -257,7 +256,7 @@ impl Vm {
             Value::ObjRangeIter(iter) => iter.borrow().class,
             Value::ObjHashMap(hash_map) => hash_map.borrow().class,
             Value::ObjModule(module) => module.borrow().class,
-            Value::ObjFiber(fiber) => unsafe { &*fiber.get() }.class,
+            Value::ObjFiber(fiber) => fiber.borrow().class,
             Value::None => self.class_store.get_nil_class(),
         }
     }
@@ -422,10 +421,10 @@ impl Vm {
     pub(crate) fn new_root_obj_fiber(
         &mut self,
         closure: Gc<ObjClosure>,
-    ) -> Root<UnsafeRefCell<ObjFiber>> {
+    ) -> Root<RefCell<ObjFiber>> {
         let class = self.class_store.get_obj_fiber_class();
         self.heap
-            .allocate_root(UnsafeRefCell::new(ObjFiber::new(class, closure)))
+            .allocate_root(RefCell::new(ObjFiber::new(class, closure)))
     }
 
     pub fn reset(&mut self) {
@@ -475,7 +474,7 @@ impl Vm {
 
     pub(crate) fn load_fiber(
         &mut self,
-        fiber: Gc<UnsafeRefCell<ObjFiber>>,
+        fiber: Gc<RefCell<ObjFiber>>,
         arg: Option<Value>,
     ) -> Result<(), Error> {
         {
@@ -497,8 +496,8 @@ impl Vm {
             self.active_fiber_mut().current_frame_mut().unwrap().ip = self.ip;
         }
 
+        self.unsafe_fiber = (*fiber).as_ptr();
         let caller = self.fiber.replace(fiber.as_root());
-        self.unsafe_fiber = unsafe { fiber.get_mut() };
         self.active_fiber_mut().caller = caller.map(|p| p.as_gc());
 
         if self.active_fiber().is_new() {
@@ -524,7 +523,7 @@ impl Vm {
         let caller = self.active_fiber().caller;
         if let Some(caller) = caller {
             let mut current = self.fiber.replace(caller.as_root());
-            self.unsafe_fiber = unsafe { caller.get_mut() };
+            self.unsafe_fiber = (*caller).as_ptr();
             current.as_mut().unwrap().borrow_mut().caller = None;
         } else {
             return Err(error!(

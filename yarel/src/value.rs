@@ -25,7 +25,6 @@ use crate::object::{
     ObjModule, ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter, ObjTuple, ObjTupleIter,
     ObjVec, ObjVecIter,
 };
-use crate::unsafe_ref_cell::UnsafeRefCell;
 use crate::utils;
 
 #[derive(Clone, Copy)]
@@ -49,7 +48,7 @@ pub enum Value {
     ObjRangeIter(Gc<RefCell<ObjRangeIter>>),
     ObjHashMap(Gc<RefCell<ObjHashMap>>),
     ObjModule(Gc<RefCell<ObjModule>>),
-    ObjFiber(Gc<UnsafeRefCell<ObjFiber>>),
+    ObjFiber(Gc<RefCell<ObjFiber>>),
     None,
 }
 
@@ -194,7 +193,7 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_obj_fiber(&self) -> Option<Gc<UnsafeRefCell<ObjFiber>>> {
+    pub fn try_as_obj_fiber(&self) -> Option<Gc<RefCell<ObjFiber>>> {
         match self {
             Value::ObjFiber(inner) => Some(*inner),
             _ => None,
@@ -308,12 +307,7 @@ impl fmt::Display for Value {
             Value::ObjHashMap(underlying) => write!(f, "{}", *underlying.borrow()),
             Value::ObjModule(underlying) => write!(f, "<{}>", *underlying.borrow()),
             Value::ObjFiber(underlying) => {
-                write!(
-                    f,
-                    "<{} @ {:p}>",
-                    unsafe { &*underlying.get() },
-                    underlying.as_ptr()
-                )
+                write!(f, "<{} @ {:p}>", *underlying.borrow(), underlying.as_ptr())
             }
             Value::None => write!(f, "nil"),
         }

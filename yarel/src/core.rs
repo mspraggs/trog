@@ -1147,7 +1147,7 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         .try_as_obj_fiber()
         .expect("Expected ObjFiber.");
     let (is_new, arity) = {
-        let borrowed_fiber = unsafe { fiber.get() };
+        let borrowed_fiber = fiber.borrow();
         (borrowed_fiber.is_new(), borrowed_fiber.call_arity)
     };
     if is_new {
