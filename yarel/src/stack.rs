@@ -35,35 +35,21 @@ impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
         if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
             panic!("Stack index out of range.");
         }
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
-            &self.stack[self.size - depth - 1]
-        } else {
-            unsafe { self.stack.get_unchecked(self.size - depth - 1) }
-        }
+        &self.stack[self.size - depth - 1]
     }
 
     pub(crate) fn peek_mut(&mut self, depth: usize) -> &mut T {
         if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
             panic!("Stack index out of range.");
         }
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
-            &mut self.stack[self.size - depth - 1]
-        } else {
-            unsafe { self.stack.get_unchecked_mut(self.size - depth - 1) }
-        }
+        &mut self.stack[self.size - depth - 1]
     }
 
     pub(crate) fn push(&mut self, data: T) {
         if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == N {
             panic!("Stack overflow.");
         }
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
-            self.stack[self.size] = data;
-        } else {
-            unsafe {
-                *self.stack.get_unchecked_mut(self.size) = data;
-            }
-        }
+        self.stack[self.size] = data;
         self.size += 1;
     }
 
@@ -72,11 +58,7 @@ impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
             return None;
         }
         self.size -= 1;
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
-            Some(self.stack[self.size])
-        } else {
-            unsafe { Some(*self.stack.get_unchecked(self.size)) }
-        }
+        Some(self.stack[self.size])
     }
 
     pub(crate) fn truncate(&mut self, size: usize) {
