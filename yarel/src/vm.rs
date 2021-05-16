@@ -544,59 +544,6 @@ impl Vm {
 
     fn run(&mut self) -> Result<Value, Error> {
         debug_assert!(self.modules.len() == 1);
-        macro_rules! binary_op {
-            ($op:expr) => {{
-                let second_value = self.pop();
-                let first_value = self.pop();
-                let (first, second) = match (first_value, second_value) {
-                    (Value::Number(first), Value::Number(second)) => (first, second),
-                    _ => {
-                        let err = error!(
-                            ErrorKind::TypeError,
-                            "Binary operands must both be numbers."
-                        );
-                        self.try_handle_error(err)?;
-                        continue;
-                    }
-                };
-                self.push($op(first, second));
-            }};
-        }
-
-        macro_rules! read_byte {
-            () => {{
-                unsafe {
-                    let ret = *self.ip;
-                    self.ip = self.ip.offset(1);
-                    ret
-                }
-            }};
-        }
-
-        macro_rules! read_short {
-            () => {{
-                unsafe {
-                    let ret = u16::from_ne_bytes([*self.ip, *self.ip.offset(1)]);
-                    self.ip = self.ip.offset(2);
-                    ret
-                }
-            }};
-        }
-
-        macro_rules! read_constant {
-            () => {{
-                let index = read_short!() as usize;
-                self.active_chunk.constants[index]
-            }};
-        }
-
-        macro_rules! read_string {
-            () => {
-                read_constant!()
-                    .try_as_obj_string()
-                    .expect("Expected variable name.")
-            };
-        }
 
         loop {
             if cfg!(feature = "debug_trace") {
@@ -604,642 +551,110 @@ impl Vm {
                 let offset = self.active_chunk.code_offset(self.ip);
                 debug::disassemble_instruction(&self.active_chunk, offset);
             }
-            let byte = read_byte!();
+            let byte = self.read_byte();
 
             match byte {
                 byte if byte == OpCode::Constant as u8 => {
-                    let constant = read_constant!();
+                    let constant = self.read_constant();
                     self.push(constant);
                 }
-
-                byte if byte == OpCode::Nil as u8 => {
-                    self.push(Value::None);
-                }
-
-                byte if byte == OpCode::True as u8 => {
-                    self.push(Value::Boolean(true));
-                }
-
-                byte if byte == OpCode::False as u8 => {
-                    self.push(Value::Boolean(false));
-                }
-
+                byte if byte == OpCode::Nil as u8 => self.push(Value::None),
+                byte if byte == OpCode::True as u8 => self.push(Value::Boolean(true)),
+                byte if byte == OpCode::False as u8 => self.push(Value::Boolean(false)),
                 byte if byte == OpCode::Pop as u8 => {
                     self.pop();
                 }
-
                 byte if byte == OpCode::CopyTop as u8 => {
                     let top = self.peek(0);
                     self.push(top);
                 }
-
-                byte if byte == OpCode::GetLocal as u8 => {
-                    let slot = read_byte!() as usize;
-                    let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
-                    let value = self.active_fiber().stack[slot_base + slot];
-                    self.push(value);
-                }
-
-                byte if byte == OpCode::SetLocal as u8 => {
-                    let slot = read_byte!() as usize;
-                    let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
-                    self.active_fiber_mut().stack[slot_base + slot] = self.peek(0);
-                }
-
-                byte if byte == OpCode::GetGlobal as u8 => {
-                    let name = read_string!();
-                    let value = self
-                        .active_module
-                        .borrow()
-                        .attributes
-                        .get(&name)
-                        .map(|&v| v);
-                    if let Some(value) = value {
-                        self.push(value);
-                    } else {
-                        let err = error!(ErrorKind::NameError, "Undefined variable '{}'.", *name);
-                        self.try_handle_error(err)?;
-                    }
-                }
-
-                byte if byte == OpCode::DefineGlobal as u8 => {
-                    let name = read_string!();
-                    let value = self.peek(0);
-                    self.active_module
-                        .borrow_mut()
-                        .attributes
-                        .insert(name, value);
-                    self.pop();
-                }
-
-                byte if byte == OpCode::SetGlobal as u8 => {
-                    let name = read_string!();
-                    let value = self.peek(0);
-                    let global_is_undefined = {
-                        let globals = &mut self.active_module.borrow_mut().attributes;
-                        let prev = globals.insert(name, value);
-                        if prev.is_none() {
-                            globals.remove(&name);
-                        }
-                        prev.is_none()
-                    };
-                    if global_is_undefined {
-                        let err = error!(ErrorKind::NameError, "Undefined variable '{}'.", *name);
-                        self.try_handle_error(err)?;
-                    }
-                }
-
-                byte if byte == OpCode::GetUpvalue as u8 => {
-                    let upvalue_index = read_byte!() as usize;
-                    let upvalue = self
-                        .active_fiber()
-                        .current_frame()
-                        .unwrap()
-                        .closure
-                        .upvalues
-                        .borrow()[upvalue_index]
-                        .borrow()
-                        .get();
-                    self.push(upvalue);
-                }
-
-                byte if byte == OpCode::SetUpvalue as u8 => {
-                    let upvalue_index = read_byte!() as usize;
-                    let stack_value = self.peek(0);
-                    let closure = self.active_fiber().current_frame().unwrap().closure;
-                    closure.upvalues.borrow_mut()[upvalue_index]
-                        .borrow_mut()
-                        .set(stack_value);
-                }
-
-                byte if byte == OpCode::GetProperty as u8 => {
-                    let name = read_string!();
-
-                    if let Some(instance) = self.peek(0).try_as_obj_instance() {
-                        let borrowed_instance = instance.borrow();
-                        if let Some(&property) = borrowed_instance.fields.get(&name) {
-                            self.pop();
-                            self.push(property);
-                            continue;
-                        }
-                    }
-                    if let Some(module) = self.peek(0).try_as_obj_module() {
-                        if let Some(&property) = module.borrow().attributes.get(&name) {
-                            self.pop();
-                            self.push(property);
-                            continue;
-                        }
-                    }
-
-                    let class = self.get_class(self.peek(0));
-                    self.bind_method(class, name)?;
-                }
-
-                byte if byte == OpCode::SetProperty as u8 => {
-                    if let Some(module) = self.peek(1).try_as_obj_module() {
-                        let name = read_string!();
-                        let value = self.peek(0);
-                        module.borrow_mut().attributes.insert(name, value);
-                        self.pop();
-                        self.pop();
-                        self.push(value);
-                        continue;
-                    }
-                    let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
-                        ptr
-                    } else {
-                        let err = error!(ErrorKind::AttributeError, "Only instances have fields.");
-                        self.try_handle_error(err)?;
-                        continue;
-                    };
-                    let name = read_string!();
-                    let value = self.peek(0);
-                    instance.borrow_mut().fields.insert(name, value);
-
-                    self.pop();
-                    self.pop();
-                    self.push(value);
-                }
-
-                byte if byte == OpCode::GetClass as u8 => {
-                    let value = self.peek(0);
-                    match value {
-                        Value::ObjClass(_) => continue,
-                        Value::ObjInstance(instance) => {
-                            self.poke(0, Value::ObjClass(instance.borrow().class));
-                        }
-                        _ => {
-                            let class = self.get_class(value);
-                            self.poke(0, Value::ObjClass(class));
-                        }
-                    }
-                }
-
-                byte if byte == OpCode::GetSuper as u8 => {
-                    let name = read_string!();
-                    let superclass = self.pop().try_as_obj_class().expect("Expected ObjClass.");
-
-                    self.bind_method(superclass, name)?;
-                }
-
-                byte if byte == OpCode::Equal as u8 => {
-                    let b = self.pop();
-                    let a = self.pop();
-                    self.push(Value::Boolean(a == b));
-                }
-
+                byte if byte == OpCode::GetLocal as u8 => self.get_local_impl(),
+                byte if byte == OpCode::SetLocal as u8 => self.set_local_impl(),
+                byte if byte == OpCode::GetGlobal as u8 => self.get_global_impl()?,
+                byte if byte == OpCode::DefineGlobal as u8 => self.define_global_impl(),
+                byte if byte == OpCode::SetGlobal as u8 => self.set_global_impl()?,
+                byte if byte == OpCode::GetUpvalue as u8 => self.get_upvalue_impl(),
+                byte if byte == OpCode::SetUpvalue as u8 => self.set_upvalue_impl(),
+                byte if byte == OpCode::GetProperty as u8 => self.get_property_impl()?,
+                byte if byte == OpCode::SetProperty as u8 => self.set_property_impl()?,
+                byte if byte == OpCode::GetClass as u8 => self.get_class_impl(),
+                byte if byte == OpCode::GetSuper as u8 => self.get_super_impl()?,
+                byte if byte == OpCode::Equal as u8 => self.equal_impl(),
                 byte if byte == OpCode::Greater as u8 => {
-                    binary_op!(|a, b| Value::Boolean(a > b))
+                    self.binary_op_impl(|a, b| Value::Boolean(a > b))?;
                 }
-
-                byte if byte == OpCode::Less as u8 => binary_op!(|a, b| Value::Boolean(a < b)),
-
-                byte if byte == OpCode::Add as u8 => {
-                    let b = self.pop();
-                    let a = self.pop();
-                    match (a, b) {
-                        (Value::ObjString(a), Value::ObjString(b)) => {
-                            let value = Value::ObjString(
-                                self.new_gc_obj_string(format!("{}{}", *a, *b).as_str()),
-                            );
-                            self.push(value)
-                        }
-
-                        (Value::Number(a), Value::Number(b)) => {
-                            self.push(Value::Number(a + b));
-                        }
-
-                        _ => {
-                            let err = error!(
-                                ErrorKind::TypeError,
-                                "Binary operands must be two numbers or two strings.",
-                            );
-                            self.try_handle_error(err)?;
-                        }
-                    }
+                byte if byte == OpCode::Less as u8 => {
+                    self.binary_op_impl(|a, b| Value::Boolean(a < b))?;
                 }
-
-                byte if byte == OpCode::Subtract as u8 => binary_op!(|a, b| Value::Number(a - b)),
-
-                byte if byte == OpCode::Multiply as u8 => binary_op!(|a, b| Value::Number(a * b)),
-
-                byte if byte == OpCode::Divide as u8 => binary_op!(|a, b| Value::Number(a / b)),
-
+                byte if byte == OpCode::Add as u8 => self.add_impl()?,
+                byte if byte == OpCode::Subtract as u8 => {
+                    self.binary_op_impl(|a, b| Value::Number(a - b))?
+                }
+                byte if byte == OpCode::Multiply as u8 => {
+                    self.binary_op_impl(|a, b| Value::Number(a * b))?
+                }
+                byte if byte == OpCode::Divide as u8 => {
+                    self.binary_op_impl(|a, b| Value::Number(a / b))?
+                }
                 byte if byte == OpCode::BitwiseAnd as u8 => {
-                    binary_op!(|a, b| Value::Number(((a as i64) & (b as i64)) as f64))
+                    self.binary_op_impl(|a, b| Value::Number(((a as i64) & (b as i64)) as f64))?;
                 }
-
                 byte if byte == OpCode::BitwiseOr as u8 => {
-                    binary_op!(|a, b| Value::Number(((a as i64) | (b as i64)) as f64))
+                    self.binary_op_impl(|a, b| Value::Number(((a as i64) | (b as i64)) as f64))?;
                 }
-
                 byte if byte == OpCode::BitwiseXor as u8 => {
-                    binary_op!(|a, b| Value::Number(((a as i64) ^ (b as i64)) as f64))
+                    self.binary_op_impl(|a, b| Value::Number(((a as i64) ^ (b as i64)) as f64))?;
                 }
-
                 byte if byte == OpCode::Modulo as u8 => {
-                    binary_op!(|a, b| Value::Number(a % b))
+                    self.binary_op_impl(|a, b| Value::Number(a % b))?;
                 }
-
-                byte if byte == OpCode::LogicalNot as u8 => {
-                    let value = self.pop();
-                    self.push(Value::Boolean(!value.as_bool()));
-                }
-
-                byte if byte == OpCode::BitwiseNot as u8 => {
-                    let value = self.pop();
-                    if let Some(num) = value.try_as_number() {
-                        self.push(Value::Number(!(num as i64) as f64));
-                    } else {
-                        let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
-                        self.try_handle_error(err)?;
-                    }
-                }
-
+                byte if byte == OpCode::LogicalNot as u8 => self.logical_not_impl(),
+                byte if byte == OpCode::BitwiseNot as u8 => self.bitwise_not_impl()?,
                 byte if byte == OpCode::BitShiftLeft as u8 => {
-                    binary_op!(|a, b| Value::Number(
-                        (a as i64).checked_shl(b as u32).unwrap_or_default() as f64
-                    ))
+                    self.binary_op_impl(|a, b| {
+                        Value::Number((a as i64).checked_shl(b as u32).unwrap_or_default() as f64)
+                    })?;
                 }
-
                 byte if byte == OpCode::BitShiftRight as u8 => {
-                    binary_op!(|a, b| Value::Number(
-                        (a as i64).checked_shr(b as u32).unwrap_or_default() as f64
-                    ))
+                    self.binary_op_impl(|a, b| {
+                        Value::Number((a as i64).checked_shr(b as u32).unwrap_or_default() as f64)
+                    })?;
                 }
-
-                byte if byte == OpCode::Negate as u8 => {
-                    let value = self.pop();
-                    if let Some(num) = value.try_as_number() {
-                        self.push(Value::Number(-num));
-                    } else {
-                        let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
-                        self.try_handle_error(err)?;
-                    }
-                }
-
-                byte if byte == OpCode::FormatString as u8 => {
-                    let value = self.peek(0);
-                    if value.try_as_obj_string().is_some() {
-                        continue;
-                    }
-                    let obj =
-                        Value::ObjString(self.new_gc_obj_string(format!("{}", value).as_str()));
-                    self.poke(0, obj);
-                }
-
-                byte if byte == OpCode::BuildHashMap as u8 => {
-                    let num_elements = read_byte!() as usize;
-                    match self.build_hash_map(num_elements) {
-                        Ok(map) => {
-                            self.push(Value::ObjHashMap(map.as_gc()));
-                        }
-                        Err(e) => {
-                            self.try_handle_error(e)?;
-                        }
-                    }
-                }
-
-                byte if byte == OpCode::BuildRange as u8 => {
-                    macro_rules! pop_integer {
-                        () => {
-                            match utils::validate_integer(self.pop()) {
-                                Ok(i) => i,
-                                Err(e) => {
-                                    self.try_handle_error(e)?;
-                                    continue;
-                                }
-                            }
-                        };
-                    }
-                    let end = pop_integer!();
-                    let begin = pop_integer!();
-                    let range = self.build_range(begin, end);
-                    self.push(Value::ObjRange(range));
-                }
-
-                byte if byte == OpCode::BuildString as u8 => {
-                    let num_operands = read_byte!() as usize;
-                    if num_operands == 1 {
-                        continue;
-                    }
-                    let mut new_string = String::new();
-                    for pos in (0..num_operands).rev() {
-                        new_string.push_str(self.peek(pos).try_as_obj_string().unwrap().as_str())
-                    }
-                    self.discard(num_operands);
-                    let value = Value::ObjString(self.new_gc_obj_string(new_string.as_str()));
-                    self.push(value);
-                }
-
-                byte if byte == OpCode::BuildTuple as u8 => {
-                    let num_operands = read_byte!() as usize;
-                    let begin = self.stack_size() - num_operands;
-                    let end = self.stack_size();
-                    let elements = self.active_fiber().stack[begin..end]
-                        .iter()
-                        .copied()
-                        .collect();
-                    let tuple = self.new_root_obj_tuple(elements);
-                    self.discard(num_operands);
-                    self.push(Value::ObjTuple(tuple.as_gc()));
-                }
-
-                byte if byte == OpCode::BuildVec as u8 => {
-                    let num_operands = read_byte!() as usize;
-                    let vec = self.new_root_obj_vec();
-                    let begin = self.stack_size() - num_operands;
-                    let end = self.stack_size();
-                    vec.borrow_mut().elements = self.active_fiber().stack[begin..end]
-                        .iter()
-                        .copied()
-                        .collect();
-                    self.discard(num_operands);
-                    self.push(Value::ObjVec(vec.as_gc()));
-                }
-
-                byte if byte == OpCode::IterNext as u8 => {
-                    let iter = self.peek(0);
-                    self.push(iter);
-                    self.invoke(self.next_string, 0)?;
-                }
-
-                byte if byte == OpCode::Jump as u8 => {
-                    let offset = read_short!();
-                    self.ip = unsafe { self.ip.offset(offset as isize) };
-                }
-
-                byte if byte == OpCode::JumpIfFalse as u8 => {
-                    let offset = read_short!();
-                    if !self.peek(0).as_bool() {
-                        self.ip = unsafe { self.ip.offset(offset as isize) };
-                    }
-                }
-
-                byte if byte == OpCode::JumpIfStopIter as u8 => {
-                    let offset = read_short!();
-                    let stop_iter_class = self.class_store.get_obj_stop_iter_class();
-                    if let Some(instance) = self.peek(0).try_as_obj_instance() {
-                        if instance.borrow().class == stop_iter_class {
-                            self.ip = unsafe { self.ip.offset(offset as isize) };
-                        }
-                    }
-                }
-
-                byte if byte == OpCode::Loop as u8 => {
-                    let offset = read_short!();
-                    self.ip = unsafe { self.ip.offset(-(offset as isize)) };
-                }
-
-                byte if byte == OpCode::JumpFinally as u8 => {
-                    let return_value = self.peek(0);
-                    self.active_fiber_mut().return_ip = Some(self.ip);
-                    self.active_fiber_mut().return_value = return_value;
-                    self.pop();
-                    let (new_ip, init_stack_size) = {
-                        let handler = self
-                            .active_fiber_mut()
-                            .pop_exc_handler()
-                            .expect("Expected ExcHandler.");
-                        (handler.finally_ip, handler.init_stack_size)
-                    };
-                    self.active_fiber_mut().stack.truncate(init_stack_size);
-                    self.ip = new_ip;
-                }
-
-                byte if byte == OpCode::EndFinally as u8 => {
-                    if self.handling_exception {
-                        self.unwind_stack()?;
-                    }
-                    let return_data = self.active_fiber_mut().take_return_data();
-                    if let Some((value, ip)) = return_data {
-                        self.push(value);
-                        self.ip = ip;
-                    }
-                }
-
-                byte if byte == OpCode::PushExcHandler as u8 => {
-                    let try_size = read_short!() as usize;
-                    let catch_size = read_short!() as usize;
-
-                    let catch_ip = unsafe { self.ip.offset(try_size as isize) };
-                    let finally_ip = unsafe { self.ip.offset((try_size + catch_size) as isize) };
-
-                    self.active_fiber_mut()
-                        .push_exc_handler(catch_ip, finally_ip);
-                }
-
-                byte if byte == OpCode::PopExcHandler as u8 => {
-                    self.active_fiber_mut().pop_exc_handler();
-                }
-
-                byte if byte == OpCode::Throw as u8 => {
-                    self.handling_exception = true;
-                    self.active_fiber_mut().error_ip = Some(self.ip);
-                    self.unwind_stack()?;
-                }
-
-                byte if byte == OpCode::Call as u8 => {
-                    let arg_count = read_byte!() as usize;
-                    self.call_value(self.peek(arg_count), arg_count)?;
-                }
-
-                byte if byte == OpCode::Construct as u8 => {
-                    let arg_count = read_byte!() as usize;
-                    let value = self.peek(arg_count);
-                    if let Some(class) = value.try_as_obj_class() {
-                        let instance = self.new_root_obj_instance(class);
-                        self.poke(arg_count, Value::ObjInstance(instance.as_gc()));
-                    }
-                }
-
-                byte if byte == OpCode::Invoke as u8 => {
-                    let method = read_string!();
-                    let arg_count = read_byte!() as usize;
-                    self.invoke(method, arg_count)?;
-                }
-
-                byte if byte == OpCode::SuperInvoke as u8 => {
-                    let method = read_string!();
-                    let arg_count = read_byte!() as usize;
-                    let superclass = match self.pop() {
-                        Value::ObjClass(ptr) => ptr,
-                        _ => unreachable!(),
-                    };
-                    self.invoke_from_class(superclass, method, arg_count)?;
-                }
-
-                byte if byte == OpCode::Closure as u8 => {
-                    let function = match read_constant!() {
-                        Value::ObjFunction(underlying) => underlying,
-                        _ => panic!("Expected ObjFunction."),
-                    };
-
-                    let upvalue_count = function.upvalue_count;
-
-                    let closure = self.new_root_obj_closure(function, self.active_module);
-                    self.push(Value::ObjClosure(closure.as_gc()));
-
-                    for i in 0..upvalue_count {
-                        let is_local = read_byte!() != 0;
-                        let index = read_byte!() as usize;
-                        let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
-                        closure.upvalues.borrow_mut()[i] = if is_local {
-                            self.capture_upvalue(slot_base + index)
-                        } else {
-                            self.active_fiber()
-                                .current_frame()
-                                .unwrap()
-                                .closure
-                                .upvalues
-                                .borrow()[index]
-                        };
-                    }
-                }
-
-                byte if byte == OpCode::CloseUpvalue as u8 => {
-                    let stack_size = self.stack_size();
-                    self.active_fiber_mut().close_upvalues(stack_size - 1);
-                    self.pop();
-                }
-
+                byte if byte == OpCode::Negate as u8 => self.negate_impl()?,
+                byte if byte == OpCode::FormatString as u8 => self.format_string_impl(),
+                byte if byte == OpCode::BuildHashMap as u8 => self.build_hash_map_impl()?,
+                byte if byte == OpCode::BuildRange as u8 => self.build_range_impl()?,
+                byte if byte == OpCode::BuildString as u8 => self.build_string_impl(),
+                byte if byte == OpCode::BuildTuple as u8 => self.build_tuple_impl(),
+                byte if byte == OpCode::BuildVec as u8 => self.build_vec_impl(),
+                byte if byte == OpCode::IterNext as u8 => self.iter_next_impl()?,
+                byte if byte == OpCode::Jump as u8 => self.jump_impl(),
+                byte if byte == OpCode::JumpIfFalse as u8 => self.jump_if_false_impl(),
+                byte if byte == OpCode::JumpIfStopIter as u8 => self.jump_if_stop_iter(),
+                byte if byte == OpCode::Loop as u8 => self.loop_impl(),
+                byte if byte == OpCode::JumpFinally as u8 => self.jump_finally_impl(),
+                byte if byte == OpCode::EndFinally as u8 => self.end_finally_impl()?,
+                byte if byte == OpCode::PushExcHandler as u8 => self.push_exc_handler_impl(),
+                byte if byte == OpCode::PopExcHandler as u8 => self.pop_exc_handler_impl(),
+                byte if byte == OpCode::Throw as u8 => self.throw_impl()?,
+                byte if byte == OpCode::Call as u8 => self.call_impl()?,
+                byte if byte == OpCode::Construct as u8 => self.construct_impl(),
+                byte if byte == OpCode::Invoke as u8 => self.invoke_impl()?,
+                byte if byte == OpCode::SuperInvoke as u8 => self.super_invoke_impl()?,
+                byte if byte == OpCode::Closure as u8 => self.closure_impl(),
+                byte if byte == OpCode::CloseUpvalue as u8 => self.close_upvalue_impl(),
                 byte if byte == OpCode::Return as u8 => {
-                    let result = self.pop();
-                    self.active_fiber_mut().close_upvalues_for_frame();
-
-                    let prev_stack_size = self.active_fiber().current_frame().unwrap().slot_base;
-                    self.active_fiber_mut().frames.pop();
-                    if self.active_fiber().has_finished() {
-                        if self.active_fiber().caller.is_some() {
-                            self.unload_fiber(None)?;
-                            self.poke(0, result);
-                            continue;
-                        }
-                        return Ok(self.pop());
+                    if let Some(value) = self.return_impl()? {
+                        return Ok(value);
                     }
-                    self.load_frame();
-                    self.active_fiber_mut().stack.truncate(prev_stack_size);
-                    self.push(result);
                 }
-
-                byte if byte == OpCode::DeclareClass as u8 => {
-                    let name = read_string!();
-                    let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
-                    let metaclass = self.heap.allocate_unique(ObjClass::new(
-                        metaclass_name,
-                        self.class_store.get_base_metaclass(),
-                        Some(self.class_store.get_object_class()),
-                        object::new_obj_string_value_map(),
-                    ));
-                    let class = self.heap.allocate_unique(ObjClass::new(
-                        name,
-                        self.class_store.get_base_metaclass(),
-                        Some(self.class_store.get_object_class()),
-                        object::new_obj_string_value_map(),
-                    ));
-                    self.working_class_def = Some(ClassDef::new(class, metaclass));
-                    self.push(Value::None);
-                }
-
-                byte if byte == OpCode::DefineClass as u8 => {
-                    let mut class_def = self.working_class_def.take().expect("Expected ClassDef.");
-
-                    let defined_metaclass: Root<ObjClass> = class_def.metaclass.into();
-                    class_def.class.metaclass = defined_metaclass.as_gc();
-                    let defined_class: Root<ObjClass> = class_def.class.into();
-
-                    self.poke(0, Value::ObjClass(defined_class.as_gc()));
-                }
-
-                byte if byte == OpCode::Inherit as u8 => {
-                    let superclass = if let Some(ptr) = self.peek(1).try_as_obj_class() {
-                        ptr
-                    } else {
-                        let err = error!(ErrorKind::RuntimeError, "Superclass must be a class.");
-                        self.try_handle_error(err)?;
-                        continue;
-                    };
-                    self.working_class_def.as_mut().unwrap().class.superclass = Some(superclass);
-                    for (name, method) in &superclass.methods {
-                        self.working_class_def
-                            .as_mut()
-                            .unwrap()
-                            .class
-                            .methods
-                            .insert(*name, *method);
-                    }
-                    self.pop();
-                }
-
-                byte if byte == OpCode::Method as u8 => {
-                    let name = read_string!();
-                    self.define_method(name, false)?;
-                }
-
-                byte if byte == OpCode::StaticMethod as u8 => {
-                    let name = read_string!();
-                    self.define_method(name, true)?;
-                }
-
-                byte if byte == OpCode::StartImport as u8 => {
-                    let path = read_string!();
-
-                    if let Some(module) = self.modules.get(&path).map(|m| m.as_gc()) {
-                        if module.borrow().imported {
-                            self.push(Value::ObjModule(module));
-                            self.push(Value::None);
-                        } else {
-                            let err = error!(
-                                ErrorKind::ImportError,
-                                "Circular dependency encountered when importing module '{}'.",
-                                path.as_str()
-                            );
-                            self.try_handle_error(err)?;
-                        }
-                        continue;
-                    }
-
-                    let source = match (self.module_loader)(&path) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            self.try_handle_error(e)?;
-                            continue;
-                        }
-                    };
-
-                    let function = match compiler::compile(self, source, Some(&path)) {
-                        Ok(f) => f,
-                        Err(e) => {
-                            let mut error =
-                                error!(ErrorKind::ImportError, "Error compiling module:");
-                            for msg in e.get_messages() {
-                                error.add_message(&format!("    {}", msg));
-                            }
-                            self.try_handle_error(error)?;
-                            continue;
-                        }
-                    };
-
-                    let module = self.get_module(&path);
-                    self.push(Value::ObjModule(module));
-
-                    let closure = self.new_root_obj_closure(function.as_gc(), module);
-                    self.push(Value::ObjClosure(closure.as_gc()));
-
-                    self.call_value(self.peek(0), 0)?;
-                    let active_module_path = self.active_module.borrow().path;
-                    self.init_built_in_globals(&active_module_path);
-                }
-
-                byte if byte == OpCode::FinishImport as u8 => {
-                    self.pop();
-                    let module = self
-                        .peek(0)
-                        .try_as_obj_module()
-                        .expect("Expected ObjModule.");
-                    module.borrow_mut().imported = true;
-                }
-
+                byte if byte == OpCode::DeclareClass as u8 => self.declare_class_impl(),
+                byte if byte == OpCode::DefineClass as u8 => self.define_class_impl(),
+                byte if byte == OpCode::Inherit as u8 => self.inherit_impl()?,
+                byte if byte == OpCode::Method as u8 => self.method_impl()?,
+                byte if byte == OpCode::StaticMethod as u8 => self.static_method_impl()?,
+                byte if byte == OpCode::StartImport as u8 => self.start_import_impl()?,
+                byte if byte == OpCode::FinishImport as u8 => self.finish_import_impl(),
                 _ => {
                     if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
                         panic!("Unknown opcode {}", byte);
@@ -1251,6 +666,621 @@ impl Vm {
                 }
             }
         }
+    }
+
+    fn read_byte(&mut self) -> u8 {
+        unsafe {
+            let ret = *self.ip;
+            self.ip = self.ip.offset(1);
+            ret
+        }
+    }
+
+    fn read_short(&mut self) -> u16 {
+        unsafe {
+            let ret = u16::from_ne_bytes([*self.ip, *self.ip.offset(1)]);
+            self.ip = self.ip.offset(2);
+            ret
+        }
+    }
+
+    fn read_constant(&mut self) -> Value {
+        let index = self.read_short() as usize;
+        self.active_chunk.constants[index]
+    }
+
+    fn read_string(&mut self) -> Gc<ObjString> {
+        self.read_constant()
+            .try_as_obj_string()
+            .expect("Expected variable name.")
+    }
+
+    fn get_local_impl(&mut self) {
+        let slot = self.read_byte() as usize;
+        let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
+        let value = self.active_fiber().stack[slot_base + slot];
+        self.push(value);
+    }
+
+    fn set_local_impl(&mut self) {
+        let slot = self.read_byte() as usize;
+        let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
+        self.active_fiber_mut().stack[slot_base + slot] = self.peek(0);
+    }
+
+    fn get_global_impl(&mut self) -> Result<(), Error> {
+        let name = self.read_string();
+        let value = self
+            .active_module
+            .borrow()
+            .attributes
+            .get(&name)
+            .map(|&v| v);
+        if let Some(value) = value {
+            self.push(value);
+        } else {
+            let err = error!(ErrorKind::NameError, "Undefined variable '{}'.", *name);
+            self.try_handle_error(err)?;
+        }
+        Ok(())
+    }
+
+    fn define_global_impl(&mut self) {
+        let name = self.read_string();
+        let value = self.peek(0);
+        self.active_module
+            .borrow_mut()
+            .attributes
+            .insert(name, value);
+        self.pop();
+    }
+
+    fn set_global_impl(&mut self) -> Result<(), Error> {
+        let name = self.read_string();
+        let value = self.peek(0);
+        let global_is_undefined = {
+            let globals = &mut self.active_module.borrow_mut().attributes;
+            let prev = globals.insert(name, value);
+            if prev.is_none() {
+                globals.remove(&name);
+            }
+            prev.is_none()
+        };
+        if global_is_undefined {
+            let err = error!(ErrorKind::NameError, "Undefined variable '{}'.", *name);
+            self.try_handle_error(err)?;
+        }
+        Ok(())
+    }
+
+    fn get_upvalue_impl(&mut self) {
+        let upvalue_index = self.read_byte() as usize;
+        let upvalue = self
+            .active_fiber()
+            .current_frame()
+            .unwrap()
+            .closure
+            .upvalues
+            .borrow()[upvalue_index]
+            .borrow()
+            .get();
+        self.push(upvalue);
+    }
+
+    fn set_upvalue_impl(&mut self) {
+        let upvalue_index = self.read_byte() as usize;
+        let stack_value = self.peek(0);
+        let closure = self.active_fiber().current_frame().unwrap().closure;
+        closure.upvalues.borrow_mut()[upvalue_index]
+            .borrow_mut()
+            .set(stack_value);
+    }
+
+    fn get_property_impl(&mut self) -> Result<(), Error> {
+        let name = self.read_string();
+
+        if let Some(instance) = self.peek(0).try_as_obj_instance() {
+            let borrowed_instance = instance.borrow();
+            if let Some(&property) = borrowed_instance.fields.get(&name) {
+                self.pop();
+                self.push(property);
+                return Ok(());
+            }
+        }
+        if let Some(module) = self.peek(0).try_as_obj_module() {
+            if let Some(&property) = module.borrow().attributes.get(&name) {
+                self.pop();
+                self.push(property);
+                return Ok(());
+            }
+        }
+
+        let class = self.get_class(self.peek(0));
+        self.bind_method(class, name)
+    }
+
+    fn set_property_impl(&mut self) -> Result<(), Error> {
+        if let Some(module) = self.peek(1).try_as_obj_module() {
+            let name = self.read_string();
+            let value = self.peek(0);
+            module.borrow_mut().attributes.insert(name, value);
+            self.pop();
+            self.pop();
+            self.push(value);
+            return Ok(());
+        }
+        let instance = if let Some(ptr) = self.peek(1).try_as_obj_instance() {
+            ptr
+        } else {
+            let err = error!(ErrorKind::AttributeError, "Only instances have fields.");
+            return self.try_handle_error(err);
+        };
+        let name = self.read_string();
+        let value = self.peek(0);
+        instance.borrow_mut().fields.insert(name, value);
+
+        self.pop();
+        self.pop();
+        self.push(value);
+        Ok(())
+    }
+
+    fn get_class_impl(&mut self) {
+        let value = self.peek(0);
+        match value {
+            Value::ObjClass(_) => {}
+            Value::ObjInstance(instance) => {
+                self.poke(0, Value::ObjClass(instance.borrow().class));
+            }
+            _ => {
+                let class = self.get_class(value);
+                self.poke(0, Value::ObjClass(class));
+            }
+        }
+    }
+
+    fn get_super_impl(&mut self) -> Result<(), Error> {
+        let name = self.read_string();
+        let superclass = self.pop().try_as_obj_class().expect("Expected ObjClass.");
+
+        self.bind_method(superclass, name)
+    }
+
+    fn equal_impl(&mut self) {
+        let b = self.pop();
+        let a = self.pop();
+        self.push(Value::Boolean(a == b));
+    }
+
+    fn binary_op_impl(&mut self, op: fn(f64, f64) -> Value) -> Result<(), Error> {
+        let second_value = self.pop();
+        let first_value = self.pop();
+        let (first, second) = match (first_value, second_value) {
+            (Value::Number(first), Value::Number(second)) => (first, second),
+            _ => {
+                let err = error!(
+                    ErrorKind::TypeError,
+                    "Binary operands must both be numbers."
+                );
+                return self.try_handle_error(err);
+            }
+        };
+        self.push(op(first, second));
+        Ok(())
+    }
+
+    fn add_impl(&mut self) -> Result<(), Error> {
+        let b = self.pop();
+        let a = self.pop();
+        match (a, b) {
+            (Value::ObjString(a), Value::ObjString(b)) => {
+                let value =
+                    Value::ObjString(self.new_gc_obj_string(format!("{}{}", *a, *b).as_str()));
+                self.push(value)
+            }
+
+            (Value::Number(a), Value::Number(b)) => {
+                self.push(Value::Number(a + b));
+            }
+
+            _ => {
+                let err = error!(
+                    ErrorKind::TypeError,
+                    "Binary operands must be two numbers or two strings.",
+                );
+                self.try_handle_error(err)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn logical_not_impl(&mut self) {
+        let value = self.pop();
+        self.push(Value::Boolean(!value.as_bool()));
+    }
+
+    fn bitwise_not_impl(&mut self) -> Result<(), Error> {
+        let value = self.pop();
+        if let Some(num) = value.try_as_number() {
+            self.push(Value::Number(!(num as i64) as f64));
+        } else {
+            let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
+            self.try_handle_error(err)?;
+        }
+        Ok(())
+    }
+
+    fn negate_impl(&mut self) -> Result<(), Error> {
+        let value = self.pop();
+        if let Some(num) = value.try_as_number() {
+            self.push(Value::Number(-num));
+        } else {
+            let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
+            self.try_handle_error(err)?;
+        }
+        Ok(())
+    }
+
+    fn format_string_impl(&mut self) {
+        let value = self.peek(0);
+        if value.try_as_obj_string().is_some() {
+            return;
+        }
+        let obj = Value::ObjString(self.new_gc_obj_string(format!("{}", value).as_str()));
+        self.poke(0, obj);
+    }
+
+    fn build_hash_map_impl(&mut self) -> Result<(), Error> {
+        let num_elements = self.read_byte() as usize;
+        match self.build_hash_map(num_elements) {
+            Ok(map) => {
+                self.push(Value::ObjHashMap(map.as_gc()));
+            }
+            Err(e) => {
+                self.try_handle_error(e)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn build_range_impl(&mut self) -> Result<(), Error> {
+        macro_rules! pop_integer {
+            () => {
+                match utils::validate_integer(self.pop()) {
+                    Ok(i) => i,
+                    Err(e) => {
+                        return self.try_handle_error(e);
+                    }
+                }
+            };
+        }
+        let end = pop_integer!();
+        let begin = pop_integer!();
+        let range = self.build_range(begin, end);
+        self.push(Value::ObjRange(range));
+        Ok(())
+    }
+
+    fn build_string_impl(&mut self) {
+        let num_operands = self.read_byte() as usize;
+        if num_operands == 1 {
+            return;
+        }
+        let mut new_string = String::new();
+        for pos in (0..num_operands).rev() {
+            new_string.push_str(self.peek(pos).try_as_obj_string().unwrap().as_str())
+        }
+        self.discard(num_operands);
+        let value = Value::ObjString(self.new_gc_obj_string(new_string.as_str()));
+        self.push(value);
+    }
+
+    fn build_tuple_impl(&mut self) {
+        let num_operands = self.read_byte() as usize;
+        let begin = self.stack_size() - num_operands;
+        let end = self.stack_size();
+        let elements = self.active_fiber().stack[begin..end]
+            .iter()
+            .copied()
+            .collect();
+        let tuple = self.new_root_obj_tuple(elements);
+        self.discard(num_operands);
+        self.push(Value::ObjTuple(tuple.as_gc()));
+    }
+
+    fn build_vec_impl(&mut self) {
+        let num_operands = self.read_byte() as usize;
+        let vec = self.new_root_obj_vec();
+        let begin = self.stack_size() - num_operands;
+        let end = self.stack_size();
+        vec.borrow_mut().elements = self.active_fiber().stack[begin..end]
+            .iter()
+            .copied()
+            .collect();
+        self.discard(num_operands);
+        self.push(Value::ObjVec(vec.as_gc()));
+    }
+
+    fn iter_next_impl(&mut self) -> Result<(), Error> {
+        let iter = self.peek(0);
+        self.push(iter);
+        self.invoke(self.next_string, 0)
+    }
+
+    fn jump_impl(&mut self) {
+        let offset = self.read_short();
+        self.ip = unsafe { self.ip.offset(offset as isize) };
+    }
+
+    fn jump_if_false_impl(&mut self) {
+        let offset = self.read_short();
+        if !self.peek(0).as_bool() {
+            self.ip = unsafe { self.ip.offset(offset as isize) };
+        }
+    }
+
+    fn jump_if_stop_iter(&mut self) {
+        let offset = self.read_short();
+        let stop_iter_class = self.class_store.get_obj_stop_iter_class();
+        if let Some(instance) = self.peek(0).try_as_obj_instance() {
+            if instance.borrow().class == stop_iter_class {
+                self.ip = unsafe { self.ip.offset(offset as isize) };
+            }
+        }
+    }
+
+    fn loop_impl(&mut self) {
+        let offset = self.read_short();
+        self.ip = unsafe { self.ip.offset(-(offset as isize)) };
+    }
+
+    fn jump_finally_impl(&mut self) {
+        let return_value = self.peek(0);
+        self.active_fiber_mut().return_ip = Some(self.ip);
+        self.active_fiber_mut().return_value = return_value;
+        self.pop();
+        let (new_ip, init_stack_size) = {
+            let handler = self
+                .active_fiber_mut()
+                .pop_exc_handler()
+                .expect("Expected ExcHandler.");
+            (handler.finally_ip, handler.init_stack_size)
+        };
+        self.active_fiber_mut().stack.truncate(init_stack_size);
+        self.ip = new_ip;
+    }
+
+    fn end_finally_impl(&mut self) -> Result<(), Error> {
+        if self.handling_exception {
+            self.unwind_stack()?;
+        }
+        let return_data = self.active_fiber_mut().take_return_data();
+        if let Some((value, ip)) = return_data {
+            self.push(value);
+            self.ip = ip;
+        }
+        Ok(())
+    }
+
+    fn push_exc_handler_impl(&mut self) {
+        let try_size = self.read_short() as usize;
+        let catch_size = self.read_short() as usize;
+
+        let catch_ip = unsafe { self.ip.offset(try_size as isize) };
+        let finally_ip = unsafe { self.ip.offset((try_size + catch_size) as isize) };
+
+        self.active_fiber_mut()
+            .push_exc_handler(catch_ip, finally_ip);
+    }
+
+    fn pop_exc_handler_impl(&mut self) {
+        self.active_fiber_mut().pop_exc_handler();
+    }
+
+    fn throw_impl(&mut self) -> Result<(), Error> {
+        self.handling_exception = true;
+        self.active_fiber_mut().error_ip = Some(self.ip);
+        self.unwind_stack()
+    }
+
+    fn call_impl(&mut self) -> Result<(), Error> {
+        let arg_count = self.read_byte() as usize;
+        self.call_value(self.peek(arg_count), arg_count)
+    }
+
+    fn construct_impl(&mut self) {
+        let arg_count = self.read_byte() as usize;
+        let value = self.peek(arg_count);
+        if let Some(class) = value.try_as_obj_class() {
+            let instance = self.new_root_obj_instance(class);
+            self.poke(arg_count, Value::ObjInstance(instance.as_gc()));
+        }
+    }
+
+    fn invoke_impl(&mut self) -> Result<(), Error> {
+        let method = self.read_string();
+        let arg_count = self.read_byte() as usize;
+        self.invoke(method, arg_count)
+    }
+
+    fn super_invoke_impl(&mut self) -> Result<(), Error> {
+        let method = self.read_string();
+        let arg_count = self.read_byte() as usize;
+        let superclass = match self.pop() {
+            Value::ObjClass(ptr) => ptr,
+            _ => unreachable!(),
+        };
+        self.invoke_from_class(superclass, method, arg_count)
+    }
+
+    fn closure_impl(&mut self) {
+        let function = match self.read_constant() {
+            Value::ObjFunction(underlying) => underlying,
+            _ => panic!("Expected ObjFunction."),
+        };
+
+        let upvalue_count = function.upvalue_count;
+
+        let closure = self.new_root_obj_closure(function, self.active_module);
+        self.push(Value::ObjClosure(closure.as_gc()));
+
+        for i in 0..upvalue_count {
+            let is_local = self.read_byte() != 0;
+            let index = self.read_byte() as usize;
+            let slot_base = self.active_fiber().current_frame().unwrap().slot_base;
+            closure.upvalues.borrow_mut()[i] = if is_local {
+                self.capture_upvalue(slot_base + index)
+            } else {
+                self.active_fiber()
+                    .current_frame()
+                    .unwrap()
+                    .closure
+                    .upvalues
+                    .borrow()[index]
+            };
+        }
+    }
+
+    fn close_upvalue_impl(&mut self) {
+        let stack_size = self.stack_size();
+        self.active_fiber_mut().close_upvalues(stack_size - 1);
+        self.pop();
+    }
+
+    fn return_impl(&mut self) -> Result<Option<Value>, Error> {
+        let result = self.pop();
+        self.active_fiber_mut().close_upvalues_for_frame();
+
+        let prev_stack_size = self.active_fiber().current_frame().unwrap().slot_base;
+        self.active_fiber_mut().frames.pop();
+        if self.active_fiber().has_finished() {
+            if self.active_fiber().caller.is_some() {
+                self.unload_fiber(None)?;
+                self.poke(0, result);
+                return Ok(None);
+            }
+            return Ok(Some(self.pop()));
+        }
+        self.load_frame();
+        self.active_fiber_mut().stack.truncate(prev_stack_size);
+        self.push(result);
+        Ok(None)
+    }
+
+    fn declare_class_impl(&mut self) {
+        let name = self.read_string();
+        let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
+        let metaclass = self.heap.allocate_unique(ObjClass::new(
+            metaclass_name,
+            self.class_store.get_base_metaclass(),
+            Some(self.class_store.get_object_class()),
+            object::new_obj_string_value_map(),
+        ));
+        let class = self.heap.allocate_unique(ObjClass::new(
+            name,
+            self.class_store.get_base_metaclass(),
+            Some(self.class_store.get_object_class()),
+            object::new_obj_string_value_map(),
+        ));
+        self.working_class_def = Some(ClassDef::new(class, metaclass));
+        self.push(Value::None);
+    }
+
+    fn define_class_impl(&mut self) {
+        let mut class_def = self.working_class_def.take().expect("Expected ClassDef.");
+
+        let defined_metaclass: Root<ObjClass> = class_def.metaclass.into();
+        class_def.class.metaclass = defined_metaclass.as_gc();
+        let defined_class: Root<ObjClass> = class_def.class.into();
+
+        self.poke(0, Value::ObjClass(defined_class.as_gc()));
+    }
+
+    fn inherit_impl(&mut self) -> Result<(), Error> {
+        let superclass = if let Some(ptr) = self.peek(1).try_as_obj_class() {
+            ptr
+        } else {
+            let err = error!(ErrorKind::RuntimeError, "Superclass must be a class.");
+            return self.try_handle_error(err);
+        };
+        self.working_class_def.as_mut().unwrap().class.superclass = Some(superclass);
+        for (name, method) in &superclass.methods {
+            self.working_class_def
+                .as_mut()
+                .unwrap()
+                .class
+                .methods
+                .insert(*name, *method);
+        }
+        self.pop();
+        Ok(())
+    }
+
+    fn method_impl(&mut self) -> Result<(), Error> {
+        let name = self.read_string();
+        self.define_method(name, false)
+    }
+
+    fn static_method_impl(&mut self) -> Result<(), Error> {
+        let name = self.read_string();
+        self.define_method(name, true)
+    }
+
+    fn start_import_impl(&mut self) -> Result<(), Error> {
+        let path = self.read_string();
+
+        if let Some(module) = self.modules.get(&path).map(|m| m.as_gc()) {
+            if module.borrow().imported {
+                self.push(Value::ObjModule(module));
+                self.push(Value::None);
+            } else {
+                let err = error!(
+                    ErrorKind::ImportError,
+                    "Circular dependency encountered when importing module '{}'.",
+                    path.as_str()
+                );
+                self.try_handle_error(err)?;
+            }
+            return Ok(());
+        }
+
+        let source = match (self.module_loader)(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                return self.try_handle_error(e);
+            }
+        };
+
+        let function = match compiler::compile(self, source, Some(&path)) {
+            Ok(f) => f,
+            Err(e) => {
+                let mut error = error!(ErrorKind::ImportError, "Error compiling module:");
+                for msg in e.get_messages() {
+                    error.add_message(&format!("    {}", msg));
+                }
+                return self.try_handle_error(error);
+            }
+        };
+
+        let module = self.get_module(&path);
+        self.push(Value::ObjModule(module));
+
+        let closure = self.new_root_obj_closure(function.as_gc(), module);
+        self.push(Value::ObjClosure(closure.as_gc()));
+
+        self.call_value(self.peek(0), 0)?;
+        let active_module_path = self.active_module.borrow().path;
+        self.init_built_in_globals(&active_module_path);
+        Ok(())
+    }
+
+    fn finish_import_impl(&mut self) {
+        self.pop();
+        let module = self
+            .peek(0)
+            .try_as_obj_module()
+            .expect("Expected ObjModule.");
+        module.borrow_mut().imported = true;
     }
 
     fn call_value(&mut self, value: Value, arg_count: usize) -> Result<(), Error> {
