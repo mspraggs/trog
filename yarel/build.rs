@@ -1,18 +1,77 @@
-// build.rs
+/* Copyright 2021 Matt Spraggs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 
 use std::env;
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 
+use serde::Serialize;
+use tera::{Context, Tera};
+use yaml_rust::YamlLoader;
+
 const REPLACE_STRINGS: &[&str] = &[".", "/", "-"];
+
+#[derive(Debug, Serialize)]
+enum ClassKind {
+    NativeValue,
+    NativeObject,
+    Yarel,
+}
+
+impl From<&str> for ClassKind {
+    fn from(value: &str) -> Self {
+        match value {
+            "native_value" => Self::NativeValue,
+            "native_object" => Self::NativeObject,
+            "yarel" => Self::Yarel,
+            _ => {
+                panic!("Unknown class kind.")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ClassSpec {
+    name: String,
+    repr: String,
+    kind: ClassKind,
+    superclass: String,
+    metaclass: String,
+}
 
 fn main() {
     let man_dir = env::var_os("CARGO_MANIFEST_DIR").unwrap();
-    let src_path = Path::new(&man_dir).join("src/core.yl");
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let out_dir = Path::new(&out_dir);
 
     // Compile core classes file.
+    compile_core_classes(&man_dir, out_dir);
+
+    // Compile class store.
+    compile_class_store(&man_dir, out_dir);
+
+    // Compile tests.
+    compile_tests(&man_dir, out_dir);
+
+    println!("cargo:rerun-if-changed=build.rs");
+}
+
+fn compile_core_classes(man_dir: &OsString, out_dir: &Path) {
+    let src_path = Path::new(&man_dir).join("src/core.yl");
 
     let core_source = fs::read_to_string(src_path)
         .unwrap()
@@ -25,9 +84,61 @@ fn main() {
         format!("const CORE_SOURCE: &str = \"{}\";", core_source).as_str(),
     )
     .unwrap();
+    println!("cargo:rerun-if-changed=src/core.yl");
+}
 
-    // Compile tests.
+fn compile_class_store(man_dir: &OsString, out_dir: &Path) {
+    let spec_path = Path::new(&man_dir).join("src/class_store.yaml");
+    let template_path = Path::new(&man_dir).join("src/class_store.template.rs");
 
+    let yaml_raw = fs::read_to_string(spec_path).unwrap();
+    let yaml = YamlLoader::load_from_str(&yaml_raw).unwrap();
+
+    let num_classes = yaml.len();
+    fs::write("/tmp/debug.log", format!("{}\n", num_classes)).unwrap();
+    let class_specs = yaml[0]
+        .as_vec()
+        .unwrap()
+        .iter()
+        .map(|y| {
+            let name = y["name"].as_str().unwrap().to_owned();
+            let repr = y["repr"]
+                .as_str()
+                .map(|s| s.to_owned())
+                .unwrap_or_else(|| to_capcase(&name));
+            let kind = y["kind"].as_str().map(|s| ClassKind::from(s)).unwrap();
+            let superclass = y["superclass"].as_str().unwrap_or("object").to_owned();
+            let metaclass = y["metaclass"]
+                .as_str()
+                .unwrap_or("base_metaclass")
+                .to_owned();
+            ClassSpec {
+                name: if name.ends_with("class") {
+                    name
+                } else {
+                    format!("{}_class", name)
+                },
+                repr,
+                kind,
+                superclass,
+                metaclass,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let dest_path = out_dir.join("class_store.yaml.rs");
+
+    let template = fs::read_to_string(template_path).unwrap();
+    let mut context = Context::new();
+    context.insert("class_specs", &class_specs);
+    let result = Tera::one_off(&template, &context, false).unwrap();
+    fs::write(dest_path, result).unwrap();
+
+    println!("cargo:rerun-if-changed=src/class_store.yaml");
+    println!("cargo:rerun-if-changed=src/class_store.template.rs");
+}
+
+fn compile_tests(man_dir: &OsString, out_dir: &Path) {
     let tests_dir = Path::new(&man_dir).join("tests");
     let tests_path = tests_dir.join("scripts");
     let paths = get_paths(&tests_path, Some(".yl")).unwrap();
@@ -40,8 +151,6 @@ fn main() {
     let modules_map = generate_module_loader(&tests_path, &paths);
     fs::write(module_loader_path, modules_map).unwrap();
 
-    println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=src/core.yl");
     println!("cargo:rerun-if-changed=tests/test.rs");
     for path in &paths {
         println!("cargo:rerun-if-changed={}", path);
@@ -108,4 +217,22 @@ fn load_source(path: &str) -> String {
         .unwrap()
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
+}
+
+fn to_capcase(s: &str) -> String {
+    let mut ret = String::new();
+    let mut observed_underscore = true;
+
+    for c in s.chars() {
+        if c == '_' {
+            observed_underscore = true;
+        } else if observed_underscore {
+            ret.push(c.to_ascii_uppercase());
+            observed_underscore = false;
+        } else {
+            ret.push(c.to_ascii_lowercase());
+        }
+    }
+
+    ret
 }

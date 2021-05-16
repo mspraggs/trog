@@ -1,0 +1,112 @@
+# Copyright 2021 Matt Spraggs
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: nil
+  kind: native_value
+
+- name: boolean
+  kind: native_value
+
+- name: num
+  kind: native_value
+
+- name: closure
+  repr: Func
+  kind: native_value
+
+- name: native
+  repr: BuiltIn
+  kind: native_value
+
+- name: closure_method
+  repr: Method
+  kind: native_value
+
+- name: native_method
+  repr: BuiltInMethod
+  kind: native_value
+
+- name: iter
+  kind: yarel
+
+- name: map_iter
+  kind: yarel
+
+- name: filter_iter
+  kind: yarel
+
+- name: tuple
+  kind: native_object
+
+- name: tuple_iter
+  kind: native_object
+  superclass: iter
+
+- name: vec
+  kind: native_object
+
+- name: vec_iter
+  kind: native_object
+  superclass: iter
+
+- name: range
+  kind: native_object
+
+- name: range_iter
+  kind: native_object
+  superclass: iter
+
+- name: hash_map
+  kind: native_object
+
+- name: module
+  kind: native_object
+
+- name: string_iter
+  kind: native_object
+  superclass: iter
+
+- name: fiber_metaclass
+  kind: native_object
+
+- name: fiber
+  kind: native_object
+  metaclass: fiber_metaclass
+
+- name: error
+  kind: yarel
+
+- name: stop_iter
+  kind: yarel
+
+- name: runtime_error
+  kind: yarel
+
+- name: attribute_error
+  kind: yarel
+
+- name: index_error
+  kind: yarel
+
+- name: import_error
+  kind: yarel
+
+- name: name_error
+  kind: yarel
+
+- name: type_error
+  kind: yarel
+
+- name: value_error
+  kind: yarel
