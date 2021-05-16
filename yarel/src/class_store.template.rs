@@ -115,6 +115,7 @@ impl CoreClassStore {
     }
 
     {% for spec in class_specs %}
+    #[allow(dead_code)]
     pub(crate) fn get_{{ spec.name }}(&self) -> Gc<ObjClass> {
         self.root_{{ spec.name }}
             .as_ref()
