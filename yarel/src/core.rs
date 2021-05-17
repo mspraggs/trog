@@ -18,7 +18,7 @@ use std::time;
 
 use crate::common;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, GcBoxPtr, Root};
+use crate::memory::{Gc, GcBoxPtr, Heap, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjStringValueMap};
 use crate::utils;
 use crate::value::Value;
@@ -95,6 +95,24 @@ pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass
         .methods
         .clone();
     class.as_mut().data.methods = methods;
+}
+
+pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> GcBoxPtr<ObjClass> {
+    // # Safety
+    // The root metaclass is its own metaclass, so we need to add a pointer to the metaclass to the
+    // class's data. To do this we allocate the object and mutate it whilst an immutable reference
+    // is held by a local `Root` instance. This is safe because the `Root` instance doesn't access
+    // any fields on the pointer it holds whilst the metaclass assignment is being performed.
+    let data = ObjClass {
+        name: Gc::dangling(),
+        metaclass: Gc::dangling(),
+        superclass: None,
+        methods: object::new_obj_string_value_map(),
+    };
+    let mut ptr = heap.allocate_bare(data);
+    let root = Root::from(ptr);
+    ptr.as_mut().data.metaclass = root.as_gc();
+    ptr
 }
 
 /// Object implementation

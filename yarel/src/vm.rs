@@ -26,7 +26,7 @@ use std::ptr;
 use std::time;
 
 use crate::chunk::{Chunk, OpCode};
-use crate::class_store::{self, CoreClassStore};
+use crate::class_store::CoreClassStore;
 use crate::common;
 use crate::compiler;
 use crate::core;
@@ -118,7 +118,7 @@ pub struct Vm {
     fiber: Option<Root<RefCell<ObjFiber>>>,
     unsafe_fiber: *mut ObjFiber,
     next_string: Gc<ObjString>,
-    pub(crate) class_store: CoreClassStore,
+    class_store: CoreClassStore,
     chunks: Vec<Root<Chunk>>,
     modules: HashMap<Gc<ObjString>, Root<RefCell<ObjModule>>, BuildPassThroughHasher>,
     core_chunks: Vec<Root<Chunk>>,
@@ -1635,7 +1635,7 @@ impl Vm {
     }
 
     fn init_heap_allocated_data(&mut self) {
-        let mut base_metaclass_ptr = unsafe { class_store::new_base_metaclass(&mut self.heap) };
+        let mut base_metaclass_ptr = unsafe { core::new_base_metaclass(&mut self.heap) };
         let root_base_metaclass = Root::from(base_metaclass_ptr);
         let mut object_class_ptr = self.heap.allocate_bare(ObjClass {
             name: Gc::dangling(),
@@ -1684,6 +1684,9 @@ impl Vm {
         let next_string = self.new_gc_obj_string("next");
         self.active_chunk = empty_chunk;
         self.next_string = next_string;
+        let class_store =
+            CoreClassStore::new(self, root_base_metaclass.clone(), root_object_class.clone());
+        self.class_store = class_store;
         let class_store =
             CoreClassStore::new_with_built_ins(self, root_base_metaclass, root_object_class);
         self.core_chunks = self.chunks.clone();
