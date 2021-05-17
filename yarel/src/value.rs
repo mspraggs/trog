@@ -18,6 +18,7 @@ use std::cmp;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
+use crate::error::{Error, ErrorKind};
 use crate::hash::PassThroughHasher;
 use crate::memory::{self, Gc};
 use crate::object::{
@@ -198,6 +199,17 @@ impl Value {
             Value::ObjFiber(inner) => Some(*inner),
             _ => None,
         }
+    }
+    pub fn try_as_bounded_index(&self, bound: isize, msg: &str) -> Result<usize, Error> {
+        let mut index = utils::validate_integer(*self)?;
+        if index < 0 {
+            index += bound;
+        }
+        if index < 0 || index >= bound {
+            return Err(error!(ErrorKind::IndexError, "{}", msg));
+        }
+    
+        Ok(index as usize)
     }
 }
 

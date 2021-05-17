@@ -117,7 +117,6 @@ pub struct Vm {
     active_chunk: Gc<Chunk>,
     fiber: Option<Root<RefCell<ObjFiber>>>,
     unsafe_fiber: *mut ObjFiber,
-    init_string: Gc<ObjString>,
     next_string: Gc<ObjString>,
     pub(crate) class_store: CoreClassStore,
     chunks: Vec<Root<Chunk>>,
@@ -145,7 +144,6 @@ impl Vm {
             active_chunk: Gc::dangling(),
             fiber: None,
             unsafe_fiber: ptr::null_mut(),
-            init_string: Gc::dangling(),
             next_string: Gc::dangling(),
             class_store: CoreClassStore::new_empty(),
             chunks: Vec::new(),
@@ -182,7 +180,7 @@ impl Vm {
     pub fn execute(&mut self, function: Root<ObjFunction>, args: &[Value]) -> Result<Value, Error> {
         self.ip = ptr::null();
         self.fiber = None;
-        let module = self.get_module(&function.module_path);
+        let module = self.module(&function.module_path);
         let closure = self.new_root_obj_closure(function.as_gc(), module);
         let fiber = self.new_root_obj_fiber(closure.as_gc());
         let arity = closure.function.arity - 1;
@@ -204,9 +202,9 @@ impl Vm {
         }
     }
 
-    pub fn get_global(&mut self, module_name: &str, var_name: &str) -> Option<Value> {
+    pub fn global(&mut self, module_name: &str, var_name: &str) -> Option<Value> {
         let var_name = self.new_gc_obj_string(var_name);
-        self.get_module(module_name)
+        self.module(module_name)
             .borrow()
             .attributes
             .get(&var_name)
@@ -215,7 +213,7 @@ impl Vm {
 
     pub fn set_global(&mut self, module_name: &str, var_name: &str, value: Value) {
         let var_name = self.new_gc_obj_string(var_name);
-        self.get_module(module_name)
+        self.module(module_name)
             .borrow_mut()
             .attributes
             .insert(var_name, value);
@@ -224,7 +222,7 @@ impl Vm {
     pub fn define_native(&mut self, module_name: &str, var_name: &str, function: NativeFn) {
         let var_name = self.new_gc_obj_string(var_name);
         let native = self.new_root_obj_native(var_name, function);
-        self.get_module(module_name)
+        self.module(module_name)
             .borrow_mut()
             .attributes
             .insert(var_name, Value::ObjNative(native.as_gc()));
@@ -232,8 +230,8 @@ impl Vm {
 
     pub fn get_class(&self, value: Value) -> Gc<ObjClass> {
         match value {
-            Value::Boolean(_) => self.class_store.get_boolean_class(),
-            Value::Number(_) => self.class_store.get_num_class(),
+            Value::Boolean(_) => self.class_store.boolean_class(),
+            Value::Number(_) => self.class_store.num_class(),
             Value::ObjString(string) => string.class,
             Value::ObjStringIter(iter) => iter.borrow().class,
             Value::ObjFunction(_) => {
@@ -243,12 +241,12 @@ impl Vm {
                     unsafe { hint::unreachable_unchecked() }
                 }
             }
-            Value::ObjNative(_) => self.class_store.get_native_class(),
-            Value::ObjClosure(_) => self.class_store.get_closure_class(),
+            Value::ObjNative(_) => self.class_store.native_class(),
+            Value::ObjClosure(_) => self.class_store.closure_class(),
             Value::ObjClass(class) => class.metaclass,
             Value::ObjInstance(instance) => instance.borrow().class,
-            Value::ObjBoundMethod(_) => self.class_store.get_closure_method_class(),
-            Value::ObjBoundNative(_) => self.class_store.get_native_method_class(),
+            Value::ObjBoundMethod(_) => self.class_store.closure_method_class(),
+            Value::ObjBoundNative(_) => self.class_store.native_method_class(),
             Value::ObjTuple(tuple) => tuple.class,
             Value::ObjTupleIter(iter) => iter.borrow().class,
             Value::ObjVec(vec) => vec.borrow().class,
@@ -258,7 +256,7 @@ impl Vm {
             Value::ObjHashMap(hash_map) => hash_map.borrow().class,
             Value::ObjModule(module) => module.borrow().class,
             Value::ObjFiber(fiber) => fiber.borrow().class,
-            Value::None => self.class_store.get_nil_class(),
+            Value::None => self.class_store.nil_class(),
         }
     }
 
@@ -357,13 +355,13 @@ impl Vm {
         &mut self,
         string: Gc<ObjString>,
     ) -> Root<RefCell<ObjStringIter>> {
-        let class = self.class_store.get_string_iter_class();
+        let class = self.class_store.string_iter_class();
         self.heap
             .allocate_root(RefCell::new(ObjStringIter::new(class, string)))
     }
 
     pub fn new_root_obj_hash_map(&mut self) -> Root<RefCell<ObjHashMap>> {
-        let class = self.class_store.get_hash_map_class();
+        let class = self.class_store.hash_map_class();
         self.heap
             .allocate_root(RefCell::new(ObjHashMap::new(class)))
     }
@@ -373,29 +371,29 @@ impl Vm {
     }
 
     pub fn new_root_obj_range_iter(&mut self, range: Gc<ObjRange>) -> Root<RefCell<ObjRangeIter>> {
-        let class = self.class_store.get_range_iter_class();
+        let class = self.class_store.range_iter_class();
         self.heap
             .allocate_root(RefCell::new(ObjRangeIter::new(class, range)))
     }
 
     pub fn new_root_obj_tuple(&mut self, elements: Vec<Value>) -> Root<ObjTuple> {
-        let class = self.class_store.get_tuple_class();
+        let class = self.class_store.tuple_class();
         self.heap.allocate_root(ObjTuple::new(class, elements))
     }
 
     pub fn new_root_obj_tuple_iter(&mut self, tuple: Gc<ObjTuple>) -> Root<RefCell<ObjTupleIter>> {
-        let class = self.class_store.get_tuple_iter_class();
+        let class = self.class_store.tuple_iter_class();
         self.heap
             .allocate_root(RefCell::new(ObjTupleIter::new(class, tuple)))
     }
 
     pub fn new_root_obj_vec(&mut self) -> Root<RefCell<ObjVec>> {
-        let class = self.class_store.get_vec_class();
+        let class = self.class_store.vec_class();
         self.heap.allocate_root(RefCell::new(ObjVec::new(class)))
     }
 
     pub fn new_root_obj_vec_iter(&mut self, vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIter>> {
-        let class = self.class_store.get_vec_iter_class();
+        let class = self.class_store.vec_iter_class();
         self.heap
             .allocate_root(RefCell::new(ObjVecIter::new(class, vec)))
     }
@@ -410,12 +408,12 @@ impl Vm {
     }
 
     pub fn new_root_obj_err(&mut self, context: Value) -> Root<RefCell<ObjInstance>> {
-        let class = self.class_store.get_error_class();
+        let class = self.class_store.error_class();
         self.new_root_obj_err_with_class(class, context)
     }
 
     pub fn new_root_obj_stop_iter(&mut self) -> Root<RefCell<ObjInstance>> {
-        let class = self.class_store.get_stop_iter_class();
+        let class = self.class_store.stop_iter_class();
         self.new_root_obj_err_with_class(class, Value::None)
     }
 
@@ -423,7 +421,7 @@ impl Vm {
         &mut self,
         closure: Gc<ObjClosure>,
     ) -> Root<RefCell<ObjFiber>> {
-        let class = self.class_store.get_fiber_class();
+        let class = self.class_store.fiber_class();
         self.heap
             .allocate_root(RefCell::new(ObjFiber::new(class, closure)))
     }
@@ -432,18 +430,18 @@ impl Vm {
         self.reset_stack();
         self.chunks = self.core_chunks.clone();
         self.modules.retain(|&k, _| k.as_str() == "main");
-        self.active_module = self.get_module("main");
+        self.active_module = self.module("main");
         self.active_module.borrow_mut().attributes = object::new_obj_string_value_map();
         self.init_built_in_globals("main");
     }
 
-    pub(crate) fn get_module(&mut self, path: &str) -> Gc<RefCell<ObjModule>> {
+    pub(crate) fn module(&mut self, path: &str) -> Gc<RefCell<ObjModule>> {
         let path = self.new_gc_obj_string(path);
         if let Some(module) = self.modules.get(&path) {
             return module.as_gc();
         }
         let module = self.heap.allocate_root(RefCell::new(ObjModule::new(
-            self.class_store.get_module_class(),
+            self.class_store.module_class(),
             path,
         )));
         let gc_module = module.as_gc();
@@ -1021,7 +1019,7 @@ impl Vm {
 
     fn jump_if_stop_iter(&mut self) {
         let offset = self.read_short();
-        let stop_iter_class = self.class_store.get_stop_iter_class();
+        let stop_iter_class = self.class_store.stop_iter_class();
         if let Some(instance) = self.peek(0).try_as_obj_instance() {
             if instance.borrow().class == stop_iter_class {
                 self.ip = unsafe { self.ip.offset(offset as isize) };
@@ -1172,14 +1170,14 @@ impl Vm {
         let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
         let metaclass = self.heap.allocate_unique(ObjClass::new(
             metaclass_name,
-            self.class_store.get_base_metaclass(),
-            Some(self.class_store.get_object_class()),
+            self.class_store.base_metaclass(),
+            Some(self.class_store.object_class()),
             object::new_obj_string_value_map(),
         ));
         let class = self.heap.allocate_unique(ObjClass::new(
             name,
-            self.class_store.get_base_metaclass(),
-            Some(self.class_store.get_object_class()),
+            self.class_store.base_metaclass(),
+            Some(self.class_store.object_class()),
             object::new_obj_string_value_map(),
         ));
         self.working_class_def = Some(ClassDef::new(class, metaclass));
@@ -1255,14 +1253,14 @@ impl Vm {
             Ok(f) => f,
             Err(e) => {
                 let mut error = error!(ErrorKind::ImportError, "Error compiling module:");
-                for msg in e.get_messages() {
+                for msg in e.messages() {
                     error.add_message(&format!("    {}", msg));
                 }
                 return self.try_handle_error(error);
             }
         };
 
-        let module = self.get_module(&path);
+        let module = self.module(&path);
         self.push(Value::ObjModule(module));
 
         let closure = self.new_root_obj_closure(function.as_gc(), module);
@@ -1523,7 +1521,7 @@ impl Vm {
 
         // Cache miss! Create the range and cache it.
 
-        let class = self.class_store.get_range_class();
+        let class = self.class_store.range_class();
         let range = self.heap.allocate_root(ObjRange::new(class, begin, end));
         let range_gc = range.as_gc();
 
@@ -1557,16 +1555,16 @@ impl Vm {
     }
 
     fn new_root_obj_err_from_error(&mut self, error: Error) -> Root<RefCell<ObjInstance>> {
-        let msg = self.new_gc_obj_string(&error.get_messages().join("\n"));
-        let class = match error.get_kind() {
-            ErrorKind::AttributeError => self.class_store.get_attribute_error_class(),
-            ErrorKind::CompileError => self.class_store.get_runtime_error_class(),
-            ErrorKind::ImportError => self.class_store.get_import_error_class(),
-            ErrorKind::IndexError => self.class_store.get_index_error_class(),
-            ErrorKind::NameError => self.class_store.get_name_error_class(),
-            ErrorKind::RuntimeError => self.class_store.get_runtime_error_class(),
-            ErrorKind::TypeError => self.class_store.get_type_error_class(),
-            ErrorKind::ValueError => self.class_store.get_value_error_class(),
+        let msg = self.new_gc_obj_string(&error.messages().join("\n"));
+        let class = match error.kind() {
+            ErrorKind::AttributeError => self.class_store.attribute_error_class(),
+            ErrorKind::CompileError => self.class_store.runtime_error_class(),
+            ErrorKind::ImportError => self.class_store.import_error_class(),
+            ErrorKind::IndexError => self.class_store.index_error_class(),
+            ErrorKind::NameError => self.class_store.name_error_class(),
+            ErrorKind::RuntimeError => self.class_store.runtime_error_class(),
+            ErrorKind::TypeError => self.class_store.type_error_class(),
+            ErrorKind::ValueError => self.class_store.value_error_class(),
         };
 
         self.new_root_obj_err_with_class(class, Value::ObjString(msg))
@@ -1575,21 +1573,21 @@ impl Vm {
     fn new_error_from_value(&mut self, value: Value) -> Error {
         let (kind, exc_description, context) = if let Some(instance) = value.try_as_obj_instance() {
             let class = instance.borrow().class;
-            let kind = if class == self.class_store.get_attribute_error_class() {
+            let kind = if class == self.class_store.attribute_error_class() {
                 ErrorKind::AttributeError
-            } else if class == self.class_store.get_runtime_error_class() {
+            } else if class == self.class_store.runtime_error_class() {
                 ErrorKind::CompileError
-            } else if class == self.class_store.get_import_error_class() {
+            } else if class == self.class_store.import_error_class() {
                 ErrorKind::ImportError
-            } else if class == self.class_store.get_index_error_class() {
+            } else if class == self.class_store.index_error_class() {
                 ErrorKind::IndexError
-            } else if class == self.class_store.get_name_error_class() {
+            } else if class == self.class_store.name_error_class() {
                 ErrorKind::NameError
-            } else if class == self.class_store.get_runtime_error_class() {
+            } else if class == self.class_store.runtime_error_class() {
                 ErrorKind::RuntimeError
-            } else if class == self.class_store.get_type_error_class() {
+            } else if class == self.class_store.type_error_class() {
                 ErrorKind::TypeError
-            } else if class == self.class_store.get_value_error_class() {
+            } else if class == self.class_store.value_error_class() {
                 ErrorKind::ValueError
             } else {
                 ErrorKind::RuntimeError
@@ -1683,10 +1681,8 @@ impl Vm {
         }
 
         let empty_chunk = self.heap.allocate(Chunk::new());
-        let init_string = self.new_gc_obj_string("new");
         let next_string = self.new_gc_obj_string("next");
         self.active_chunk = empty_chunk;
-        self.init_string = init_string;
         self.next_string = next_string;
         let class_store =
             CoreClassStore::new_with_built_ins(self, root_base_metaclass, root_object_class);
@@ -1698,27 +1694,27 @@ impl Vm {
         self.define_native(module_path, "clock", core::clock);
         self.define_native(module_path, "type", core::type_);
         self.define_native(module_path, "print", self.printer);
-        let base_metaclass = self.class_store.get_base_metaclass();
+        let base_metaclass = self.class_store.base_metaclass();
         self.set_global(module_path, "Type", Value::ObjClass(base_metaclass));
-        let object_class = self.class_store.get_object_class();
+        let object_class = self.class_store.object_class();
         self.set_global(module_path, "Object", Value::ObjClass(object_class));
-        let nil_class = self.class_store.get_nil_class();
+        let nil_class = self.class_store.nil_class();
         self.set_global(module_path, "Nil", Value::ObjClass(nil_class));
-        let boolean_class = self.class_store.get_boolean_class();
+        let boolean_class = self.class_store.boolean_class();
         self.set_global(module_path, "Bool", Value::ObjClass(boolean_class));
-        let number_class = self.class_store.get_num_class();
+        let number_class = self.class_store.num_class();
         self.set_global(module_path, "Num", Value::ObjClass(number_class));
-        let obj_closure_class = self.class_store.get_closure_class();
+        let obj_closure_class = self.class_store.closure_class();
         self.set_global(module_path, "Func", Value::ObjClass(obj_closure_class));
-        let obj_native_class = self.class_store.get_native_class();
+        let obj_native_class = self.class_store.native_class();
         self.set_global(module_path, "BuiltIn", Value::ObjClass(obj_native_class));
-        let obj_closure_method_class = self.class_store.get_closure_method_class();
+        let obj_closure_method_class = self.class_store.closure_method_class();
         self.set_global(
             module_path,
             "Method",
             Value::ObjClass(obj_closure_method_class),
         );
-        let obj_native_method_class = self.class_store.get_native_method_class();
+        let obj_native_method_class = self.class_store.native_method_class();
         self.set_global(
             module_path,
             "BuiltInMethod",
@@ -1726,25 +1722,25 @@ impl Vm {
         );
         let obj_string_class = self.string_class.as_ref().expect("Expected Root.").as_gc();
         self.set_global(module_path, "String", Value::ObjClass(obj_string_class));
-        let obj_iter_class = self.class_store.get_iter_class();
+        let obj_iter_class = self.class_store.iter_class();
         self.set_global(module_path, "Iter", Value::ObjClass(obj_iter_class));
-        let obj_map_iter_class = self.class_store.get_map_iter_class();
+        let obj_map_iter_class = self.class_store.map_iter_class();
         self.set_global(module_path, "MapIter", Value::ObjClass(obj_map_iter_class));
-        let obj_filter_iter_class = self.class_store.get_filter_iter_class();
+        let obj_filter_iter_class = self.class_store.filter_iter_class();
         self.set_global(
             module_path,
             "FilterIter",
             Value::ObjClass(obj_filter_iter_class),
         );
-        let obj_tuple_class = self.class_store.get_tuple_class();
+        let obj_tuple_class = self.class_store.tuple_class();
         self.set_global(module_path, "Tuple", Value::ObjClass(obj_tuple_class));
-        let obj_vec_class = self.class_store.get_vec_class();
+        let obj_vec_class = self.class_store.vec_class();
         self.set_global(module_path, "Vec", Value::ObjClass(obj_vec_class));
-        let obj_range_class = self.class_store.get_range_class();
+        let obj_range_class = self.class_store.range_class();
         self.set_global(module_path, "Range", Value::ObjClass(obj_range_class));
-        let obj_hash_map_class = self.class_store.get_hash_map_class();
+        let obj_hash_map_class = self.class_store.hash_map_class();
         self.set_global(module_path, "HashMap", Value::ObjClass(obj_hash_map_class));
-        let obj_fiber_class = self.class_store.get_fiber_class();
+        let obj_fiber_class = self.class_store.fiber_class();
         self.set_global(module_path, "Fiber", Value::ObjClass(obj_fiber_class));
     }
 

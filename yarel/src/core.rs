@@ -19,7 +19,7 @@ use std::time;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, GcBoxPtr, Root};
-use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjString, ObjStringValueMap};
+use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjStringValueMap};
 use crate::utils;
 use crate::value::Value;
 use crate::vm::Vm;
@@ -324,8 +324,10 @@ fn string_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
     let (begin, end) = match vm.peek(0) {
         Value::Number(_) => {
-            let begin = get_bounded_index(vm.peek(0), string_len, "String index out of bounds.")?;
-            check_char_boundary(string, begin, "string index")?;
+            let begin = vm
+                .peek(0)
+                .try_as_bounded_index(string_len, "String index out of bounds.")?;
+            string.validate_char_boundary(begin, "string index")?;
             let mut end = begin + 1;
             while end <= string.len() && !string.as_str().is_char_boundary(end) {
                 end += 1;
@@ -333,9 +335,9 @@ fn string_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             (begin, end)
         }
         Value::ObjRange(r) => {
-            let (begin, end) = r.get_bounded_range(string_len, "String")?;
-            check_char_boundary(string, begin, "string slice start")?;
-            check_char_boundary(string, end, "string slice end")?;
+            let (begin, end) = r.make_bounded_range(string_len, "String")?;
+            string.validate_char_boundary(begin, "string slice start")?;
+            string.validate_char_boundary(end, "string slice end")?;
             (begin, end)
         }
         _ => {
@@ -380,8 +382,7 @@ fn string_char_byte_index(vm: &mut Vm, num_args: usize) -> Result<Value, Error> 
     check_num_args(num_args, 1)?;
 
     let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
-    let char_index = get_bounded_index(
-        vm.peek(0),
+    let char_index = vm.peek(0).try_as_bounded_index(
         string.as_str().chars().count() as isize,
         "String index parameter out of bounds.",
     )?;
@@ -428,7 +429,7 @@ fn string_find(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         return Err(error!(ErrorKind::IndexError, "String index out of bounds."));
     }
     let start = start as usize;
-    check_char_boundary(string, start, "string index")?;
+    string.validate_char_boundary(start, "string index")?;
     for i in start..string.as_str().len() {
         if !string.is_char_boundary(i) || !string.is_char_boundary(i + substring.len()) {
             continue;
@@ -563,16 +564,6 @@ fn string_to_code_points(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     Ok(Value::ObjVec(vec.as_gc()))
 }
 
-fn check_char_boundary(string: Gc<ObjString>, pos: usize, desc: &str) -> Result<(), Error> {
-    if !string.as_str().is_char_boundary(pos) {
-        return Err(error!(
-            ErrorKind::IndexError,
-            "Provided {} is not on a character boundary.", desc
-        ));
-    }
-    Ok(())
-}
-
 /// StringIter implementation
 
 fn string_iter_next(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -629,8 +620,7 @@ fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
     match vm.peek(0) {
         Value::Number(_) => {
-            let index = get_bounded_index(
-                vm.peek(0),
+            let index = vm.peek(0).try_as_bounded_index(
                 tuple.elements.len() as isize,
                 "Tuple index parameter out of bounds.",
             )?;
@@ -638,7 +628,7 @@ fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         }
         Value::ObjRange(r) => {
             let tuple_len = tuple.elements.len() as isize;
-            let (begin, end) = r.get_bounded_range(tuple_len, "Tuple")?;
+            let (begin, end) = r.make_bounded_range(tuple_len, "Tuple")?;
             let new_elements = Vec::from(&tuple.elements[begin..end]);
             let new_tuple = vm.new_root_obj_tuple(new_elements);
             Ok(Value::ObjTuple(new_tuple.as_gc()))
@@ -749,8 +739,7 @@ fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     match vm.peek(0) {
         Value::Number(_) => {
             let borrowed_vec = vec.borrow();
-            let index = get_bounded_index(
-                vm.peek(0),
+            let index = vm.peek(0).try_as_bounded_index(
                 borrowed_vec.elements.len() as isize,
                 "Vec index parameter out of bounds.",
             )?;
@@ -758,7 +747,7 @@ fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         }
         Value::ObjRange(r) => {
             let vec_len = vec.borrow().elements.len() as isize;
-            let (begin, end) = r.get_bounded_range(vec_len, "Vec")?;
+            let (begin, end) = r.make_bounded_range(vec_len, "Vec")?;
             let new_vec = vm.new_root_obj_vec();
             new_vec
                 .borrow_mut()
@@ -777,8 +766,7 @@ fn vec_set_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 2)?;
 
     let vec = vm.peek(2).try_as_obj_vec().expect("Expected ObjVec");
-    let index = get_bounded_index(
-        vm.peek(1),
+    let index = vm.peek(1).try_as_bounded_index(
         vec.borrow().elements.len() as isize,
         "Vec index parameter out of bounds.",
     )?;
@@ -804,18 +792,6 @@ fn vec_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             .expect("Expected ObjVec instance."),
     );
     Ok(Value::ObjVecIter(iter.as_gc()))
-}
-
-fn get_bounded_index(value: Value, bound: isize, msg: &str) -> Result<usize, Error> {
-    let mut index = utils::validate_integer(value)?;
-    if index < 0 {
-        index += bound;
-    }
-    if index < 0 || index >= bound {
-        return Err(error!(ErrorKind::IndexError, "{}", msg));
-    }
-
-    Ok(index as usize)
 }
 
 /// VecIter implementation

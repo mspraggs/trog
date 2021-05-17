@@ -54,7 +54,7 @@ fn run_file(vm: &mut Vm, path: &str) {
     };
 
     if let Err(error) = result {
-        let exit_code = if error.get_kind() == ErrorKind::CompileError {
+        let exit_code = if error.kind() == ErrorKind::CompileError {
             65
         } else {
             70

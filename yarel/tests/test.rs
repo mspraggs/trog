@@ -160,7 +160,7 @@ fn run_test(source: &str) -> Outcome {
 
     let result = vm::interpret(&mut vm, source.to_string(), None);
     let error_output = result
-        .map_err(|e| e.get_messages().clone())
+        .map_err(|e| e.messages().clone())
         .err()
         .unwrap_or_default();
 

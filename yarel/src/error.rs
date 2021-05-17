@@ -57,11 +57,11 @@ impl Error {
         self.messages.push(String::from(message));
     }
 
-    pub fn get_kind(&self) -> ErrorKind {
+    pub fn kind(&self) -> ErrorKind {
         self.kind
     }
 
-    pub fn get_messages(&self) -> &Vec<String> {
+    pub fn messages(&self) -> &Vec<String> {
         &self.messages
     }
 }

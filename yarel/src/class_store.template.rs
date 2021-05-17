@@ -86,7 +86,7 @@ impl CoreClassStore {
             root_{{ spec.superclass }}_class.as_gc(),
         );{% else %}
         let root_{{ spec.name }} = vm
-            .get_global("main", "{{ spec.repr }}")
+            .global("main", "{{ spec.repr }}")
             .unwrap()
             .try_as_obj_class()
             .expect("Expected ObjClass.")
@@ -100,14 +100,14 @@ impl CoreClassStore {
         }
     }
 
-    pub(crate) fn get_object_class(&self) -> Gc<ObjClass> {
+    pub(crate) fn object_class(&self) -> Gc<ObjClass> {
         self.root_object_class
             .as_ref()
             .expect("Expected Root.")
             .as_gc()
     }
 
-    pub(crate) fn get_base_metaclass(&self) -> Gc<ObjClass> {
+    pub(crate) fn base_metaclass(&self) -> Gc<ObjClass> {
         self.root_base_metaclass
             .as_ref()
             .expect("Expected Root.")
@@ -116,7 +116,7 @@ impl CoreClassStore {
 
     {% for spec in class_specs %}
     #[allow(dead_code)]
-    pub(crate) fn get_{{ spec.name }}(&self) -> Gc<ObjClass> {
+    pub(crate) fn {{ spec.name }}(&self) -> Gc<ObjClass> {
         self.root_{{ spec.name }}
             .as_ref()
             .expect("Expected Root.")

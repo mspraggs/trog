@@ -49,6 +49,16 @@ impl ObjString {
     pub fn as_str(&self) -> &str {
         self.string.as_str()
     }
+
+    pub fn validate_char_boundary(&self, pos: usize, desc: &str) -> Result<(), Error> {
+        if !self.as_str().is_char_boundary(pos) {
+            return Err(error!(
+                ErrorKind::IndexError,
+                "Provided {} is not on a character boundary.", desc
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl fmt::Display for ObjString {
@@ -556,7 +566,7 @@ impl ObjRange {
         ObjRange { class, begin, end }
     }
 
-    pub(crate) fn get_bounded_range(
+    pub(crate) fn make_bounded_range(
         &self,
         limit: isize,
         type_name: &str,

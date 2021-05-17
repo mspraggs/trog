@@ -1082,7 +1082,7 @@ impl<'a> Parser<'a> {
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
         let kind = self.previous.kind;
-        let prefix_rule = self.get_rule(kind).prefix;
+        let prefix_rule = self.rule(kind).prefix;
         let can_assign = precedence as usize <= Precedence::Assignment as usize;
 
         match prefix_rule {
@@ -1093,9 +1093,9 @@ impl<'a> Parser<'a> {
             }
         }
 
-        while precedence as usize <= self.get_rule(self.current.kind).precedence as usize {
+        while precedence as usize <= self.rule(self.current.kind).precedence as usize {
             self.advance();
-            let infix_rule = self.get_rule(self.previous.kind).infix;
+            let infix_rule = self.rule(self.previous.kind).infix;
             infix_rule.unwrap()(self, can_assign);
         }
 
@@ -1199,7 +1199,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn get_rule(&self, kind: TokenKind) -> &ParseRule {
+    fn rule(&self, kind: TokenKind) -> &ParseRule {
         &RULES[kind as usize]
     }
 
@@ -1406,7 +1406,7 @@ impl<'a> Parser<'a> {
 
     fn binary(s: &mut Parser, _can_assign: bool) {
         let operator_kind = s.previous.kind;
-        let rule_precedence = s.get_rule(operator_kind).precedence;
+        let rule_precedence = s.rule(operator_kind).precedence;
         s.parse_precedence(Precedence::from(rule_precedence as usize + 1));
 
         match operator_kind {
