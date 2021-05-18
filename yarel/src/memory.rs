@@ -27,6 +27,10 @@ use std::ptr::NonNull;
 
 use crate::common;
 
+thread_local! {
+    static HEAP: RefCell<Heap> = RefCell::new(Heap::new());
+}
+
 #[derive(Copy, Clone, PartialEq)]
 enum Colour {
     Black,
@@ -88,8 +92,16 @@ pub struct Root<T: 'static + GcManaged + ?Sized> {
 }
 
 impl<T: GcManaged> Root<T> {
+    pub fn new(data: T) -> Root<T> {
+        HEAP.with(|heap| heap.borrow_mut().allocate_root(data))
+    }
+
     pub fn as_gc(&self) -> Gc<T> {
         Gc { ptr: self.ptr }
+    }
+
+    pub unsafe fn as_mut(&mut self) -> &mut T {
+        &mut self.gc_box_mut().data
     }
 }
 
@@ -106,6 +118,10 @@ impl<T: 'static + GcManaged + ?Sized> Root<T> {
 impl<T: GcManaged + ?Sized> Root<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }
+    }
+
+    unsafe fn gc_box_mut(&mut self) -> &mut GcBox<T> {
+        self.ptr.as_mut()
     }
 }
 
@@ -167,6 +183,12 @@ impl<T: GcManaged> From<UniqueRoot<T>> for Root<T> {
 
 pub struct UniqueRoot<T: 'static + GcManaged + ?Sized> {
     ptr: GcBoxPtr<T>,
+}
+
+impl<T: GcManaged> UniqueRoot<T> {
+    pub fn new(data: T) -> UniqueRoot<T> {
+        HEAP.with(|heap| heap.borrow_mut().allocate_unique(data))
+    }
 }
 
 impl<T: 'static + GcManaged + ?Sized> UniqueRoot<T> {
@@ -295,16 +317,16 @@ impl Heap {
         }
     }
 
-    pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
+    fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
         Gc {
             ptr: self.allocate_bare(data),
         }
     }
-    pub(crate) fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
+    fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
         self.allocate(data).as_root()
     }
 
-    pub(crate) fn allocate_unique<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
+    fn allocate_unique<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
         let root = UniqueRoot {
             ptr: self.allocate_bare(data),
         };
@@ -312,7 +334,7 @@ impl Heap {
         root
     }
 
-    pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+    fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
         if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
             self.collect();
         } else {

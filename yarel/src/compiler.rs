@@ -168,7 +168,7 @@ impl Compiler {
         let chunk = vm.add_chunk(chunk);
         self.function.chunk = chunk;
         let function = mem::take(&mut self.function);
-        vm.heap.allocate_root(function)
+        Root::new(function)
     }
 
     fn add_local(&mut self, name: &Token) -> bool {

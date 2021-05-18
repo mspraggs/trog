@@ -154,7 +154,7 @@ fn match_output(expected: &[String], actual: &[String]) -> bool {
 
 #[allow(dead_code)]
 fn run_test(source: &str) -> Outcome {
-    let mut vm = Vm::with_built_ins();
+    let mut vm = Vm::new();
     vm.set_printer(local_print);
     vm.set_module_loader(module_loader);
 
