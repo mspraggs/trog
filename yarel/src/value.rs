@@ -208,7 +208,7 @@ impl Value {
         if index < 0 || index >= bound {
             return Err(error!(ErrorKind::IndexError, "{}", msg));
         }
-    
+
         Ok(index as usize)
     }
 }

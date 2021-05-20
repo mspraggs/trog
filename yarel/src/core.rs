@@ -18,7 +18,7 @@ use std::time;
 
 use crate::common;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, Heap, Root};
+use crate::memory::{Gc, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjStringValueMap};
 use crate::utils;
 use crate::value::Value;
@@ -95,7 +95,7 @@ pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut Root<ObjClass>) {
     class.as_mut().methods = methods;
 }
 
-pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> Root<ObjClass> {
+pub(crate) unsafe fn new_base_metaclass() -> Root<ObjClass> {
     // # Safety
     // The root metaclass is its own metaclass, so we need to add a pointer to the metaclass to the
     // class's data. To do this we allocate the object and mutate it whilst an immutable reference
@@ -107,7 +107,7 @@ pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> Root<ObjClass> {
         superclass: None,
         methods: object::new_obj_string_value_map(),
     };
-    let mut root = heap.allocate_root(data);
+    let mut root = Root::new(data);
     let metaclass = root.as_gc();
     root.as_mut().metaclass = metaclass;
     root

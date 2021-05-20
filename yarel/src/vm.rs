@@ -33,7 +33,7 @@ use crate::core;
 use crate::debug;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, FnvHasher};
-use crate::memory::{self, Gc, Heap, Root, UniqueRoot};
+use crate::memory::{self, Gc, Root, UniqueRoot};
 use crate::object::{
     self, NativeFn, ObjBoundMethod, ObjClass, ObjClosure, ObjFiber, ObjFunction, ObjHashMap,
     ObjInstance, ObjModule, ObjNative, ObjRange, ObjRangeIter, ObjString, ObjStringIter,
@@ -129,12 +129,10 @@ pub struct Vm {
     module_loader: LoadModuleFn,
     printer: NativeFn,
     handling_exception: bool,
-    pub(crate) heap: Heap,
 }
 
 impl Vm {
     pub fn new() -> Self {
-        let heap = memory::Heap::new();
         // # Safety
         // We create some dangling GC pointers here. This is safe because the fields are
         // re-assigned immediately to valid GC pointers by init_heap_allocated_data.
@@ -151,7 +149,6 @@ impl Vm {
             core_chunks: Vec::new(),
             string_class: None,
             string_store: string_store::ObjStringStore::new(),
-            heap,
             range_cache: Vec::with_capacity(RANGE_CACHE_SIZE),
             module_loader: default_read_module_source,
             printer: core::print,
@@ -270,7 +267,7 @@ impl Vm {
         if let Some(string) = self.string_store.get(key) {
             return string.as_gc();
         }
-        let string = self.heap.allocate_root(ObjString::new(
+        let string = Root::new(ObjString::new(
             self.string_class.as_ref().expect("Expected Root.").as_gc(),
             data,
             hash,
@@ -281,8 +278,7 @@ impl Vm {
     }
 
     pub fn new_root_obj_upvalue(&mut self, value: &mut Value) -> Root<RefCell<ObjUpvalue>> {
-        self.heap
-            .allocate_root(RefCell::new(ObjUpvalue::new(value)))
+        Root::new(RefCell::new(ObjUpvalue::new(value)))
     }
 
     pub fn new_root_obj_function(
@@ -293,7 +289,7 @@ impl Vm {
         chunk: Gc<Chunk>,
         module_path: Gc<ObjString>,
     ) -> Root<ObjFunction> {
-        self.heap.allocate_root(ObjFunction::new(
+        Root::new(ObjFunction::new(
             name,
             arity,
             upvalue_count,
@@ -307,7 +303,7 @@ impl Vm {
         name: Gc<ObjString>,
         function: NativeFn,
     ) -> Root<ObjNative> {
-        self.heap.allocate_root(ObjNative::new(name, function))
+        Root::new(ObjNative::new(name, function))
     }
 
     pub fn new_root_obj_closure(
@@ -316,14 +312,10 @@ impl Vm {
         module: Gc<RefCell<ObjModule>>,
     ) -> Root<ObjClosure> {
         let upvalue_roots: Vec<Root<RefCell<ObjUpvalue>>> = (0..function.upvalue_count)
-            .map(|_| {
-                self.heap
-                    .allocate_root(RefCell::new(ObjUpvalue::new(ptr::null_mut())))
-            })
+            .map(|_| Root::new(RefCell::new(ObjUpvalue::new(ptr::null_mut()))))
             .collect();
         let upvalues = upvalue_roots.iter().map(|u| u.as_gc()).collect();
-        self.heap
-            .allocate_root(ObjClosure::new(function, upvalues, module))
+        Root::new(ObjClosure::new(function, upvalues, module))
     }
 
     pub fn new_root_obj_class(
@@ -333,13 +325,11 @@ impl Vm {
         superclass: Option<Gc<ObjClass>>,
         methods: ObjStringValueMap,
     ) -> Root<ObjClass> {
-        self.heap
-            .allocate_root(ObjClass::new(name, metaclass, superclass, methods))
+        Root::new(ObjClass::new(name, metaclass, superclass, methods))
     }
 
     pub fn new_root_obj_instance(&mut self, class: Gc<ObjClass>) -> Root<RefCell<ObjInstance>> {
-        self.heap
-            .allocate_root(RefCell::new(ObjInstance::new(class)))
+        Root::new(RefCell::new(ObjInstance::new(class)))
     }
 
     pub fn new_root_obj_bound_method<T: 'static + memory::GcManaged>(
@@ -347,8 +337,7 @@ impl Vm {
         receiver: Value,
         method: Gc<T>,
     ) -> Root<RefCell<ObjBoundMethod<T>>> {
-        self.heap
-            .allocate_root(RefCell::new(ObjBoundMethod::new(receiver, method)))
+        Root::new(RefCell::new(ObjBoundMethod::new(receiver, method)))
     }
 
     pub fn new_root_obj_string_iter(
@@ -356,14 +345,12 @@ impl Vm {
         string: Gc<ObjString>,
     ) -> Root<RefCell<ObjStringIter>> {
         let class = self.class_store.string_iter_class();
-        self.heap
-            .allocate_root(RefCell::new(ObjStringIter::new(class, string)))
+        Root::new(RefCell::new(ObjStringIter::new(class, string)))
     }
 
     pub fn new_root_obj_hash_map(&mut self) -> Root<RefCell<ObjHashMap>> {
         let class = self.class_store.hash_map_class();
-        self.heap
-            .allocate_root(RefCell::new(ObjHashMap::new(class)))
+        Root::new(RefCell::new(ObjHashMap::new(class)))
     }
 
     pub fn new_root_obj_range(&mut self, begin: isize, end: isize) -> Root<ObjRange> {
@@ -372,30 +359,27 @@ impl Vm {
 
     pub fn new_root_obj_range_iter(&mut self, range: Gc<ObjRange>) -> Root<RefCell<ObjRangeIter>> {
         let class = self.class_store.range_iter_class();
-        self.heap
-            .allocate_root(RefCell::new(ObjRangeIter::new(class, range)))
+        Root::new(RefCell::new(ObjRangeIter::new(class, range)))
     }
 
     pub fn new_root_obj_tuple(&mut self, elements: Vec<Value>) -> Root<ObjTuple> {
         let class = self.class_store.tuple_class();
-        self.heap.allocate_root(ObjTuple::new(class, elements))
+        Root::new(ObjTuple::new(class, elements))
     }
 
     pub fn new_root_obj_tuple_iter(&mut self, tuple: Gc<ObjTuple>) -> Root<RefCell<ObjTupleIter>> {
         let class = self.class_store.tuple_iter_class();
-        self.heap
-            .allocate_root(RefCell::new(ObjTupleIter::new(class, tuple)))
+        Root::new(RefCell::new(ObjTupleIter::new(class, tuple)))
     }
 
     pub fn new_root_obj_vec(&mut self) -> Root<RefCell<ObjVec>> {
         let class = self.class_store.vec_class();
-        self.heap.allocate_root(RefCell::new(ObjVec::new(class)))
+        Root::new(RefCell::new(ObjVec::new(class)))
     }
 
     pub fn new_root_obj_vec_iter(&mut self, vec: Gc<RefCell<ObjVec>>) -> Root<RefCell<ObjVecIter>> {
         let class = self.class_store.vec_iter_class();
-        self.heap
-            .allocate_root(RefCell::new(ObjVecIter::new(class, vec)))
+        Root::new(RefCell::new(ObjVecIter::new(class, vec)))
     }
 
     pub fn new_root_obj_module(
@@ -403,8 +387,7 @@ impl Vm {
         class: Gc<ObjClass>,
         path: Gc<ObjString>,
     ) -> Root<RefCell<ObjModule>> {
-        self.heap
-            .allocate_root(RefCell::new(ObjModule::new(class, path)))
+        Root::new(RefCell::new(ObjModule::new(class, path)))
     }
 
     pub fn new_root_obj_err(&mut self, context: Value) -> Root<RefCell<ObjInstance>> {
@@ -422,8 +405,7 @@ impl Vm {
         closure: Gc<ObjClosure>,
     ) -> Root<RefCell<ObjFiber>> {
         let class = self.class_store.fiber_class();
-        self.heap
-            .allocate_root(RefCell::new(ObjFiber::new(class, closure)))
+        Root::new(RefCell::new(ObjFiber::new(class, closure)))
     }
 
     pub fn reset(&mut self) {
@@ -440,7 +422,7 @@ impl Vm {
         if let Some(module) = self.modules.get(&path) {
             return module.as_gc();
         }
-        let module = self.heap.allocate_root(RefCell::new(ObjModule::new(
+        let module = Root::new(RefCell::new(ObjModule::new(
             self.class_store.module_class(),
             path,
         )));
@@ -465,7 +447,7 @@ impl Vm {
     }
 
     pub(crate) fn add_chunk(&mut self, chunk: Chunk) -> Gc<Chunk> {
-        let root = self.heap.allocate_root(chunk);
+        let root = Root::new(chunk);
         let ret = root.as_gc();
         self.chunks.push(root);
         ret
@@ -1168,13 +1150,13 @@ impl Vm {
     fn declare_class_impl(&mut self) {
         let name = self.read_string();
         let metaclass_name = self.new_gc_obj_string(format!("{}Class", *name).as_str());
-        let metaclass = self.heap.allocate_unique(ObjClass::new(
+        let metaclass = UniqueRoot::new(ObjClass::new(
             metaclass_name,
             self.class_store.base_metaclass(),
             Some(self.class_store.object_class()),
             object::new_obj_string_value_map(),
         ));
-        let class = self.heap.allocate_unique(ObjClass::new(
+        let class = UniqueRoot::new(ObjClass::new(
             name,
             self.class_store.base_metaclass(),
             Some(self.class_store.object_class()),
@@ -1494,9 +1476,7 @@ impl Vm {
             }
         }
 
-        let created_upvalue = self
-            .heap
-            .allocate_root(RefCell::new(ObjUpvalue::new(loc_addr as *mut _)));
+        let created_upvalue = Root::new(RefCell::new(ObjUpvalue::new(loc_addr as *mut _)));
         if let Some(uv) = prev_upvalue {
             uv.borrow_mut().next = Some(created_upvalue.as_gc());
         } else {
@@ -1522,7 +1502,7 @@ impl Vm {
         // Cache miss! Create the range and cache it.
 
         let class = self.class_store.range_class();
-        let range = self.heap.allocate_root(ObjRange::new(class, begin, end));
+        let range = Root::new(ObjRange::new(class, begin, end));
         let range_gc = range.as_gc();
 
         // Check the cache size. If we're at the limit, evict the oldest element.
@@ -1635,20 +1615,20 @@ impl Vm {
     }
 
     fn init_heap_allocated_data(&mut self) {
-        let mut root_base_metaclass = unsafe { core::new_base_metaclass(&mut self.heap) };
-        let mut root_object_class = self.heap.allocate_root(ObjClass {
+        let mut root_base_metaclass = unsafe { core::new_base_metaclass() };
+        let mut root_object_class = Root::new(ObjClass {
             name: Gc::dangling(),
             metaclass: root_base_metaclass.as_gc(),
             superclass: None,
             methods: object::new_obj_string_value_map(),
         });
-        let mut root_string_metaclass = self.heap.allocate_root(ObjClass::new(
+        let mut root_string_metaclass = Root::new(ObjClass::new(
             Gc::dangling(),
             root_base_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),
         ));
-        let mut string_class = self.heap.allocate_root(ObjClass::new(
+        let mut string_class = Root::new(ObjClass::new(
             Gc::dangling(),
             root_string_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
@@ -1677,7 +1657,7 @@ impl Vm {
             core::bind_gc_obj_string_class(self, &mut string_class, &mut root_string_metaclass);
         }
 
-        let empty_chunk = self.heap.allocate(Chunk::new());
+        let empty_chunk = Root::new(Chunk::new()).as_gc();
         let next_string = self.new_gc_obj_string("next");
         self.active_chunk = empty_chunk;
         self.next_string = next_string;

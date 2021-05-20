@@ -21,7 +21,7 @@ use crate::memory::GcManaged;
 
 #[derive(Debug)]
 pub(crate) struct Stack<T: Clone + Copy + Default, const N: usize> {
-    stack: [T; N],
+    stack: Box<[T; N]>,
     size: usize,
 }
 
@@ -101,7 +101,7 @@ where
 {
     fn default() -> Self {
         Stack {
-            stack: [Default::default(); N],
+            stack: Box::new([Default::default(); N]),
             size: 0,
         }
     }
