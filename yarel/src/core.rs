@@ -18,7 +18,7 @@ use std::time;
 
 use crate::common;
 use crate::error::{Error, ErrorKind};
-use crate::memory::{Gc, GcBoxPtr, Heap, Root};
+use crate::memory::{Gc, Heap, Root};
 use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjStringValueMap};
 use crate::utils;
 use crate::value::Value;
@@ -86,18 +86,16 @@ pub(crate) fn type_(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
 /// Type implementation
 
-pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
+pub(crate) unsafe fn bind_type_class(_vm: &mut Vm, class: &mut Root<ObjClass>) {
     let methods = class
-        .as_ref()
-        .data
         .superclass
         .expect("Expected ObjClass.")
         .methods
         .clone();
-    class.as_mut().data.methods = methods;
+    class.as_mut().methods = methods;
 }
 
-pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> GcBoxPtr<ObjClass> {
+pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> Root<ObjClass> {
     // # Safety
     // The root metaclass is its own metaclass, so we need to add a pointer to the metaclass to the
     // class's data. To do this we allocate the object and mutate it whilst an immutable reference
@@ -109,10 +107,10 @@ pub(crate) unsafe fn new_base_metaclass(heap: &mut Heap) -> GcBoxPtr<ObjClass> {
         superclass: None,
         methods: object::new_obj_string_value_map(),
     };
-    let mut ptr = heap.allocate_bare(data);
-    let root = Root::from(ptr);
-    ptr.as_mut().data.metaclass = root.as_gc();
-    ptr
+    let mut root = heap.allocate_root(data);
+    let metaclass = root.as_gc();
+    root.as_mut().metaclass = metaclass;
+    root
 }
 
 /// Object implementation
@@ -142,18 +140,18 @@ pub(crate) fn object_derives(vm: &mut Vm, num_args: usize) -> Result<Value, Erro
     Ok(Value::Boolean(false))
 }
 
-pub(crate) unsafe fn bind_object_class(vm: &mut Vm, class: &mut GcBoxPtr<ObjClass>) {
+pub(crate) unsafe fn bind_object_class(vm: &mut Vm, class: &mut Root<ObjClass>) {
     let method_map = [("derives", object_derives as NativeFn)];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
-    class.as_mut().data.methods = methods;
+    class.as_mut().methods = methods;
 }
 
 /// String implementation
 
 pub(crate) unsafe fn bind_gc_obj_string_class(
     vm: &mut Vm,
-    class: &mut GcBoxPtr<ObjClass>,
-    metaclass: &mut GcBoxPtr<ObjClass>,
+    class: &mut Root<ObjClass>,
+    metaclass: &mut Root<ObjClass>,
 ) {
     let static_method_map = [
         ("from", string_from as NativeFn),
@@ -163,11 +161,9 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
     ];
     let (static_methods, _native_roots) = build_methods(vm, &static_method_map, None);
 
-    metaclass.as_mut().data.methods = static_methods;
+    metaclass.as_mut().methods = static_methods;
 
     let inherited_methods = class
-        .as_ref()
-        .data
         .superclass
         .expect("Expected ObjClass.")
         .methods
@@ -189,7 +185,7 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, Some(inherited_methods));
 
-    class.as_mut().data.methods = methods;
+    class.as_mut().methods = methods;
 }
 
 fn string_from_ascii(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {

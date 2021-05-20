@@ -40,9 +40,9 @@ pub trait GcManaged {
     fn blacken(&self);
 }
 
-pub(crate) type GcBoxPtr<T> = NonNull<GcBox<T>>;
+type GcBoxPtr<T> = NonNull<GcBox<T>>;
 
-pub(crate) struct GcBox<T: GcManaged + ?Sized> {
+struct GcBox<T: GcManaged + ?Sized> {
     colour: Cell<Colour>,
     num_roots: Cell<usize>,
     _pin: PhantomPinned,
@@ -91,6 +91,10 @@ impl<T: GcManaged> Root<T> {
     pub fn as_gc(&self) -> Gc<T> {
         Gc { ptr: self.ptr }
     }
+
+    pub unsafe fn as_mut(&mut self) -> &mut T {
+        &mut self.gc_box_mut().data
+    }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Root<T> {
@@ -106,6 +110,10 @@ impl<T: 'static + GcManaged + ?Sized> Root<T> {
 impl<T: GcManaged + ?Sized> Root<T> {
     fn gc_box(&self) -> &GcBox<T> {
         unsafe { self.ptr.as_ref() }
+    }
+
+    fn gc_box_mut(&mut self) -> &mut GcBox<T> {
+        unsafe { self.ptr.as_mut() }
     }
 }
 
@@ -297,22 +305,26 @@ impl Heap {
 
     pub(crate) fn allocate<T: 'static + GcManaged>(&mut self, data: T) -> Gc<T> {
         Gc {
-            ptr: self.allocate_bare(data),
+            ptr: self.allocate_raw(data),
         }
     }
     pub(crate) fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
-        self.allocate(data).as_root()
-    }
-
-    pub(crate) fn allocate_unique<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
-        let root = UniqueRoot {
-            ptr: self.allocate_bare(data),
+        let root = Root {
+            ptr: self.allocate_raw(data),
         };
         root.inc_num_roots();
         root
     }
 
-    pub(crate) fn allocate_bare<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
+    pub(crate) fn allocate_unique<T: 'static + GcManaged>(&mut self, data: T) -> UniqueRoot<T> {
+        let root = UniqueRoot {
+            ptr: self.allocate_raw(data),
+        };
+        root.inc_num_roots();
+        root
+    }
+
+    fn allocate_raw<T: 'static + GcManaged>(&mut self, data: T) -> GcBoxPtr<T> {
         if cfg!(any(debug_assertions, feature = "debug_stress_gc")) {
             self.collect();
         } else {

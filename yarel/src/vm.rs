@@ -1635,30 +1635,27 @@ impl Vm {
     }
 
     fn init_heap_allocated_data(&mut self) {
-        let mut base_metaclass_ptr = unsafe { core::new_base_metaclass(&mut self.heap) };
-        let root_base_metaclass = Root::from(base_metaclass_ptr);
-        let mut object_class_ptr = self.heap.allocate_bare(ObjClass {
+        let mut root_base_metaclass = unsafe { core::new_base_metaclass(&mut self.heap) };
+        let mut root_object_class = self.heap.allocate_root(ObjClass {
             name: Gc::dangling(),
             metaclass: root_base_metaclass.as_gc(),
             superclass: None,
             methods: object::new_obj_string_value_map(),
         });
-        let root_object_class = Root::from(object_class_ptr);
-        let mut string_metaclass_ptr = self.heap.allocate_bare(ObjClass::new(
+        let mut root_string_metaclass = self.heap.allocate_root(ObjClass::new(
             Gc::dangling(),
             root_base_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),
         ));
-        let root_string_metaclass = Root::from(string_metaclass_ptr);
-        let mut string_class_ptr = self.heap.allocate_bare(ObjClass::new(
+        let mut string_class = self.heap.allocate_root(ObjClass::new(
             Gc::dangling(),
             root_string_metaclass.as_gc(),
             Some(root_object_class.as_gc()),
             object::new_obj_string_value_map(),
         ));
 
-        self.string_class = Some(Root::from(string_class_ptr));
+        self.string_class = Some(string_class.clone());
         let object_class_name = self.new_gc_obj_string("Object");
         let base_metaclass_name = self.new_gc_obj_string("Type");
         let string_metaclass_name = self.new_gc_obj_string("StringClass");
@@ -1670,14 +1667,14 @@ impl Vm {
         // (class names are only used by the Display trait, and superclass and methods are only
         // accessed once code is run), mutating the data here should be safe.
         unsafe {
-            object_class_ptr.as_mut().data.name = object_class_name;
-            base_metaclass_ptr.as_mut().data.name = base_metaclass_name;
-            base_metaclass_ptr.as_mut().data.superclass = Some(root_object_class.as_gc());
-            string_metaclass_ptr.as_mut().data.name = string_metaclass_name;
-            string_class_ptr.as_mut().data.name = string_class_name;
-            core::bind_object_class(self, &mut object_class_ptr);
-            core::bind_type_class(self, &mut base_metaclass_ptr);
-            core::bind_gc_obj_string_class(self, &mut string_class_ptr, &mut string_metaclass_ptr);
+            root_object_class.as_mut().name = object_class_name;
+            root_base_metaclass.as_mut().name = base_metaclass_name;
+            root_base_metaclass.as_mut().superclass = Some(root_object_class.as_gc());
+            root_string_metaclass.as_mut().name = string_metaclass_name;
+            string_class.as_mut().name = string_class_name;
+            core::bind_object_class(self, &mut root_object_class);
+            core::bind_type_class(self, &mut root_base_metaclass);
+            core::bind_gc_obj_string_class(self, &mut string_class, &mut root_string_metaclass);
         }
 
         let empty_chunk = self.heap.allocate(Chunk::new());
