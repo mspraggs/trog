@@ -15,14 +15,15 @@
 
 use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
-use std::slice::{self};
+use std::ptr;
+use std::slice;
 
 use crate::memory::GcManaged;
 
 #[derive(Debug)]
 pub(crate) struct Stack<T: Clone + Copy + Default, const N: usize> {
     stack: Box<[T; N]>,
-    size: usize,
+    top: *mut T,
 }
 
 impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
@@ -30,43 +31,51 @@ impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
         Default::default()
     }
 
-    // TODO: Tidy up safety around these interfaces
     pub(crate) fn peek(&self, depth: usize) -> &T {
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
+        if cfg!(any(debug_assertions, feature = "safe_stack")) && depth >= self.len() {
             panic!("Stack index out of range.");
         }
-        &self.stack[self.size - depth - 1]
+        unsafe { &*self.top.offset(-(depth as isize) - 1) }
     }
 
     pub(crate) fn peek_mut(&mut self, depth: usize) -> &mut T {
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && depth >= self.size {
+        if cfg!(any(debug_assertions, feature = "safe_stack")) && depth >= self.len() {
             panic!("Stack index out of range.");
         }
-        &mut self.stack[self.size - depth - 1]
+        unsafe { &mut *self.top.offset(-(depth as isize) - 1) }
     }
 
     pub(crate) fn push(&mut self, data: T) {
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == N {
+        if cfg!(any(debug_assertions, feature = "safe_stack")) && self.len() == N {
             panic!("Stack overflow.");
         }
-        self.stack[self.size] = data;
-        self.size += 1;
+        unsafe {
+            *self.top = data;
+            self.top = self.top.offset(1);
+        }
     }
 
     pub(crate) fn pop(&mut self) -> Option<T> {
-        if cfg!(any(debug_assertions, feature = "more_vm_safety")) && self.size == 0 {
+        if cfg!(any(debug_assertions, feature = "safe_stack")) && self.len() == 0 {
             return None;
         }
-        self.size -= 1;
-        Some(self.stack[self.size])
+        unsafe {
+            self.top = self.top.offset(-1);
+            Some(*self.top)
+        }
     }
 
     pub(crate) fn truncate(&mut self, size: usize) {
-        self.size = size;
+        let size = if cfg!(any(debug_assertions, feature = "safe_stack")) && size > self.len() {
+            self.len()
+        } else {
+            size
+        };
+        self.top = unsafe { self.stack.as_ptr().offset(size as isize) as *mut _ };
     }
 
     pub(crate) fn len(&self) -> usize {
-        self.size
+        unsafe { self.top.offset_from(self.stack.as_ptr() as *mut _) as usize }
     }
 
     pub(crate) fn as_ptr(&self) -> *const T {
@@ -74,7 +83,7 @@ impl<T: Clone + Copy + Default, const N: usize> Stack<T, N> {
     }
 
     pub(crate) fn clear(&mut self) {
-        self.size = 0;
+        self.top = self.stack.as_ptr() as *mut _;
     }
 }
 
@@ -83,13 +92,13 @@ where
     T: Clone + Copy + Default + GcManaged,
 {
     fn mark(&self) {
-        for elem in &self.stack[0..self.size] {
+        for elem in &self.stack[0..self.len()] {
             elem.mark();
         }
     }
 
     fn blacken(&self) {
-        for elem in &self.stack[0..self.size] {
+        for elem in &self.stack[0..self.len()] {
             elem.blacken();
         }
     }
@@ -100,10 +109,12 @@ where
     T: Clone + Copy + Default,
 {
     fn default() -> Self {
-        Stack {
+        let mut stack = Stack {
             stack: Box::new([Default::default(); N]),
-            size: 0,
-        }
+            top: ptr::null_mut(),
+        };
+        stack.clear();
+        stack
     }
 }
 
@@ -112,7 +123,7 @@ where
     T: Clone + Copy + Default + Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for elem in &self.stack[0..self.size] {
+        for elem in &self.stack[0..self.len()] {
             write!(f, "[ {} ]", elem)?;
         }
         Ok(())
