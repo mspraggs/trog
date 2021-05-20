@@ -232,7 +232,7 @@ impl Vm {
             Value::ObjString(string) => string.class,
             Value::ObjStringIter(iter) => iter.borrow().class,
             Value::ObjFunction(_) => {
-                if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+                if cfg!(any(debug_assertions, feature = "safe_class_lookup")) {
                     unreachable!()
                 } else {
                     unsafe { hint::unreachable_unchecked() }
@@ -636,7 +636,7 @@ impl Vm {
                 byte if byte == OpCode::StartImport as u8 => self.start_import_impl()?,
                 byte if byte == OpCode::FinishImport as u8 => self.finish_import_impl(),
                 _ => {
-                    if cfg!(any(debug_assertions, feature = "more_vm_safety")) {
+                    if cfg!(any(debug_assertions, feature = "safe_vm_opcodes")) {
                         panic!("Unknown opcode {}", byte);
                     } else {
                         unsafe {
@@ -1739,22 +1739,22 @@ impl Vm {
         self.ip = new_ip;
     }
 
-    #[cfg(any(debug_assertions, feature = "more_vm_safety"))]
+    #[cfg(any(debug_assertions, feature = "safe_active_fiber"))]
     fn active_fiber(&self) -> Ref<'_, ObjFiber> {
         self.fiber.as_ref().unwrap().borrow()
     }
 
-    #[cfg(not(any(debug_assertions, feature = "more_vm_safety")))]
+    #[cfg(not(any(debug_assertions, feature = "safe_active_fiber")))]
     fn active_fiber(&self) -> &ObjFiber {
         unsafe { &*(self.unsafe_fiber as *const _) }
     }
 
-    #[cfg(any(debug_assertions, feature = "more_vm_safety"))]
+    #[cfg(any(debug_assertions, feature = "safe_active_fiber"))]
     fn active_fiber_mut(&mut self) -> RefMut<'_, ObjFiber> {
         self.fiber.as_ref().unwrap().borrow_mut()
     }
 
-    #[cfg(not(any(debug_assertions, feature = "more_vm_safety")))]
+    #[cfg(not(any(debug_assertions, feature = "safe_active_fiber")))]
     fn active_fiber_mut(&mut self) -> &mut ObjFiber {
         unsafe { &mut (*self.unsafe_fiber) }
     }
