@@ -1263,6 +1263,7 @@ impl Vm {
         module.borrow_mut().imported = true;
     }
 
+    #[inline(always)]
     fn call_value(&mut self, value: Value, arg_count: usize) -> Result<(), Error> {
         match value {
             Value::ObjBoundMethod(bound) => {
@@ -1286,6 +1287,7 @@ impl Vm {
         }
     }
 
+    #[inline(always)]
     fn invoke_from_class(
         &mut self,
         class: Gc<ObjClass>,
@@ -1303,6 +1305,7 @@ impl Vm {
         self.try_handle_error(err)
     }
 
+    #[inline(always)]
     fn invoke(&mut self, name: Gc<ObjString>, arg_count: usize) -> Result<(), Error> {
         let receiver = self.peek(arg_count);
         let class = match receiver {
@@ -1326,6 +1329,7 @@ impl Vm {
         self.invoke_from_class(class, name, arg_count)
     }
 
+    #[inline(always)]
     pub fn call_closure(&mut self, closure: Gc<ObjClosure>, arg_count: usize) -> Result<(), Error> {
         let arity = closure.function.arity - 1;
         let err = if arg_count != arity {
@@ -1349,6 +1353,7 @@ impl Vm {
         Ok(())
     }
 
+    #[inline(always)]
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
         let function = native.function;
         let result = function(self, arg_count);
