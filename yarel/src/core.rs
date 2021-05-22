@@ -24,6 +24,7 @@ use crate::utils;
 use crate::value::Value;
 use crate::vm::Vm;
 
+#[inline(always)]
 fn check_num_args(num_args: usize, expected: usize) -> Result<(), Error> {
     if num_args != expected {
         return Err(error!(
