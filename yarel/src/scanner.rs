@@ -206,54 +206,12 @@ impl Scanner {
                     TokenKind::Dot
                 })
             }
-            "-" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::MinusEqual
-                } else {
-                    TokenKind::Minus
-                })
-            }
-            "+" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::PlusEqual
-                } else {
-                    TokenKind::Plus
-                })
-            }
-            "/" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::SlashEqual
-                } else {
-                    TokenKind::Slash
-                })
-            }
-            "*" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::StarEqual
-                } else {
-                    TokenKind::Star
-                })
-            }
-            "!" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::BangEqual
-                } else {
-                    TokenKind::Bang
-                })
-            }
-            "=" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::EqualEqual
-                } else {
-                    TokenKind::Equal
-                })
-            }
+            "-" => self.binary_token(TokenKind::Minus, TokenKind::MinusEqual),
+            "+" => self.binary_token(TokenKind::Plus, TokenKind::PlusEqual),
+            "/" => self.binary_token(TokenKind::Slash, TokenKind::SlashEqual),
+            "*" => self.binary_token(TokenKind::Star, TokenKind::StarEqual),
+            "!" => self.binary_token(TokenKind::Bang, TokenKind::BangEqual),
+            "=" => self.binary_token(TokenKind::Equal, TokenKind::EqualEqual),
             "<" => {
                 let double_less = self.match_char("<");
                 let equal = self.match_char("=");
@@ -296,22 +254,8 @@ impl Scanner {
                 };
                 self.make_token(token_kind)
             }
-            "^" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::CaretEqual
-                } else {
-                    TokenKind::Caret
-                })
-            }
-            "%" => {
-                let match_char = self.match_char("=");
-                self.make_token(if match_char {
-                    TokenKind::PercentEqual
-                } else {
-                    TokenKind::Percent
-                })
-            }
+            "^" => self.binary_token(TokenKind::Caret, TokenKind::CaretEqual),
+            "%" => self.binary_token(TokenKind::Percent, TokenKind::PercentEqual),
             "~" => self.make_token(TokenKind::Tilde),
             "\"" => self.string(),
             c => {
@@ -319,6 +263,11 @@ impl Scanner {
                 self.error_token(msg.as_str())
             }
         }
+    }
+
+    fn binary_token(&mut self, bare_kind: TokenKind, assign_kind: TokenKind) -> Token {
+        let match_char = self.match_char("=");
+        self.make_token(if match_char { assign_kind } else { bare_kind })
     }
 
     fn is_at_end(&self) -> bool {
