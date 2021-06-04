@@ -81,6 +81,8 @@ pub enum TokenKind {
     Return,
     Self_,
     Super,
+    Break,
+    Continue,
     Throw,
     True,
     Try,
@@ -374,12 +376,14 @@ impl Scanner {
         let start = &self.source[self.start..self.start + 1];
         match start {
             "a" => self.check_keyword(1, "s", TokenKind::As),
+            "b" => self.check_keyword(1, "reak", TokenKind::Break),
             "c" => {
                 if self.current - self.start > 1 {
                     let next = &self.source[self.start + 1..self.start + 2];
                     return match next {
                         "a" => self.check_keyword(2, "tch", TokenKind::Catch),
                         "l" => self.check_keyword(2, "ass", TokenKind::Class),
+                        "o" => self.check_keyword(2, "ntinue", TokenKind::Continue),
                         _ => TokenKind::Identifier,
                     };
                 }

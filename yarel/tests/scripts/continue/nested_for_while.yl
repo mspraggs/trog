@@ -1,0 +1,23 @@
+// before
+// before
+// after
+// before
+// after
+// 0
+var counter = 0;
+var cont = true;
+for i in 0..3 {
+    print("before");
+    var i = 2;
+    while i > 0 {
+        counter += 1;
+        if counter == 3 {
+            cont = false;
+        }
+        i -= 1;
+    }
+    if cont {
+        continue;
+    }
+    print("after");
+}

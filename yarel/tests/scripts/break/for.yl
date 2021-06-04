@@ -1,0 +1,13 @@
+// before
+// after
+// before
+// after
+// before
+// 0
+for i in 3..0 {
+    print("before");
+    if i == 1 {
+        break;
+    }
+    print("after");
+}

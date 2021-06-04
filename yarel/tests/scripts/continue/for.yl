@@ -1,0 +1,13 @@
+// before
+// after
+// before
+// before
+// after
+// 0
+for i in 3..0 {
+    print("before");
+    if i == 2 {
+        continue;
+    }
+    print("after");
+}

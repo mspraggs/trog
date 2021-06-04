@@ -129,10 +129,14 @@ struct Compiler {
     scope_depth: usize,
     lambda_count: usize,
     in_try_block: bool,
+    loop_stack: Vec<(usize, usize)>,
+    break_stack: Vec<Vec<usize>>,
 }
 
 enum CompilerError {
     InvalidCompilerKind,
+    InvalidControlStatement,
+    JumpTooLarge,
     LocalNotFound,
     ReadVarInInitialiser,
     TooManyClosureVars,
@@ -160,6 +164,8 @@ impl Compiler {
             scope_depth: 0,
             lambda_count: 0,
             in_try_block: false,
+            loop_stack: Vec::new(),
+            break_stack: Vec::new(),
         }
     }
 
@@ -214,6 +220,50 @@ impl Compiler {
         self.upvalues.push(Upvalue { index, is_local });
         self.function.upvalue_count += 1;
         Ok(upvalue_count as u8)
+    }
+
+    fn patch_jump(&mut self, offset: usize) -> Result<(), CompilerError> {
+        let jump = self.chunk.code.len() - offset - 2;
+
+        if jump > common::JUMP_SIZE_MAX {
+            return Err(CompilerError::JumpTooLarge);
+        }
+
+        let bytes = (jump as u16).to_ne_bytes();
+
+        self.chunk.code[offset] = bytes[0];
+        self.chunk.code[offset + 1] = bytes[1];
+        Ok(())
+    }
+
+    fn push_loop(&mut self) {
+        let loop_start = self.chunk.code.len();
+        self.loop_stack.push((loop_start, self.scope_depth));
+        self.break_stack.push(Vec::new());
+    }
+
+    fn push_break(&mut self, pos: usize) -> Result<(), CompilerError> {
+        let breaks = self
+            .break_stack
+            .last_mut()
+            .ok_or(CompilerError::InvalidControlStatement)?;
+        breaks.push(pos);
+        Ok(())
+    }
+
+    fn pop_loop(&mut self) -> Result<(), CompilerError> {
+        self.loop_stack.pop();
+        let break_points = self.break_stack.pop().expect("Expected Vec.");
+
+        for &bp in &break_points {
+            self.patch_jump(bp)?;
+        }
+
+        Ok(())
+    }
+
+    fn current_loop_header(&self) -> Option<(usize, usize)> {
+        self.loop_stack.last().copied()
     }
 }
 
@@ -725,6 +775,7 @@ impl<'a> Parser<'a> {
 
         // Parse iterable object
         self.expression();
+
         self.compiler_mut()
             .add_local(&Token::from_string(loop_iter_name));
         let iter_method_name = self.identifier_constant(&Token::from_string("iter"));
@@ -733,9 +784,13 @@ impl<'a> Parser<'a> {
         self.emit_byte(0);
         self.mark_initialised();
 
-        let loop_start = self.chunk().code.len();
+        self.compiler_mut().push_loop();
+        let (loop_start, _) = self
+            .compiler()
+            .current_loop_header()
+            .expect("Expected usize.");
         self.emit_byte(OpCode::IterNext as u8);
-        self.emit_bytes([OpCode::SetLocal as u8, loop_var]);
+        self.emit_bytes([OpCode::SetLocal as u8, loop_var as u8]);
 
         let exit_jump = self.emit_jump(OpCode::JumpIfStopIter);
 
@@ -750,6 +805,10 @@ impl<'a> Parser<'a> {
 
         self.patch_jump(exit_jump);
         self.emit_byte(OpCode::Pop as u8);
+        match self.compiler_mut().pop_loop() {
+            Ok(_) => {}
+            Err(e) => self.compiler_error(e),
+        }
         self.end_scope();
     }
 
@@ -795,6 +854,37 @@ impl<'a> Parser<'a> {
             }
             self.emit_byte(OpCode::Return as u8);
         }
+    }
+
+    fn break_statement(&mut self) {
+        let break_pos = self.emit_jump(OpCode::Jump);
+        match self.compiler_mut().push_break(break_pos) {
+            Ok(_) => {}
+            Err(e) => {
+                self.compiler_error(e);
+                return;
+            }
+        }
+        let scope_depth = self
+            .compiler()
+            .current_loop_header()
+            .expect("Expected tuple.")
+            .1;
+        self.emit_scope_end(false, scope_depth);
+        self.consume(TokenKind::SemiColon, "Expected ';' after 'break'.");
+    }
+
+    fn continue_statement(&mut self) {
+        let (jump_target, scope_depth) = match self.compiler().current_loop_header() {
+            Some((pos, depth)) => (pos, depth),
+            None => {
+                self.error("Cannot use 'continue' statement outside of loop body.");
+                return;
+            }
+        };
+        self.emit_scope_end(false, scope_depth);
+        self.emit_loop(jump_target);
+        self.consume(TokenKind::SemiColon, "Expected ';' after 'continue'.");
     }
 
     fn throw_statement(&mut self) {
@@ -863,6 +953,7 @@ impl<'a> Parser<'a> {
     }
 
     fn while_statement(&mut self) {
+        self.compiler_mut().push_loop();
         let loop_start = self.chunk().code.len();
 
         self.expression();
@@ -880,6 +971,10 @@ impl<'a> Parser<'a> {
 
         self.patch_jump(exit_jump);
         self.emit_byte(OpCode::Pop as u8);
+        match self.compiler_mut().pop_loop() {
+            Ok(_) => {}
+            Err(e) => self.compiler_error(e),
+        }
     }
 
     fn synchronise(&mut self) {
@@ -898,6 +993,8 @@ impl<'a> Parser<'a> {
                 TokenKind::For => return,
                 TokenKind::If => return,
                 TokenKind::While => return,
+                TokenKind::Break => return,
+                TokenKind::Continue => return,
                 TokenKind::Return => return,
                 _ => {}
             }
@@ -912,28 +1009,8 @@ impl<'a> Parser<'a> {
 
     fn end_scope(&mut self) {
         self.compiler_mut().scope_depth -= 1;
-
-        loop {
-            let scope_depth = self.compiler().scope_depth;
-            let opcode = match self.compiler().locals.last() {
-                Some(local) => {
-                    if local.depth.unwrap() <= scope_depth {
-                        return;
-                    }
-                    if local.is_captured {
-                        OpCode::CloseUpvalue
-                    } else {
-                        OpCode::Pop
-                    }
-                }
-                None => {
-                    return;
-                }
-            };
-
-            self.emit_byte(opcode as u8);
-            self.compiler_mut().locals.pop();
-        }
+        let scope_depth = self.compiler().scope_depth;
+        self.emit_scope_end(true, scope_depth);
     }
 
     fn statement(&mut self) {
@@ -946,6 +1023,10 @@ impl<'a> Parser<'a> {
             self.if_statement();
         } else if self.match_token(TokenKind::Return) {
             self.return_statement();
+        } else if self.match_token(TokenKind::Break) {
+            self.break_statement();
+        } else if self.match_token(TokenKind::Continue) {
+            self.continue_statement();
         } else if self.match_token(TokenKind::Throw) {
             self.throw_statement();
         } else if self.match_token(TokenKind::Try) {
@@ -1039,6 +1120,27 @@ impl<'a> Parser<'a> {
         self.emit_byte(OpCode::Return as u8);
     }
 
+    fn emit_scope_end(&mut self, pop_locals: bool, scope_depth: usize) {
+        let mut opcodes = Vec::new();
+        for local in self.compiler().locals.iter().rev() {
+            if local.depth.unwrap() <= scope_depth {
+                break;
+            }
+            let opcode = if local.is_captured {
+                OpCode::CloseUpvalue
+            } else {
+                OpCode::Pop
+            };
+            opcodes.push(opcode as u8);
+        }
+        for &opcode in &opcodes {
+            self.emit_byte(opcode);
+            if pop_locals {
+                self.compiler_mut().locals.pop();
+            }
+        }
+    }
+
     fn make_constant(&mut self, value: value::Value) -> u16 {
         let constant = self.chunk().add_constant(value);
         if constant > u16::MAX as usize {
@@ -1055,16 +1157,10 @@ impl<'a> Parser<'a> {
     }
 
     fn patch_jump(&mut self, offset: usize) {
-        let jump = self.chunk().code.len() - offset - 2;
-
-        if jump > common::JUMP_SIZE_MAX {
-            self.error("Too much code to jump over.");
+        match self.compiler_mut().patch_jump(offset) {
+            Ok(_) => {}
+            Err(e) => self.compiler_error(e),
         }
-
-        let bytes = (jump as u16).to_ne_bytes();
-
-        self.chunk().code[offset] = bytes[0];
-        self.chunk().code[offset + 1] = bytes[1];
     }
 
     fn patch_offset_at(&mut self, pos: usize, offset: usize) {
@@ -1239,6 +1335,18 @@ impl<'a> Parser<'a> {
 
     fn compiler_error(&mut self, error: CompilerError) {
         match error {
+            CompilerError::InvalidControlStatement => {
+                let msg = format!(
+                    "Cannot use '{}' statement outside of loop body.",
+                    if self.previous.kind == TokenKind::Break {
+                        "break"
+                    } else {
+                        "continue"
+                    }
+                );
+                self.error(&msg);
+            }
+            CompilerError::JumpTooLarge => self.error("Too much code to jump over."),
             CompilerError::ReadVarInInitialiser => {
                 self.error("Cannot read local variable in its own initialiser.");
             }
@@ -1696,7 +1804,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-const RULES: [ParseRule; 70] = [
+const RULES: [ParseRule; 72] = [
     // LeftParen
     ParseRule {
         prefix: Some(Parser::grouping),
@@ -2072,6 +2180,18 @@ const RULES: [ParseRule; 70] = [
     // Super
     ParseRule {
         prefix: Some(Parser::super_),
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Break
+    ParseRule {
+        prefix: None,
+        infix: None,
+        precedence: Precedence::None,
+    },
+    // Continue
+    ParseRule {
+        prefix: None,
         infix: None,
         precedence: Precedence::None,
     },

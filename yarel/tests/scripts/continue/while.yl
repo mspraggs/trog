@@ -1,0 +1,15 @@
+// before
+// after
+// before
+// before
+// after
+// 0
+var i = 3;
+while i > 0 {
+    i -= 1;
+    print("before");
+    if i == 1 {
+        continue;
+    }
+    print("after");
+}

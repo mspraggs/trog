@@ -1,0 +1,6 @@
+// [module "main", line 6] Error at '}': Expected ';' after 'break'.
+// [module "main", line 7] Error at end: Expected '}' after block.
+// 65
+while true {
+    break
+}

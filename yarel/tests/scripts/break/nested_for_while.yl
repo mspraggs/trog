@@ -1,0 +1,26 @@
+// before
+// after
+// before
+// after
+// before
+// after
+// before
+// 0
+var count = 0;
+var stop = false;
+for i in 0..1000 {
+    print("before");
+    var i = 2;
+    while i > 0 {
+        count += 1;
+        if count == 7 {
+            stop = true;
+            break;
+        }
+        i -= 1;
+    }
+    if stop {
+        break;
+    }
+    print("after");
+}
