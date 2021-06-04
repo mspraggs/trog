@@ -191,6 +191,14 @@ impl Compiler {
         true
     }
 
+    fn mark_initialised(&mut self, local: usize) {
+        self.locals[local].depth = Some(self.scope_depth);
+    }
+
+    fn mark_last_initialised(&mut self) {
+        self.locals.last_mut().unwrap().depth = Some(self.scope_depth);
+    }
+
     fn resolve_local(&self, name: &Token) -> Result<u8, CompilerError> {
         for (i, local) in self.locals.iter().enumerate().rev() {
             if local.name == name.source {
@@ -746,14 +754,14 @@ impl<'a> Parser<'a> {
         let loop_iter_name = "... temp-iter-var ...";
 
         // For loops take the following form:
-        // for (v in [1, 2, 3]) {
+        // for v in [1, 2, 3] {
         //     ... loop body ...
         // }
         //
         // To support this we generate code equivalent to the following:
         // var v;
         // var it = [1, 2, 3].iter();
-        // while ((v = it.next()) != <sentinel>) {
+        // while !(v = it.next()).derives(StopIter) {
         //     ... loop body ...
         // }
 
@@ -763,18 +771,16 @@ impl<'a> Parser<'a> {
             return;
         }
         self.declare_variable();
+        let loop_var = self.compiler().locals.len() - 1;
         self.emit_byte(OpCode::Nil as u8);
-        self.mark_initialised();
-
-        let loop_var = self
-            .resolve_local(&Token::from_string(self.previous.source.as_str()))
-            .expect("Expected to resolve local.");
 
         // Parse for loop syntax
         self.consume(TokenKind::In, "Expected 'in' after loop variable.");
 
         // Parse iterable object
         self.expression();
+
+        self.compiler_mut().mark_initialised(loop_var);
 
         self.compiler_mut()
             .add_local(&Token::from_string(loop_iter_name));
@@ -1244,7 +1250,7 @@ impl<'a> Parser<'a> {
         if self.compiler().scope_depth == 0 {
             return;
         }
-        self.compiler_mut().locals.last_mut().unwrap().depth = Some(self.compiler().scope_depth);
+        self.compiler_mut().mark_last_initialised();
     }
 
     fn define_variable(&mut self, global: u16) {

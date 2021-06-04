@@ -1,0 +1,3 @@
+// [module "main", line 3] Error at 'i': Cannot read local variable in its own initialiser.
+// 65
+for i in [i] {}
