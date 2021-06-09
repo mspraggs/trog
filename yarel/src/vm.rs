@@ -400,14 +400,6 @@ impl Vm {
         self.new_root_obj_err_with_class(class, Value::None)
     }
 
-    pub(crate) fn new_root_obj_fiber(
-        &mut self,
-        closure: Gc<ObjClosure>,
-    ) -> Root<RefCell<ObjFiber>> {
-        let class = self.class_store.fiber_class();
-        Root::new(RefCell::new(ObjFiber::new(class, closure)))
-    }
-
     pub fn reset(&mut self) {
         self.reset_stack();
         self.chunks = self.core_chunks.clone();
@@ -415,6 +407,22 @@ impl Vm {
         self.active_module = self.module("main");
         self.active_module.borrow_mut().attributes = object::new_obj_string_value_map();
         self.init_built_in_globals("main");
+    }
+
+    pub fn native_arg(&self, index: usize) -> Value {
+        self.active_fiber().native_frame_slot(index)
+    }
+
+    pub unsafe fn unchecked_native_arg(&self, index: usize) -> Value {
+        self.active_fiber().unchecked_native_frame_slot(index)
+    }
+
+    pub(crate) fn new_root_obj_fiber(
+        &mut self,
+        closure: Gc<ObjClosure>,
+    ) -> Root<RefCell<ObjFiber>> {
+        let class = self.class_store.fiber_class();
+        Root::new(RefCell::new(ObjFiber::new(class, closure)))
     }
 
     pub(crate) fn module(&mut self, path: &str) -> Gc<RefCell<ObjModule>> {
@@ -431,7 +439,7 @@ impl Vm {
         gc_module
     }
 
-    pub fn peek(&self, depth: usize) -> Value {
+    pub(crate) fn peek(&self, depth: usize) -> Value {
         *self.active_fiber().stack.peek(depth)
     }
 
@@ -1355,8 +1363,10 @@ impl Vm {
 
     #[inline(always)]
     fn call_native(&mut self, native: Gc<ObjNative>, arg_count: usize) -> Result<(), Error> {
+        self.active_fiber_mut().set_native_arity(arg_count);
         let function = native.function;
         let result = function(self, arg_count);
+        self.active_fiber_mut().take_native_arity();
         self.discard(arg_count);
         match result {
             Ok(value) => {

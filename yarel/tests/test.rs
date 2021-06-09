@@ -127,7 +127,7 @@ fn local_print(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             "Expected one argument to 'print'.",
         ));
     }
-    let lines = format!("{}", vm.peek(0));
+    let lines = format!("{}", vm.native_arg(1));
     for line in lines.as_str().lines() {
         OUTPUT.with(|output| output.borrow_mut().push(line.to_string()));
     }

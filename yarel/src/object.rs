@@ -918,6 +918,7 @@ pub struct ObjFiber {
     pub(crate) caller: Option<Gc<RefCell<ObjFiber>>>,
     pub(crate) stack: Stack<Value, STACK_MAX>,
     pub(crate) frames: Vec<CallFrame>,
+    pub(crate) native_arity: Option<usize>,
     pub(crate) open_upvalues: Option<Gc<RefCell<ObjUpvalue>>>,
     pub(crate) call_arity: usize,
     pub(crate) return_value: Value,
@@ -940,6 +941,7 @@ impl ObjFiber {
             caller: None,
             stack: Stack::new(),
             frames,
+            native_arity: None,
             open_upvalues: None,
             call_arity: arity as usize,
             return_value: Value::None,
@@ -954,8 +956,16 @@ impl ObjFiber {
         self.frames.push(CallFrame {
             closure,
             ip,
-            slot_base: self.stack.len() - arity as usize,
+            slot_base: self.stack.len() - arity,
         })
+    }
+
+    pub(crate) fn set_native_arity(&mut self, arity: usize) {
+        self.native_arity = Some(arity);
+    }
+
+    pub(crate) fn take_native_arity(&mut self) -> Option<usize> {
+        self.native_arity.take()
     }
 
     pub(crate) fn close_upvalues(&mut self, index: usize) {
@@ -1026,6 +1036,21 @@ impl ObjFiber {
     pub(crate) fn store_error_ip_or(&mut self, alternative: *const u8) {
         self.current_frame_mut().expect("Expected CallFrame.").ip =
             self.error_ip.unwrap_or(alternative);
+    }
+
+    pub(crate) unsafe fn unchecked_native_frame_slot(&self, index: usize) -> Value {
+        let slot_base = self.stack.len() - self.native_arity.unwrap() - 1;
+        let pos = slot_base + index;
+        self.stack[pos]
+    }
+
+    pub(crate) fn native_frame_slot(&self, index: usize) -> Value {
+        let slot_base = self.stack.len() - self.native_arity.unwrap() - 1;
+        let pos = slot_base + index;
+        if pos >= self.stack.len() {
+            panic!("Stack index out of range.");
+        }
+        self.stack[pos]
     }
 }
 
