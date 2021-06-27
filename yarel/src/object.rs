@@ -278,11 +278,16 @@ pub type NativeFn = fn(&mut Vm, usize) -> Result<Value, Error>;
 pub struct ObjNative {
     pub(crate) name: Gc<ObjString>,
     pub function: NativeFn,
+    pub(crate) manages_stack: bool,
 }
 
 impl ObjNative {
-    pub(crate) fn new(name: Gc<ObjString>, function: NativeFn) -> Self {
-        ObjNative { name, function }
+    pub(crate) fn new(name: Gc<ObjString>, function: NativeFn, manages_stack: bool) -> Self {
+        ObjNative {
+            name,
+            function,
+            manages_stack,
+        }
     }
 }
 

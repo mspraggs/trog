@@ -303,7 +303,7 @@ impl Vm {
         name: Gc<ObjString>,
         function: NativeFn,
     ) -> Root<ObjNative> {
-        Root::new(ObjNative::new(name, function))
+        Root::new(ObjNative::new(name, function, false))
     }
 
     pub fn new_root_obj_closure(
@@ -482,6 +482,10 @@ impl Vm {
             }
         }
         if self.fiber.is_some() {
+            // Pop the arg off the current fiber's stack before switching fibers.
+            if arg.is_some() {
+                self.pop();
+            }
             self.active_fiber_mut().current_frame_mut().unwrap().ip = self.ip;
         }
 
@@ -493,11 +497,9 @@ impl Vm {
             let closure = self.active_fiber().frames[0].closure;
             self.push(Value::ObjClosure(closure));
             if let Some(arg) = arg {
-                self.push(Value::None);
                 self.push(arg);
             }
         } else if let Some(arg) = arg {
-            self.push(Value::None);
             self.poke(0, arg);
         }
 
@@ -506,6 +508,9 @@ impl Vm {
     }
 
     pub(crate) fn unload_fiber(&mut self, arg: Option<Value>) -> Result<(), Error> {
+        if arg.is_some() {
+            self.pop();
+        }
         if !self.active_fiber().has_finished() {
             self.active_fiber_mut().current_frame_mut().unwrap().ip = self.ip;
         }
@@ -520,12 +525,7 @@ impl Vm {
                 "Cannot yield from module-level code."
             ));
         }
-        if let Some(arg) = arg {
-            self.poke(0, arg);
-        } else {
-            self.pop();
-            self.poke(0, Value::None);
-        }
+        self.poke(0, arg.unwrap_or_default());
         self.load_frame();
         Ok(())
     }
@@ -1367,10 +1367,14 @@ impl Vm {
         let function = native.function;
         let result = function(self, arg_count);
         self.active_fiber_mut().take_native_arity();
-        self.discard(arg_count);
+        if !native.manages_stack {
+            self.discard(arg_count);
+        }
         match result {
             Ok(value) => {
-                self.poke(0, value);
+                if !native.manages_stack {
+                    self.poke(0, value);
+                }
             }
             Err(error) => {
                 let exc_object = self.new_root_obj_err_from_error(error);

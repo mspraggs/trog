@@ -19,6 +19,7 @@ use std::time;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Root};
+use crate::object::new_obj_string_value_map;
 use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjStringValueMap};
 use crate::utils;
 use crate::value::Value;
@@ -1078,14 +1079,16 @@ pub fn new_root_obj_fiber_metaclass(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("FiberClass");
-    let (methods, _native_roots) = build_methods(
-        vm,
-        &[
-            ("new", fiber_init as NativeFn),
-            ("yield", fiber_yield as NativeFn),
-        ],
-        None,
-    );
+    let yield_method_name = vm.new_gc_obj_string("yield");
+    let yield_method = Root::new(ObjNative::new(
+        yield_method_name,
+        fiber_yield as NativeFn,
+        true,
+    ));
+    let mut methods = new_obj_string_value_map();
+    methods.insert(yield_method_name, Value::ObjNative(yield_method.as_gc()));
+    let (methods, _native_roots) =
+        build_methods(vm, &[("new", fiber_init as NativeFn)], Some(methods));
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
 
@@ -1095,13 +1098,18 @@ pub fn new_root_obj_fiber_class(
     superclass: Gc<ObjClass>,
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Fiber");
+    let call_method_name = vm.new_gc_obj_string("call");
+    let call_method = Root::new(ObjNative::new(
+        call_method_name,
+        fiber_call as NativeFn,
+        true,
+    ));
+    let mut methods = new_obj_string_value_map();
+    methods.insert(call_method_name, Value::ObjNative(call_method.as_gc()));
     let (methods, _native_roots) = build_methods(
         vm,
-        &[
-            ("call", fiber_call as NativeFn),
-            ("has_finished", fiber_has_finished as NativeFn),
-        ],
-        None,
+        &[("has_finished", fiber_has_finished as NativeFn)],
+        Some(methods),
     );
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
 }
@@ -1126,13 +1134,6 @@ fn fiber_init(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 }
 
 fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    // `Fiber.call` and `Fiber.yield` are the only two functions that take a
-    // variable number of arguments. To make handling call frames a little
-    // easier, we inject a dummy nil argument where none is provided. (The same
-    // approach is taken in `Fiber.yield`.) Also, because `Vm::call_native`
-    // truncates the stack based on the number of arguments after each call, we
-    // add a nil parameter after the closure has been pushed to account for the
-    // fact that the stacks before and after the call will be different.
     let fiber = vm
         .peek(num_args)
         .try_as_obj_fiber()
@@ -1152,10 +1153,8 @@ fn fiber_call(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
         }
     }
     let arg = if num_args == 1 {
-        let value = vm.peek(0);
-        Some(value)
+        Some(vm.peek(0))
     } else {
-        vm.push(Value::None);
         None
     };
     vm.load_fiber(fiber, arg)?;
@@ -1175,9 +1174,6 @@ fn fiber_yield(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     } else {
         None
     };
-    if num_args == 1 {
-        vm.pop();
-    }
     vm.unload_fiber(arg)?;
     Ok(vm.peek(0))
 }
