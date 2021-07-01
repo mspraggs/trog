@@ -54,7 +54,7 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_bool(&self) -> bool {
+    pub fn into_bool(&self) -> bool {
         match self {
             Value::Boolean(underlying) => *underlying,
             Value::None => false,
@@ -75,7 +75,7 @@ impl Value {
         }
     }
 
-    pub fn try_as_bool(&self) -> Option<bool> {
+    pub fn try_into_bool(&self) -> Option<bool> {
         match self {
             Value::Boolean(inner) => Some(*inner),
             _ => None,

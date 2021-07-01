@@ -884,7 +884,7 @@ impl Vm {
 
     fn logical_not_impl(&mut self) {
         let value = self.pop();
-        self.push(Value::Boolean(!value.as_bool()));
+        self.push(Value::Boolean(!value.into_bool()));
     }
 
     fn bitwise_not_impl(&mut self) -> Result<(), Error> {
@@ -1002,7 +1002,7 @@ impl Vm {
 
     fn jump_if_false_impl(&mut self) {
         let offset = self.read_short();
-        if !self.peek(0).as_bool() {
+        if !self.peek(0).into_bool() {
             self.ip = unsafe { self.ip.offset(offset as isize) };
         }
     }

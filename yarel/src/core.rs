@@ -660,7 +660,7 @@ fn tuple_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 0)?;
 
     let tuple = vm.peek(0).try_as_obj_tuple().expect("Expected ObjTuple");
-    Ok(Value::from(tuple.elements.len() as f64))
+    Ok(Value::Number(tuple.elements.len() as f64))
 }
 
 fn tuple_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -796,7 +796,7 @@ fn vec_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
     let vec = vm.peek(0).try_as_obj_vec().expect("Expected ObjVec");
     let borrowed_vec = vec.borrow();
-    Ok(Value::from(borrowed_vec.elements.len() as f64))
+    Ok(Value::Number(borrowed_vec.elements.len() as f64))
 }
 
 fn vec_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
