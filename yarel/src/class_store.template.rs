@@ -20,7 +20,7 @@ use crate::vm::{self, Vm};
 
 include!(concat!(env!("OUT_DIR"), "/core.yl.rs"));
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct CoreClassStore {
     root_base_metaclass: Option<Root<ObjClass>>,
     root_object_class: Option<Root<ObjClass>>,

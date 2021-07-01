@@ -13,14 +13,14 @@
  * limitations under the License.
  */
 
-use std::fmt::{self, Display};
+use std::fmt::{self, Debug, Display};
 use std::ops::{Index, IndexMut};
 use std::ptr;
 use std::slice;
 
 use crate::memory::GcManaged;
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub(crate) struct Stack<T: Clone + Copy + Default, const N: usize> {
     stack: Box<[T; N]>,
     top: *mut T,
@@ -127,6 +127,20 @@ where
             write!(f, "[ {} ]", elem)?;
         }
         Ok(())
+    }
+}
+
+impl<T, const N: usize> Debug for Stack<T, N>
+where
+    T: Clone + Copy + Default + Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut debug_list = f.debug_list();
+        let mut debug_list_ref = &mut debug_list;
+        for elem in &self.stack[0..self.len()] {
+            debug_list_ref = debug_list_ref.entry(elem);
+        }
+        debug_list_ref.finish()
     }
 }
 

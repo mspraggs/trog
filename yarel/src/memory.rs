@@ -19,6 +19,7 @@
 use std::any;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::marker::PhantomPinned;
 use std::mem;
 use std::ops::{Deref, DerefMut};
@@ -103,6 +104,10 @@ impl<T: GcManaged> Root<T> {
     pub unsafe fn as_mut(&mut self) -> &mut T {
         &mut self.gc_box_mut().data
     }
+
+    fn as_ptr(&self) -> *const T {
+        &self.gc_box().data
+    }
 }
 
 impl<T: 'static + GcManaged + ?Sized> Root<T> {
@@ -140,6 +145,12 @@ impl<T: 'static + GcManaged + ?Sized> Clone for Root<T> {
         let ret = Root { ptr: self.ptr };
         ret.inc_num_roots();
         ret
+    }
+}
+
+impl<T: 'static + Debug + GcManaged> Debug for Root<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} @ {:p}", **self, self.as_ptr())
     }
 }
 
@@ -189,6 +200,10 @@ impl<T: GcManaged> UniqueRoot<T> {
     pub fn new(data: T) -> UniqueRoot<T> {
         HEAP.with(|heap| heap.borrow_mut().allocate_unique(data))
     }
+
+    fn as_ptr(&self) -> *const T {
+        &self.gc_box().data
+    }
 }
 
 impl<T: 'static + GcManaged + ?Sized> UniqueRoot<T> {
@@ -218,6 +233,12 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for UniqueRoot<T> {
 
     fn blacken(&self) {
         self.gc_box().blacken();
+    }
+}
+
+impl<T: 'static + Debug + GcManaged> Debug for UniqueRoot<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} @ {:p}", **self, self.as_ptr())
     }
 }
 
@@ -258,7 +279,7 @@ impl<T: GcManaged> Gc<T> {
 }
 
 impl<T: 'static + GcManaged> Gc<T> {
-    pub fn as_ptr(&self) -> *const T {
+    pub(crate) fn as_ptr(&self) -> *const T {
         &self.gc_box().data
     }
 }
@@ -279,11 +300,17 @@ impl<T: 'static + GcManaged + ?Sized> GcManaged for Gc<T> {
     }
 }
 
-impl<T: GcManaged> Copy for Gc<T> {}
-
 impl<T: GcManaged> Clone for Gc<T> {
     fn clone(&self) -> Self {
         *self
+    }
+}
+
+impl<T: GcManaged> Copy for Gc<T> {}
+
+impl<T: 'static + Debug + GcManaged> Debug for Gc<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} @ {:p}", **self, self.as_ptr())
     }
 }
 
@@ -301,8 +328,7 @@ impl<T: GcManaged> PartialEq for Gc<T> {
     }
 }
 
-#[derive(Default)]
-pub struct Heap {
+pub(crate) struct Heap {
     collection_threshold: usize,
     bytes_allocated: usize,
     objects: Vec<Pin<Box<GcBox<dyn GcManaged>>>>,
@@ -310,11 +336,7 @@ pub struct Heap {
 
 impl Heap {
     pub(crate) fn new() -> Self {
-        Heap {
-            collection_threshold: common::HEAP_INIT_BYTES_MAX,
-            bytes_allocated: 0,
-            objects: Vec::new(),
-        }
+        Default::default()
     }
 
     fn allocate_root<T: 'static + GcManaged>(&mut self, data: T) -> Root<T> {
@@ -436,6 +458,16 @@ impl Heap {
         self.objects.retain(|obj| obj.colour.get() == Colour::Black);
 
         bytes_marked
+    }
+}
+
+impl Default for Heap {
+    fn default() -> Self {
+        Heap {
+            collection_threshold: common::HEAP_INIT_BYTES_MAX,
+            bytes_allocated: 0,
+            objects: Vec::new(),
+        }
     }
 }
 

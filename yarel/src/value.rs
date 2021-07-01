@@ -28,7 +28,7 @@ use crate::object::{
 };
 use crate::utils;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Value {
     Boolean(bool),
     Number(f64),

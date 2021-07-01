@@ -16,7 +16,7 @@
 use std::convert::TryInto;
 use std::hash::{BuildHasher, Hasher};
 
-pub struct FnvHasher {
+pub(crate) struct FnvHasher {
     hash: u64,
 }
 
@@ -45,6 +45,7 @@ impl Hasher for FnvHasher {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct PassThroughHasher {
     hash: u64,
 }
@@ -66,7 +67,7 @@ impl Hasher for PassThroughHasher {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct BuildPassThroughHasher;
 
 impl Default for BuildPassThroughHasher {

@@ -24,13 +24,14 @@ use crate::chunk::Chunk;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::hash::{BuildPassThroughHasher, PassThroughHasher};
-use crate::memory::{self, Gc, GcManaged};
+use crate::memory::{Gc, GcManaged};
 use crate::stack::Stack;
 use crate::value::Value;
 use crate::vm::Vm;
 
 const STACK_MAX: usize = common::LOCALS_MAX * common::FRAMES_MAX;
 
+#[derive(Clone, Debug)]
 pub struct ObjString {
     pub(crate) class: Gc<ObjClass>,
     string: String,
@@ -73,7 +74,25 @@ impl Hash for Gc<ObjString> {
     }
 }
 
-impl Eq for Gc<ObjString> {}
+impl PartialEq for ObjString {
+    fn eq(&self, other: &Self) -> bool {
+        self.hash == other.hash && self.string.eq(&other.string)
+    }
+}
+
+impl Eq for ObjString {}
+
+impl PartialOrd for ObjString {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
+        self.string.partial_cmp(&other.string)
+    }
+}
+
+impl Ord for ObjString {
+    fn cmp(&self, other: &Self) -> cmp::Ordering {
+        self.string.cmp(&other.string)
+    }
+}
 
 impl Deref for ObjString {
     type Target = str;
@@ -83,11 +102,13 @@ impl Deref for ObjString {
     }
 }
 
-impl memory::GcManaged for ObjString {
+impl GcManaged for ObjString {
     fn mark(&self) {}
 
     fn blacken(&self) {}
 }
+
+impl Eq for Gc<ObjString> {}
 
 pub type ObjStringValueMap = HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>;
 
@@ -95,6 +116,7 @@ pub fn new_obj_string_value_map() -> ObjStringValueMap {
     ObjStringValueMap::with_hasher(BuildPassThroughHasher::default())
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct ObjStringIter {
     pub(crate) class: Gc<ObjClass>,
     pub(crate) iterable: Gc<ObjString>,
@@ -123,7 +145,7 @@ impl ObjStringIter {
     }
 }
 
-impl memory::GcManaged for ObjStringIter {
+impl GcManaged for ObjStringIter {
     fn mark(&self) {
         self.iterable.mark();
     }
@@ -139,11 +161,22 @@ impl fmt::Display for ObjStringIter {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 enum ObjUpvalueState {
     Closed(Value),
     Open(*mut Value),
 }
 
+impl fmt::Display for ObjUpvalueState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ObjUpvalueState::Closed(v) => write!(f, "{}", v),
+            ObjUpvalueState::Open(v) => write!(f, "{}", unsafe { **v }),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub struct ObjUpvalue {
     data: ObjUpvalueState,
     pub(crate) next: Option<Gc<RefCell<ObjUpvalue>>>,
@@ -191,7 +224,7 @@ impl ObjUpvalue {
     }
 }
 
-impl memory::GcManaged for ObjUpvalue {
+impl GcManaged for ObjUpvalue {
     fn mark(&self) {
         match self.data {
             ObjUpvalueState::Closed(value) => value.mark(),
@@ -213,7 +246,7 @@ impl memory::GcManaged for ObjUpvalue {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ObjFunction {
     pub arity: usize,
     pub upvalue_count: usize,
@@ -224,7 +257,7 @@ pub struct ObjFunction {
 
 impl ObjFunction {
     pub(crate) fn new(
-        name: memory::Gc<ObjString>,
+        name: Gc<ObjString>,
         arity: usize,
         upvalue_count: usize,
         chunk: Gc<Chunk>,
@@ -240,7 +273,7 @@ impl ObjFunction {
     }
 }
 
-impl memory::GcManaged for ObjFunction {
+impl GcManaged for ObjFunction {
     fn mark(&self) {
         self.name.mark();
         self.chunk.mark();
@@ -249,18 +282,6 @@ impl memory::GcManaged for ObjFunction {
     fn blacken(&self) {
         self.name.blacken();
         self.chunk.blacken();
-    }
-}
-
-impl Default for ObjFunction {
-    fn default() -> Self {
-        ObjFunction {
-            name: Gc::dangling(),
-            arity: 0,
-            upvalue_count: 0,
-            chunk: Gc::dangling(),
-            module_path: Gc::dangling(),
-        }
     }
 }
 
@@ -275,10 +296,22 @@ impl fmt::Display for ObjFunction {
 
 pub type NativeFn = fn(&mut Vm, usize) -> Result<Value, Error>;
 
+#[derive(Copy, Clone)]
 pub struct ObjNative {
     pub(crate) name: Gc<ObjString>,
     pub function: NativeFn,
     pub(crate) manages_stack: bool,
+}
+
+impl fmt::Debug for ObjNative {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let function = self.function as *const ();
+        f.debug_struct("ObjNative")
+            .field("name", &self.name)
+            .field("function", &function)
+            .field("manages_stack", &self.manages_stack)
+            .finish()
+    }
 }
 
 impl ObjNative {
@@ -291,7 +324,7 @@ impl ObjNative {
     }
 }
 
-impl memory::GcManaged for ObjNative {
+impl GcManaged for ObjNative {
     fn mark(&self) {}
 
     fn blacken(&self) {}
@@ -303,16 +336,17 @@ impl fmt::Display for ObjNative {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjClosure {
-    pub function: memory::Gc<ObjFunction>,
-    pub upvalues: RefCell<Vec<memory::Gc<RefCell<ObjUpvalue>>>>,
+    pub function: Gc<ObjFunction>,
+    pub upvalues: RefCell<Vec<Gc<RefCell<ObjUpvalue>>>>,
     pub(crate) module: Gc<RefCell<ObjModule>>,
 }
 
 impl ObjClosure {
     pub(crate) fn new(
-        function: memory::Gc<ObjFunction>,
-        upvalues: Vec<memory::Gc<RefCell<ObjUpvalue>>>,
+        function: Gc<ObjFunction>,
+        upvalues: Vec<Gc<RefCell<ObjUpvalue>>>,
         module: Gc<RefCell<ObjModule>>,
     ) -> Self {
         ObjClosure {
@@ -323,7 +357,7 @@ impl ObjClosure {
     }
 }
 
-impl memory::GcManaged for ObjClosure {
+impl GcManaged for ObjClosure {
     fn mark(&self) {
         self.function.mark();
         self.upvalues.mark();
@@ -341,8 +375,9 @@ impl fmt::Display for ObjClosure {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjClass {
-    pub name: memory::Gc<ObjString>,
+    pub name: Gc<ObjString>,
     pub metaclass: Gc<ObjClass>,
     pub superclass: Option<Gc<ObjClass>>,
     pub methods: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
@@ -350,7 +385,7 @@ pub struct ObjClass {
 
 impl ObjClass {
     pub(crate) fn new(
-        name: memory::Gc<ObjString>,
+        name: Gc<ObjString>,
         metaclass: Gc<ObjClass>,
         superclass: Option<Gc<ObjClass>>,
         methods: ObjStringValueMap,
@@ -372,7 +407,7 @@ impl ObjClass {
     }
 }
 
-impl memory::GcManaged for ObjClass {
+impl GcManaged for ObjClass {
     fn mark(&self) {
         self.metaclass.mark();
         self.methods.mark();
@@ -390,8 +425,9 @@ impl fmt::Display for ObjClass {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjInstance {
-    pub class: memory::Gc<ObjClass>,
+    pub class: Gc<ObjClass>,
     pub fields: HashMap<Gc<ObjString>, Value, BuildPassThroughHasher>,
 }
 
@@ -404,7 +440,7 @@ impl ObjInstance {
     }
 }
 
-impl memory::GcManaged for ObjInstance {
+impl GcManaged for ObjInstance {
     fn mark(&self) {
         self.class.mark();
         self.fields.mark();
@@ -422,18 +458,19 @@ impl fmt::Display for ObjInstance {
     }
 }
 
-pub struct ObjBoundMethod<T: memory::GcManaged> {
+#[derive(Copy, Clone)]
+pub struct ObjBoundMethod<T: GcManaged> {
     pub receiver: Value,
-    pub method: memory::Gc<T>,
+    pub method: Gc<T>,
 }
 
-impl<T: memory::GcManaged> ObjBoundMethod<T> {
-    pub(crate) fn new(receiver: Value, method: memory::Gc<T>) -> Self {
+impl<T: GcManaged> ObjBoundMethod<T> {
+    pub(crate) fn new(receiver: Value, method: Gc<T>) -> Self {
         ObjBoundMethod { receiver, method }
     }
 }
 
-impl<T: 'static + memory::GcManaged> memory::GcManaged for ObjBoundMethod<T> {
+impl<T: 'static + GcManaged> GcManaged for ObjBoundMethod<T> {
     fn mark(&self) {
         self.receiver.mark();
         self.method.mark();
@@ -455,6 +492,15 @@ impl fmt::Display for ObjBoundMethod<ObjNative> {
     }
 }
 
+impl fmt::Debug for ObjBoundMethod<ObjNative> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ObjBoundMethod<ObjNative>")
+            .field("receiver", &self.receiver)
+            .field("method", &self.method)
+            .finish()
+    }
+}
+
 impl fmt::Display for ObjBoundMethod<ObjClosure> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -465,6 +511,16 @@ impl fmt::Display for ObjBoundMethod<ObjClosure> {
     }
 }
 
+impl fmt::Debug for ObjBoundMethod<ObjClosure> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ObjBoundMethod<ObjClosure>")
+            .field("receiver", &self.receiver)
+            .field("method", &self.method)
+            .finish()
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct ObjVec {
     pub class: Gc<ObjClass>,
     pub elements: Vec<Value>,
@@ -481,7 +537,7 @@ impl ObjVec {
     }
 }
 
-impl memory::GcManaged for ObjVec {
+impl GcManaged for ObjVec {
     fn mark(&self) {
         self.class.mark();
         self.elements.mark();
@@ -518,6 +574,7 @@ impl cmp::PartialEq for ObjVec {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjVecIter {
     pub class: Gc<ObjClass>,
     pub iterable: Gc<RefCell<ObjVec>>,
@@ -544,7 +601,7 @@ impl ObjVecIter {
     }
 }
 
-impl memory::GcManaged for ObjVecIter {
+impl GcManaged for ObjVecIter {
     fn mark(&self) {
         self.iterable.mark();
     }
@@ -560,6 +617,7 @@ impl fmt::Display for ObjVecIter {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct ObjRange {
     pub class: Gc<ObjClass>,
     pub begin: isize,
@@ -605,7 +663,7 @@ impl ObjRange {
     }
 }
 
-impl memory::GcManaged for ObjRange {
+impl GcManaged for ObjRange {
     fn mark(&self) {
         self.class.mark();
     }
@@ -621,6 +679,7 @@ impl fmt::Display for ObjRange {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct ObjRangeIter {
     pub class: Gc<ObjClass>,
     pub iterable: Gc<ObjRange>,
@@ -649,7 +708,7 @@ impl ObjRangeIter {
     }
 }
 
-impl memory::GcManaged for ObjRangeIter {
+impl GcManaged for ObjRangeIter {
     fn mark(&self) {
         self.iterable.mark();
     }
@@ -665,6 +724,7 @@ impl fmt::Display for ObjRangeIter {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjHashMap {
     pub class: Gc<ObjClass>,
     pub elements: HashMap<Value, Value, BuildPassThroughHasher>,
@@ -681,7 +741,7 @@ impl ObjHashMap {
     }
 }
 
-impl memory::GcManaged for ObjHashMap {
+impl GcManaged for ObjHashMap {
     fn mark(&self) {
         self.class.mark();
         self.elements.mark();
@@ -724,6 +784,7 @@ impl cmp::PartialEq for ObjHashMap {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjTuple {
     pub class: Gc<ObjClass>,
     pub elements: Vec<Value>,
@@ -754,7 +815,7 @@ impl ObjTuple {
     }
 }
 
-impl memory::GcManaged for ObjTuple {
+impl GcManaged for ObjTuple {
     fn mark(&self) {
         self.class.mark();
         self.elements.mark();
@@ -813,6 +874,7 @@ impl Hash for Gc<ObjTuple> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct ObjTupleIter {
     pub class: Gc<ObjClass>,
     pub iterable: Gc<ObjTuple>,
@@ -838,7 +900,7 @@ impl ObjTupleIter {
     }
 }
 
-impl memory::GcManaged for ObjTupleIter {
+impl GcManaged for ObjTupleIter {
     fn mark(&self) {
         self.iterable.mark();
     }
@@ -854,6 +916,7 @@ impl fmt::Display for ObjTupleIter {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjModule {
     pub(crate) imported: bool,
     pub(crate) class: Gc<ObjClass>,
@@ -872,7 +935,7 @@ impl ObjModule {
     }
 }
 
-impl memory::GcManaged for ObjModule {
+impl GcManaged for ObjModule {
     fn mark(&self) {
         self.attributes.mark();
     }
@@ -888,6 +951,7 @@ impl fmt::Display for ObjModule {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct CallFrame {
     pub(crate) closure: Gc<ObjClosure>,
     pub(crate) ip: *const u8,
@@ -904,7 +968,7 @@ impl GcManaged for CallFrame {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct ExcHandler {
     pub(crate) catch_ip: *const u8,
     pub(crate) finally_ip: *const u8,
@@ -918,6 +982,7 @@ impl ExcHandler {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct ObjFiber {
     pub(crate) class: Gc<ObjClass>,
     pub(crate) caller: Option<Gc<RefCell<ObjFiber>>>,

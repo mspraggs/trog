@@ -13,9 +13,10 @@
  * limitations under the License.
  */
 
+use std::error;
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ErrorKind {
     AttributeError,
     CompileError,
@@ -27,7 +28,7 @@ pub enum ErrorKind {
     ValueError,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Error {
     kind: ErrorKind,
     messages: Vec<String>,
@@ -80,6 +81,8 @@ impl fmt::Display for Error {
     }
 }
 
+impl error::Error for Error {}
+
 #[macro_export]
 macro_rules! error {
     ($kind:expr, $msg:literal) => {{
@@ -88,4 +91,16 @@ macro_rules! error {
     ($kind:expr, $format:literal, $($args:expr),*) => {{
         Error::with_message($kind, format!($format, $($args),*).as_str())
     }};
+}
+
+#[test]
+fn test_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<Error>();
+}
+
+#[test]
+fn test_sync() {
+    fn assert_sync<T: Sync>() {}
+    assert_sync::<Error>();
 }

@@ -24,7 +24,7 @@ use yaml_rust::YamlLoader;
 
 const REPLACE_STRINGS: &[&str] = &[".", "/", "-"];
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 enum ClassKind {
     NativeValue,
     NativeObject,
@@ -44,7 +44,7 @@ impl From<&str> for ClassKind {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 struct ClassSpec {
     name: String,
     repr: String,

@@ -54,6 +54,7 @@ pub fn interpret(vm: &mut Vm, source: String, module_path: Option<&str>) -> Resu
     }
 }
 
+#[derive(Debug)]
 struct ClassDef {
     class: UniqueRoot<ObjClass>,
     metaclass: UniqueRoot<ObjClass>,
@@ -1806,6 +1807,7 @@ mod string_store {
     // using a custom hash algorithm along with caching of hash on the stored ObjString, meaning the
     // &str objects we use for look-up and the ObjString objects we store have different
     // implementations of Hash.
+    #[derive(Clone, Debug)]
     pub(super) struct ObjStringStore {
         entries: Vec<Option<Root<ObjString>>>,
         size: usize,

@@ -99,7 +99,7 @@ impl Default for TokenKind {
 }
 
 #[derive(Default, Clone, PartialEq)]
-pub struct Token {
+pub(crate) struct Token {
     pub kind: TokenKind,
     pub line: usize,
     pub source: String,
@@ -135,7 +135,7 @@ fn is_digit(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
 }
 
-pub struct Scanner {
+pub(crate) struct Scanner {
     source: String,
     start: usize,
     current: usize,

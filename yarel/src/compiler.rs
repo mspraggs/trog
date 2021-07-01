@@ -29,7 +29,7 @@ use crate::scanner::{Scanner, Token, TokenKind};
 use crate::value::{self, Value};
 use crate::vm::Vm;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 enum Precedence {
     None,
     Assignment,
@@ -173,7 +173,10 @@ impl Compiler {
         let chunk = mem::replace(&mut self.chunk, Chunk::new());
         let chunk = vm.add_chunk(chunk);
         self.function.chunk = chunk;
-        let function = mem::take(&mut self.function);
+        let function = mem::replace(
+            &mut self.function,
+            ObjFunction::new(Gc::dangling(), 1, 0, Gc::dangling(), Gc::dangling()),
+        );
         Root::new(function)
     }
 
