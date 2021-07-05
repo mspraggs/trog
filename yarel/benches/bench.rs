@@ -36,6 +36,16 @@ while i > 0 {
 }
 ";
 
+const STRING_COMPARE_SOURCE: &str = "
+var a = \"one\";
+var b = \"two\";
+var i = 1000000;
+while i > 0 {
+    i -= 1;
+    a == b;
+}
+";
+
 fn criterion_benchmark(c: &mut Criterion) {
     let mut vm = vm::Vm::with_built_ins();
 
@@ -45,6 +55,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     c.bench_function("for loop 10m", |b| {
         b.iter(|| vm::interpret(&mut vm, FOR_LOOP_SOURCE.to_string(), None))
+    });
+
+    c.bench_function("string compare 1m", |b| {
+        b.iter(|| vm::interpret(&mut vm, STRING_COMPARE_SOURCE.to_string(), None))
     });
 
     c.bench_function("while loop 1m", |b| {
