@@ -2247,3 +2247,30 @@ const RULES: [ParseRule; 72] = [
         precedence: Precedence::None,
     },
 ];
+
+#[test]
+fn test_make_constant() {
+    let mut vm = Vm::new();
+    let mut scanner = Scanner::from_source("".to_string());
+    let mut parser = Parser::new(&mut vm, &mut scanner, None);
+
+    for i in 0..u16::MAX {
+        let index = parser.make_constant(Value::Number(i as f64));
+        assert_eq!(i, index);
+    }
+
+    let index = parser.make_constant(Value::Number((u16::MAX) as f64));
+    assert_eq!(u16::MAX, index);
+    assert!(parser.errors.borrow().is_empty());
+
+    let index = parser.make_constant(Value::Number((u16::MAX) as f64 + 1.0));
+    assert_eq!(0, index);
+    let borrowed_errors = parser.errors.borrow();
+    assert!(!borrowed_errors.is_empty());
+    assert_eq!(
+        vec![
+            "[module \"main\", line 0] Error at end: Too many constants in one chunk.".to_string()
+        ],
+        *borrowed_errors
+    )
+}

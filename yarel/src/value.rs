@@ -371,6 +371,9 @@ impl Hash for Value {
             Value::Number(n) => utils::hash_number(*n),
             Value::ObjString(s) => s.hash,
             Value::ObjClass(c) => c.name.hash,
+            Value::ObjFunction(f) => {
+                utils::hash_number(f.arity as f64) ^ utils::hash_number(f.chunk.code.len() as f64)
+            }
             Value::ObjTuple(t) => {
                 let mut hasher = PassThroughHasher::default();
                 t.hash(&mut hasher);

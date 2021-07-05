@@ -13,8 +13,10 @@
  * limitations under the License.
  */
 
+use std::collections::HashMap;
+
 use crate::memory;
-use crate::value;
+use crate::value::Value;
 
 #[repr(u8)]
 pub enum OpCode {
@@ -228,7 +230,8 @@ impl From<u8> for OpCode {
 pub struct Chunk {
     pub code: Vec<u8>,
     pub lines: Vec<i32>,
-    pub constants: Vec<value::Value>,
+    pub constant_map: HashMap<Value, usize>,
+    pub constants: Vec<Value>,
 }
 
 impl Chunk {
@@ -241,9 +244,17 @@ impl Chunk {
         self.lines.push(line);
     }
 
-    pub fn add_constant(&mut self, value: value::Value) -> usize {
-        self.constants.push(value);
-        self.constants.len() - 1
+    pub fn add_constant(&mut self, value: Value) -> usize {
+        let new_index = self.constants.len();
+        let mut new_entry = false;
+        let index = *self.constant_map.entry(value).or_insert_with(|| {
+            new_entry = true;
+            new_index
+        });
+        if new_entry {
+            self.constants.push(value);
+        }
+        index
     }
 
     pub(crate) fn code_offset(&self, ptr: *const u8) -> usize {
