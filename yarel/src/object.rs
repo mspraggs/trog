@@ -535,6 +535,14 @@ impl ObjVec {
             disp_lock: Cell::new(false),
         }
     }
+
+    pub(crate) fn with_elements(class: Gc<ObjClass>, elements: Vec<Value>) -> Self {
+        ObjVec {
+            class,
+            elements,
+            disp_lock: Cell::new(false),
+        }
+    }
 }
 
 impl GcManaged for ObjVec {

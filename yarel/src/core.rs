@@ -171,7 +171,6 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
         .methods
         .clone();
     let method_map = [
-        ("__getitem__", string_get_item as NativeFn),
         ("iter", string_iter as NativeFn),
         ("len", string_len as NativeFn),
         ("count_chars", string_count_chars as NativeFn),
@@ -330,43 +329,6 @@ fn string_from(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     Ok(Value::ObjString(
         vm.new_gc_obj_string(format!("{}", vm.peek(0)).as_str()),
     ))
-}
-
-fn string_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 1)?;
-
-    let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
-    let string_len = string.len() as isize;
-
-    let (begin, end) = match vm.peek(0) {
-        Value::Number(_) => {
-            let begin = vm
-                .peek(0)
-                .try_as_bounded_index(string_len, "String index out of bounds.")?;
-            string.validate_char_boundary(begin, "string index")?;
-            let mut end = begin + 1;
-            while end <= string.len() && !string.as_str().is_char_boundary(end) {
-                end += 1;
-            }
-            (begin, end)
-        }
-        Value::ObjRange(r) => {
-            let (begin, end) = r.make_bounded_range(string_len, "String")?;
-            string.validate_char_boundary(begin, "string slice start")?;
-            string.validate_char_boundary(end, "string slice end")?;
-            (begin, end)
-        }
-        _ => {
-            return Err(error!(
-                ErrorKind::TypeError,
-                "Expected an integer or range."
-            ))
-        }
-    };
-
-    let new_string = vm.new_gc_obj_string(&string.as_str()[begin..end]);
-
-    Ok(Value::ObjString(new_string))
 }
 
 fn string_iter(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -621,39 +583,11 @@ pub fn new_root_obj_tuple_class(
 ) -> Root<ObjClass> {
     let class_name = vm.new_gc_obj_string("Tuple");
     let method_map = [
-        ("__getitem__", tuple_get_item as NativeFn),
         ("len", tuple_len as NativeFn),
         ("iter", tuple_iter as NativeFn),
     ];
     let (methods, _native_roots) = build_methods(vm, &method_map, None);
     vm.new_root_obj_class(class_name, metaclass, Some(superclass), methods)
-}
-
-fn tuple_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 1)?;
-
-    let tuple = vm.peek(1).try_as_obj_tuple().expect("Expected ObjTuple");
-
-    match vm.peek(0) {
-        Value::Number(_) => {
-            let index = vm.peek(0).try_as_bounded_index(
-                tuple.elements.len() as isize,
-                "Tuple index parameter out of bounds.",
-            )?;
-            Ok(tuple.elements[index])
-        }
-        Value::ObjRange(r) => {
-            let tuple_len = tuple.elements.len() as isize;
-            let (begin, end) = r.make_bounded_range(tuple_len, "Tuple")?;
-            let new_elements = Vec::from(&tuple.elements[begin..end]);
-            let new_tuple = vm.new_root_obj_tuple(new_elements);
-            Ok(Value::ObjTuple(new_tuple.as_gc()))
-        }
-        _ => Err(error!(
-            ErrorKind::TypeError,
-            "Expected an integer or range."
-        )),
-    }
 }
 
 fn tuple_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
@@ -711,8 +645,6 @@ pub fn new_root_obj_vec_class(
     let method_map = [
         ("push", vec_push as NativeFn),
         ("pop", vec_pop as NativeFn),
-        ("__getitem__", vec_get_item as NativeFn),
-        ("__setitem__", vec_set_item as NativeFn),
         ("len", vec_len as NativeFn),
         ("iter", vec_iter as NativeFn),
     ];
@@ -745,50 +677,6 @@ fn vec_pop(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
             "Cannot pop from empty Vec instance.",
         )
     })
-}
-
-fn vec_get_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 1)?;
-
-    let vec = vm.peek(1).try_as_obj_vec().expect("Expected ObjVec");
-
-    match vm.peek(0) {
-        Value::Number(_) => {
-            let borrowed_vec = vec.borrow();
-            let index = vm.peek(0).try_as_bounded_index(
-                borrowed_vec.elements.len() as isize,
-                "Vec index parameter out of bounds.",
-            )?;
-            Ok(borrowed_vec.elements[index])
-        }
-        Value::ObjRange(r) => {
-            let vec_len = vec.borrow().elements.len() as isize;
-            let (begin, end) = r.make_bounded_range(vec_len, "Vec")?;
-            let new_vec = vm.new_root_obj_vec();
-            new_vec
-                .borrow_mut()
-                .elements
-                .extend_from_slice(&vec.borrow().elements[begin..end]);
-            Ok(Value::ObjVec(new_vec.as_gc()))
-        }
-        _ => Err(error!(
-            ErrorKind::TypeError,
-            "Expected an integer or range."
-        )),
-    }
-}
-
-fn vec_set_item(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
-    check_num_args(num_args, 2)?;
-
-    let vec = vm.peek(2).try_as_obj_vec().expect("Expected ObjVec");
-    let index = vm.peek(1).try_as_bounded_index(
-        vec.borrow().elements.len() as isize,
-        "Vec index parameter out of bounds.",
-    )?;
-    let mut borrowed_vec = vec.borrow_mut();
-    borrowed_vec.elements[index] = vm.peek(0);
-    Ok(Value::None)
 }
 
 fn vec_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {

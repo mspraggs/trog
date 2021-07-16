@@ -1,4 +1,4 @@
-// Unhandled AttributeError: Undefined property '__setitem__'.
+// Unhandled TypeError: Only Vec objects are index-assignable.
 // [module "main", line 5] in script
 // 70
 var t = (1, 2);

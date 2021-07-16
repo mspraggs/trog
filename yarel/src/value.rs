@@ -200,13 +200,16 @@ impl Value {
             _ => None,
         }
     }
-    pub fn try_as_bounded_index(&self, bound: isize, msg: &str) -> Result<usize, Error> {
+    pub fn try_as_bounded_index(&self, bound: isize, kind: &str) -> Result<usize, Error> {
         let mut index = utils::validate_integer(*self)?;
         if index < 0 {
             index += bound;
         }
         if index < 0 || index >= bound {
-            return Err(error!(ErrorKind::IndexError, "{}", msg));
+            return Err(error!(
+                ErrorKind::IndexError,
+                "{} index parameter out of bounds.", kind
+            ));
         }
 
         Ok(index as usize)

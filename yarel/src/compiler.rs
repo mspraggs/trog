@@ -1590,14 +1590,13 @@ impl<'a> Parser<'a> {
         s.expression();
         s.consume(TokenKind::RightBracket, "Expected ']' after index.");
 
-        let (name, num_args) = if can_assign && s.match_token(TokenKind::Equal) {
+        let opcode = if can_assign && s.match_token(TokenKind::Equal) {
             s.expression();
-            (s.identifier_constant(&Token::from_string("__setitem__")), 2)
+            OpCode::SetItem
         } else {
-            (s.identifier_constant(&Token::from_string("__getitem__")), 1)
+            OpCode::GetItem
         };
-        s.emit_constant_op(OpCode::Invoke, name);
-        s.emit_byte(num_args as u8);
+        s.emit_byte(opcode as u8);
     }
 
     fn lambda(s: &mut Parser, _can_assign: bool) {

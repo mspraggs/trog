@@ -69,6 +69,8 @@ pub fn disassemble_instruction(chunk: &Chunk, offset: usize) -> usize {
         OpCode::BitShiftLeft => simple_instruction("BIT_SHIFT_LEFT", offset),
         OpCode::BitShiftRight => simple_instruction("BIT_SHIFT_RIGHT", offset),
         OpCode::Negate => simple_instruction("NEGATE", offset),
+        OpCode::GetItem => simple_instruction("GET_ITEM", offset),
+        OpCode::SetItem => simple_instruction("SET_ITEM", offset),
         OpCode::BuildHashMap => byte_instruction("BUILD_HASH_MAP", chunk, offset),
         OpCode::BuildRange => simple_instruction("BUILD_RANGE", offset),
         OpCode::BuildString => byte_instruction("BUILD_STRING", chunk, offset),

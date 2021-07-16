@@ -112,6 +112,11 @@ fn default_read_module_source(path: &str) -> Result<String, Error> {
     Ok(source)
 }
 
+enum IndexResult {
+    Scalar(Value),
+    Slice(Vec<Value>),
+}
+
 pub struct Vm {
     ip: *const u8,
     active_module: Gc<RefCell<ObjModule>>,
@@ -610,6 +615,8 @@ impl Vm {
                     })?;
                 }
                 byte if byte == OpCode::Negate as u8 => self.negate_impl()?,
+                byte if byte == OpCode::GetItem as u8 => self.get_item_impl()?,
+                byte if byte == OpCode::SetItem as u8 => self.set_item_impl()?,
                 byte if byte == OpCode::FormatString as u8 => self.format_string_impl(),
                 byte if byte == OpCode::BuildHashMap as u8 => self.build_hash_map_impl()?,
                 byte if byte == OpCode::BuildRange as u8 => self.build_range_impl()?,
@@ -907,6 +914,52 @@ impl Vm {
             let err = error!(ErrorKind::TypeError, "Unary operand must be a number.");
             self.try_handle_error(err)?;
         }
+        Ok(())
+    }
+
+    fn get_item_impl(&mut self) -> Result<(), Error> {
+        let value = self.peek(1);
+        let result = match value {
+            Value::ObjString(_) => self.string_get_item(),
+            Value::ObjTuple(_) => self.tuple_get_item(),
+            Value::ObjVec(_) => self.vec_get_item(),
+            _ => Err(error!(
+                ErrorKind::TypeError,
+                "Value '{}' is not indexable.", value
+            )),
+        };
+        if let Err(e) = result {
+            self.try_handle_error(e)?;
+        }
+        Ok(())
+    }
+
+    fn set_item_impl(&mut self) -> Result<(), Error> {
+        let vec = match self.peek(2).try_as_obj_vec() {
+            Some(v) => v,
+            None => {
+                let err = error!(
+                    ErrorKind::TypeError,
+                    "Only Vec objects are index-assignable."
+                );
+                return self.try_handle_error(err);
+            }
+        };
+        let result = self.peek(1).try_as_bounded_index(
+            vec.borrow().elements.len() as isize,
+            "Vec index parameter out of bounds.",
+        );
+        let index = match result {
+            Ok(i) => i,
+            Err(err) => {
+                return self.try_handle_error(err);
+            }
+        };
+        let mut borrowed_vec = vec.borrow_mut();
+        borrowed_vec.elements[index] = self.peek(0);
+        self.discard(2);
+        self.poke(0, Value::None);
+
         Ok(())
     }
 
@@ -1270,6 +1323,98 @@ impl Vm {
             .try_as_obj_module()
             .expect("Expected ObjModule.");
         module.borrow_mut().imported = true;
+    }
+
+    fn string_get_item(&mut self) -> Result<(), Error> {
+        let string = self
+            .peek(1)
+            .try_as_obj_string()
+            .expect("Expected ObjString.");
+        let string_len = string.len() as isize;
+
+        let (begin, end) = match self.peek(0) {
+            Value::Number(_) => {
+                let begin = self
+                    .peek(0)
+                    .try_as_bounded_index(string_len, "String index out of bounds.")?;
+                string.validate_char_boundary(begin, "string index")?;
+                let mut end = begin + 1;
+                while end <= string.len() && !string.as_str().is_char_boundary(end) {
+                    end += 1;
+                }
+                (begin, end)
+            }
+            Value::ObjRange(r) => {
+                let (begin, end) = r.make_bounded_range(string_len, "String")?;
+                string.validate_char_boundary(begin, "string slice start")?;
+                string.validate_char_boundary(end, "string slice end")?;
+                (begin, end)
+            }
+            _ => {
+                return Err(error!(
+                    ErrorKind::TypeError,
+                    "Expected an integer or range."
+                ))
+            }
+        };
+
+        let new_string = self.new_gc_obj_string(&string.as_str()[begin..end]);
+        self.pop();
+        self.poke(0, Value::ObjString(new_string));
+        Ok(())
+    }
+
+    fn tuple_get_item(&mut self) -> Result<(), Error> {
+        let tuple = self.peek(1).try_as_obj_tuple().expect("Expected ObjTuple");
+        let elem = match self.slice_get_item(&tuple.elements, "Tuple")? {
+            IndexResult::Scalar(value) => value,
+            IndexResult::Slice(values) => {
+                let tuple = self.new_root_obj_tuple(values);
+                Value::ObjTuple(tuple.as_gc())
+            }
+        };
+        self.pop();
+        self.poke(0, elem);
+
+        Ok(())
+    }
+
+    fn vec_get_item(&mut self) -> Result<(), Error> {
+        let vec = self.peek(1).try_as_obj_vec().expect("Expected ObjVec");
+
+        let elem = match self.slice_get_item(&vec.borrow().elements, "Vec")? {
+            IndexResult::Scalar(value) => value,
+            IndexResult::Slice(values) => {
+                let class = self.class_store.vec_class();
+                let vec = Root::new(RefCell::new(ObjVec::with_elements(class, values)));
+                Value::ObjVec(vec.as_gc())
+            }
+        };
+        self.pop();
+        self.poke(0, elem);
+
+        Ok(())
+    }
+
+    fn slice_get_item(&mut self, elements: &[Value], kind: &str) -> Result<IndexResult, Error> {
+        let index_value = self.peek(0);
+        let elems_len = elements.len() as isize;
+        match index_value {
+            Value::Number(_) => {
+                let index = index_value.try_as_bounded_index(elems_len, kind)?;
+                Ok(IndexResult::Scalar(elements[index]))
+            }
+            Value::ObjRange(r) => {
+                let (begin, end) = r.make_bounded_range(elems_len, kind)?;
+                Ok(IndexResult::Slice(Vec::from(&elements[begin..end])))
+            }
+            _ => {
+                return Err(error!(
+                    ErrorKind::TypeError,
+                    "Expected an integer or range."
+                ))
+            }
+        }
     }
 
     #[inline(always)]
