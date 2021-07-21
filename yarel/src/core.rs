@@ -180,7 +180,7 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
         ("split", string_split as NativeFn),
         ("starts_with", string_starts_with as NativeFn),
         ("ends_with", string_ends_with as NativeFn),
-        ("as_num", string_as_num as NativeFn),
+        ("to_num", string_to_num as NativeFn),
         ("to_bytes", string_to_bytes as NativeFn),
         ("to_code_points", string_to_code_points as NativeFn),
     ];
@@ -498,7 +498,7 @@ fn string_ends_with(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     Ok(Value::Boolean(string.as_str().ends_with(prefix.as_str())))
 }
 
-fn string_as_num(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+fn string_to_num(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
     check_num_args(num_args, 0)?;
 
     let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
