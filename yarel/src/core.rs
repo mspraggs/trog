@@ -19,7 +19,6 @@ use std::time;
 use crate::common;
 use crate::error::{Error, ErrorKind};
 use crate::memory::{Gc, Root};
-use crate::object::new_obj_string_value_map;
 use crate::object::{self, NativeFn, ObjClass, ObjNative, ObjStringValueMap};
 use crate::utils;
 use crate::value::Value;
@@ -973,7 +972,7 @@ pub fn new_root_obj_fiber_metaclass(
         fiber_yield as NativeFn,
         true,
     ));
-    let mut methods = new_obj_string_value_map();
+    let mut methods = object::new_obj_string_value_map();
     methods.insert(yield_method_name, Value::ObjNative(yield_method.as_gc()));
     let (methods, _native_roots) =
         build_methods(vm, &[("new", fiber_init as NativeFn)], Some(methods));
@@ -992,7 +991,7 @@ pub fn new_root_obj_fiber_class(
         fiber_call as NativeFn,
         true,
     ));
-    let mut methods = new_obj_string_value_map();
+    let mut methods = object::new_obj_string_value_map();
     methods.insert(call_method_name, Value::ObjNative(call_method.as_gc()));
     let (methods, _native_roots) = build_methods(
         vm,

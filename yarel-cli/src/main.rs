@@ -18,7 +18,8 @@ use std::fs;
 use std::io::{self, Write};
 use std::process;
 
-use yarel::error::ErrorKind;
+use yarel::error::{Error, ErrorKind};
+use yarel::value::Value;
 use yarel::vm::{self, Vm};
 
 fn repl(vm: &mut Vm) {
@@ -64,10 +65,35 @@ fn run_file(vm: &mut Vm, path: &str) {
     }
 }
 
+fn read_file(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    if num_args != 1 {
+        return Err(yarel::error!(
+            ErrorKind::TypeError,
+            "Expected 1 parameter but found {}.",
+            num_args
+        ));
+    }
+
+    let path = vm.native_arg(1).try_as_obj_string().ok_or_else(|| {
+        yarel::error!(
+            ErrorKind::TypeError,
+            "Expected a string but found '{}'.",
+            vm.native_arg(1)
+        )
+    })?;
+
+    let file_contents = fs::read_to_string(path.as_str())
+        .map_err(|e| yarel::error!(ErrorKind::RuntimeError, "Unable to read file: {}", e))?;
+
+    let file_contents = vm.new_gc_obj_string(&file_contents);
+    Ok(Value::ObjString(file_contents))
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     let mut vm = Vm::with_built_ins();
+    vm.define_native("main", "read_file_to_string", read_file);
 
     if args.len() == 1 {
         repl(&mut vm);
