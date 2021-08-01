@@ -947,7 +947,7 @@ impl Vm {
         };
         let result = self.peek(1).try_as_bounded_index(
             vec.borrow().elements.len() as isize,
-            "Vec index parameter out of bounds.",
+            "Vec",
         );
         let index = match result {
             Ok(i) => i,
@@ -1336,7 +1336,7 @@ impl Vm {
             Value::Number(_) => {
                 let begin = self
                     .peek(0)
-                    .try_as_bounded_index(string_len, "String index out of bounds.")?;
+                    .try_as_bounded_index(string_len, "String")?;
                 string.validate_char_boundary(begin, "string index")?;
                 let mut end = begin + 1;
                 while end <= string.len() && !string.as_str().is_char_boundary(end) {

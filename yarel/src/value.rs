@@ -208,7 +208,7 @@ impl Value {
         if index < 0 || index >= bound {
             return Err(error!(
                 ErrorKind::IndexError,
-                "{} index parameter out of bounds.", kind
+                "{} index out of bounds.", kind
             ));
         }
 

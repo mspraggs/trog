@@ -1,4 +1,4 @@
-// Unhandled IndexError: Vec index parameter out of bounds
+// Unhandled IndexError: Vec index out of bounds
 // [module "main", line 5] in script
 // 70
 var v = [1, 2];

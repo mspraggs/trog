@@ -361,7 +361,7 @@ fn string_char_byte_index(vm: &mut Vm, num_args: usize) -> Result<Value, Error> 
     let string = vm.peek(1).try_as_obj_string().expect("Expected ObjString.");
     let char_index = vm.peek(0).try_as_bounded_index(
         string.as_str().chars().count() as isize,
-        "String index parameter out of bounds.",
+        "String",
     )?;
 
     let mut char_count = 0;
