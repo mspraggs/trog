@@ -1,0 +1,7 @@
+// false
+// true
+// false
+// 0
+print("".is_hexdigit());
+print("0123456789abcdef".is_hexdigit());
+print("123abcg".is_hexdigit());

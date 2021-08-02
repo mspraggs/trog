@@ -1,0 +1,7 @@
+// false
+// true
+// false
+// 0
+print("".is_alpha());
+print("abc".is_alpha());
+print("ab1".is_alpha());

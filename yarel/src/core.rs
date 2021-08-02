@@ -172,6 +172,9 @@ pub(crate) unsafe fn bind_gc_obj_string_class(
     let method_map = [
         ("iter", string_iter as NativeFn),
         ("len", string_len as NativeFn),
+        ("is_alpha", string_is_alpha as NativeFn),
+        ("is_digit", string_is_digit as NativeFn),
+        ("is_hexdigit", string_is_hexdigit as NativeFn),
         ("count_chars", string_count_chars as NativeFn),
         ("char_byte_index", string_char_byte_index as NativeFn),
         ("find", string_find as NativeFn),
@@ -346,6 +349,30 @@ fn string_len(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
 
     let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
     Ok(Value::Number(string.len() as f64))
+}
+
+fn string_is_alpha(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
+    let is_alpha = string.chars().all(|c| c.is_ascii_alphabetic());
+    Ok(Value::Boolean(string.len() > 0 && is_alpha))
+}
+
+fn string_is_digit(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
+    let is_digit = string.chars().all(|c| c.is_ascii_digit());
+    Ok(Value::Boolean(string.len() > 0 && is_digit))
+}
+
+fn string_is_hexdigit(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {
+    check_num_args(num_args, 0)?;
+
+    let string = vm.peek(0).try_as_obj_string().expect("Expected ObjString.");
+    let is_hexdigit = string.chars().all(|c| c.is_ascii_hexdigit());
+    Ok(Value::Boolean(string.len() > 0 && is_hexdigit))
 }
 
 fn string_count_chars(vm: &mut Vm, num_args: usize) -> Result<Value, Error> {

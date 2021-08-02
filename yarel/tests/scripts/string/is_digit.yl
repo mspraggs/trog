@@ -1,0 +1,7 @@
+// false
+// true
+// false
+// 0
+print("".is_digit());
+print("123".is_digit());
+print("12a".is_digit());
